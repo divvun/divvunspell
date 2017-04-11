@@ -1,0 +1,42 @@
+use std::mem;
+
+pub enum FlagDiacriticOperator {
+    PositiveSet, NegativeSet, Require, Disallow, Clear, Unification
+}
+
+impl FlagDiacriticOperator {
+    pub fn from_str(key: char) -> Option<FlagDiacriticOperator> {
+        match key {
+            'P' => Some(FlagDiacriticOperator::PositiveSet),
+            'N' => Some(FlagDiacriticOperator::NegativeSet),
+            'R' => Some(FlagDiacriticOperator::Require),
+            'D' => Some(FlagDiacriticOperator::Disallow),
+            'C' => Some(FlagDiacriticOperator::Clear),
+            'U' => Some(FlagDiacriticOperator::Unification),
+            _ => None
+        }
+    }
+}
+
+pub enum HeaderFlag {
+    Weighted,
+    Deterministic,
+    InputDeterministic,
+    Minimized,
+    Cyclic,
+    HasEpsilonEpsilonTransitions,
+    HasInputEpsilonTransitions,
+    HasInputEpsilonCycles,
+    HasUnweightedInputEpsilonCycles
+}
+
+pub struct FlagDiacriticOperation {
+    pub operation: FlagDiacriticOperator,
+    pub feature: SymbolNumber,
+    pub value: i16
+}
+
+pub type SymbolNumber = u16;
+pub type TransitionTableIndex = u32;
+pub type Weight = f32;
+pub type FlagDiacriticState = Vec<i16>;

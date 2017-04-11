@@ -1,0 +1,16 @@
+[package]
+name = "hfst-ospell-rs"
+version = "0.1.0"
+authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
+
+[lib]
+name = "hfstospell"
+crate-type = ["dylib"]
+
+[dependencies]
+libc = "0.2"
+memmap = "0.5"
+byteorder = "0.5"
+serde = "0.9"
+serde_derive = "0.9"
+serde-xml-rs = "0.1"
