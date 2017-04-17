@@ -7,7 +7,7 @@ use types::{
     Weight
 };
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct TreeNode {
     pub string: Vec<SymbolNumber>,
     pub input_state: u32,
@@ -18,7 +18,7 @@ pub struct TreeNode {
 }
 
 impl TreeNode {
-    fn empty(start_state: FlagDiacriticState) -> TreeNode {
+    pub fn empty(start_state: FlagDiacriticState) -> TreeNode {
         TreeNode {
             string: vec![],
             input_state: 0,
@@ -29,13 +29,14 @@ impl TreeNode {
         }
     }
 
-    fn update_lexicon(&self, symbol: SymbolNumber, next_lexicon: TransitionTableIndex, weight: Weight) -> TreeNode {
-        let string = if symbol != 0 {
-            let mut string = self.string.clone();
-            string.push(symbol); // push_back?
-            string
-        } else {
-            self.string.clone()
+    pub fn update_lexicon(&self, symbol: Option<SymbolNumber>, next_lexicon: TransitionTableIndex, weight: Weight) -> TreeNode {
+        let string = match symbol {
+            Some(value) => {
+                let mut string = self.string.clone();
+                string.push(value); // push_back?
+                string
+            },
+            None => self.string.clone()
         };
 
         TreeNode {

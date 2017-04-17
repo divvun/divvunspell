@@ -1,45 +1,49 @@
 use serde_xml_rs::{ParserConfig, deserialize, Error};
 
 #[derive(Deserialize, Debug)]
-struct SpellerMetadata {
-    info: SpellerMetadataInfo,
-    acceptor: SpellerMetadataAcceptor,
-    errmodel: SpellerMetadataErrmodel
+pub struct SpellerMetadata {
+    pub info: SpellerMetadataInfo,
+    pub acceptor: SpellerMetadataAcceptor,
+    pub errmodel: SpellerMetadataErrmodel
 }
 
 #[derive(Deserialize, Debug)]
-struct SpellerMetadataInfo {
-    locale: String,
-    title: String,
-    description: String,
-    producer: String
+pub struct SpellerMetadataInfo {
+    pub locale: String,
+    pub title: String,
+    pub description: String,
+    pub producer: String
 }
 
 #[derive(Deserialize, Debug)]
-struct SpellerMetadataAcceptor {
+pub struct SpellerMetadataAcceptor {
     #[serde(rename = "type", default)]
-    type_: String,
-    id: String,
-    title: String,
-    description: String
+    pub type_: String,
+    pub id: String,
+    pub title: String,
+    pub description: String
 }
 
 #[derive(Deserialize, Debug)]
-struct SpellerMetadataErrmodel {
+pub struct SpellerMetadataErrmodel {
     //#[serde(rename = "type", default)]
     //type_: String,
-    id: String,
-    title: String,
-    description: String
+    pub id: String,
+    pub title: String,
+    pub description: String
 }
 
 impl SpellerMetadata {
-    fn from_str(string: &str) -> Result<SpellerMetadata, Error> {
+    pub fn from_str(string: &str) -> Result<SpellerMetadata, Error> {
+        SpellerMetadata::from_bytes(string.as_bytes())
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<SpellerMetadata, Error> {
         let mut reader = ParserConfig::new()
             .trim_whitespace(true)
             .ignore_comments(true)
             .coalesce_characters(true)
-            .create_reader(string.as_bytes())
+            .create_reader(bytes)
             .into_inner();
 
         deserialize(&mut reader)
@@ -80,5 +84,5 @@ fn test_xml_parse() {
     "##;
     
     let metadata = SpellerMetadata::from_str(&xml_data).unwrap();
-    println!("{:#?}", metadata);
+    //println!("{:#?}", metadata);
 }
