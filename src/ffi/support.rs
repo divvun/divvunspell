@@ -4,9 +4,9 @@ use std::mem;
 
 #[repr(C)]
 pub struct CVec<T> {
+    pub ptr: *mut T,
     pub len: size_t,
-    pub capacity: size_t,
-    pub ptr: *mut T
+    pub capacity: size_t
 }
 
 pub trait IntoCVec {
@@ -27,9 +27,9 @@ impl<T> IntoCVec for Vec<T> {
         let cap = self.capacity();
 
         let c_vec = Box::new(CVec {
+            ptr: p,
             len: len,
-            capacity: cap,
-            ptr: p
+            capacity: cap
         });
 
         mem::forget(self);

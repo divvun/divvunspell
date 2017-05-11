@@ -43,3 +43,8 @@ pub extern fn speller_new() -> *const Speller {
 pub extern fn speller_free(ptr: *mut Speller) {
     unsafe { Box::from_raw(ptr) };
 }
+
+#[no_mangle]
+pub extern fn it_works() -> bool {
+    true
+}

@@ -5,6 +5,7 @@ authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
 
 [lib]
 name = "hfstospell"
+#crate-type = ["staticlib", "cdylib"]
 crate-type = ["dylib"]
 
 [dependencies]
@@ -14,4 +15,4 @@ byteorder = "0.5"
 serde = "0.9"
 serde_derive = "0.9"
 serde-xml-rs = "0.1"
-zip = { path = "../zip-rs" }
+zip = { git = "https://github.com/mvdnes/zip-rs.git", default-features = false }

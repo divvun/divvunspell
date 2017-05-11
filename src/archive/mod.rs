@@ -69,10 +69,3 @@ impl<'a> SpellerArchive<'a> {
         return &self.metadata
     }
 }
-
-#[test]
-fn test_whatever() {
-    let a = SpellerArchive::new("./sma-store.zip");
-    println!("{:?}", a.metadata());
-    println!("{:?}", a.speller().lexicon().alphabet());
-}

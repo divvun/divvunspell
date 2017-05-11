@@ -6,6 +6,7 @@ pub struct TransducerAlphabet {
     key_table: Vec<String>,
     pub flag_state_size: SymbolNumber,
     pub length: usize,
+    string_to_symbol: BTreeMap<String, SymbolNumber>,
     operations: BTreeMap<SymbolNumber, FlagDiacriticOperation>
 }
 
@@ -42,12 +43,21 @@ impl TransducerAlphabet {
             key_table: key_table,
             length: offset,
             flag_state_size: 0,
+            string_to_symbol: BTreeMap::new(),
             operations: BTreeMap::new()
         }
     }
 
+    pub fn key_table(&self) -> &Vec<String> {
+        &self.key_table
+    }
+
     pub fn state_size(&self) -> SymbolNumber {
         self.flag_state_size
+    }
+
+    pub fn string_to_symbol(&self) -> &BTreeMap<String, SymbolNumber> {
+        &self.string_to_symbol
     }
 
     pub fn parse_flag_diacritic(key: &str) {

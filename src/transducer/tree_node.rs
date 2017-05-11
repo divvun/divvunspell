@@ -29,6 +29,10 @@ impl TreeNode {
         }
     }
 
+    pub fn flag_state(&self) -> &FlagDiacriticState {
+        &self.flag_state
+    }
+
     pub fn update_lexicon(&self, symbol: Option<SymbolNumber>, next_lexicon: TransitionTableIndex, weight: Weight) -> TreeNode {
         let string = match symbol {
             Some(value) => {
@@ -47,7 +51,7 @@ impl TreeNode {
         }
     }
 
-    fn update_mutator(&self, next_mutator: TransitionTableIndex, weight: Weight) -> TreeNode {
+    pub fn update_mutator(&self, next_mutator: TransitionTableIndex, weight: Weight) -> TreeNode {
         TreeNode {
             mutator_state: next_mutator,
             weight: self.weight + weight,
@@ -103,7 +107,7 @@ impl TreeNode {
         }
     }
 
-    fn apply_operation(&self, op: &FlagDiacriticOperation) -> (bool, TreeNode) {
+    pub fn apply_operation(&self, op: &FlagDiacriticOperation) -> (bool, TreeNode) {
         match op.operation {
             FlagDiacriticOperator::PositiveSet => (true, self.update_flag(op.feature, op.value)),
             FlagDiacriticOperator::NegativeSet => (true, self.update_flag(op.feature, -1 * op.value)),

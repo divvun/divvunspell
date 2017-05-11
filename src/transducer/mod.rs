@@ -13,7 +13,6 @@ use self::header::TransducerHeader;
 use self::alphabet::TransducerAlphabet;
 use self::index_table::IndexTable;
 use self::transition_table::TransitionTable;
-use self::tree_node::TreeNode;
 use self::symbol_transition::SymbolTransition;
 
 #[derive(Debug)]
@@ -71,6 +70,23 @@ impl<'a> Transducer<'a> {
         }
     }
 
+    pub fn has_transitions(&self, i: TransitionTableIndex, s: Option<SymbolNumber>) -> bool {
+        if s.is_none() {
+            return false
+        }
+
+        let sym = s.unwrap();
+
+        /*
+        if i >= TARGET_TABLE {
+            if let res = self.transition_table().input_symbol(i - TARGET_TABLE)
+        } else {
+            self.index_table(i + sym) == sym
+        }
+        */
+        return true
+    }
+
     pub fn has_epsilons_or_flags(&self, i: TransitionTableIndex) -> bool {
         if i >= TARGET_TABLE {
             let sym = self.transition_table.input_symbol(i - TARGET_TABLE);
@@ -82,6 +98,12 @@ impl<'a> Transducer<'a> {
         } else {
             self.index_table.input_symbol(i).is_none()
         }
+    }
+
+    pub fn take_epsilons(&self, i: TransitionTableIndex) -> SymbolTransition {
+        // TODO IMPLEMENT
+
+        self.take_epsilons_and_flags(i)
     }
 
     pub fn take_epsilons_and_flags(&self, i: TransitionTableIndex) -> SymbolTransition {
