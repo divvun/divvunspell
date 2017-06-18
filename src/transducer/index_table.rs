@@ -6,7 +6,7 @@ use types::{TransitionTableIndex, SymbolNumber, Weight};
 use constants::TRANS_INDEX_SIZE;
 use std::cell::{RefCell, RefMut};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IndexTable<'a> {
     size: TransitionTableIndex,
     cursor: RefCell<Cursor<&'a [u8]>>
@@ -50,7 +50,7 @@ impl<'a> IndexTable<'a> {
 
         // BUG: see below
         // TODO: this is the same as target, and therefore probably a bug
-        
+
         let index: u64 = (TRANS_INDEX_SIZE * (i as usize) + mem::size_of::<SymbolNumber>()) as u64;
         let mut cursor = self.cursor.borrow_mut();
         cursor.set_position(index);

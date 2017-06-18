@@ -15,7 +15,7 @@ use self::index_table::IndexTable;
 use self::transition_table::TransitionTable;
 use self::symbol_transition::SymbolTransition;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Transducer<'a> {
     buf: &'a [u8],
     header: TransducerHeader,

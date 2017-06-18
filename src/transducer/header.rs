@@ -3,7 +3,7 @@ use std::io::Cursor;
 
 use types::{SymbolNumber, TransitionTableIndex, HeaderFlag};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TransducerHeader {
     symbols: SymbolNumber,
     input_symbols: SymbolNumber,

@@ -4,7 +4,7 @@ use super::Transducer;
 
 type OperationsMap = BTreeMap<SymbolNumber, FlagDiacriticOperation>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TransducerAlphabet {
     key_table: Vec<String>,
     initial_symbol_count: SymbolNumber,

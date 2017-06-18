@@ -13,7 +13,7 @@ use types::{SymbolNumber, Weight, FlagDiacriticOperation};
 
 type OperationMap = BTreeMap<SymbolNumber, FlagDiacriticOperation>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Speller<'a> {
     mutator: Transducer<'a>,
     lexicon: Transducer<'a>,
