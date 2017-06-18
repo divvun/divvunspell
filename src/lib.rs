@@ -18,3 +18,16 @@ fn test_load_zhfst() {
     let two = zhfst.speller();
     let res = two.suggest("sami");
 }
+
+#[test]
+fn test_speller() {
+    use transducer::Transducer;
+    use speller::Speller;
+
+    let data = vec![];
+    let acceptor = Transducer::from_bytes(&data);
+    let errmodel = Transducer::from_bytes(&data);
+
+    let speller = Speller::new(acceptor, errmodel);
+    println!("{:?}", speller.suggest("sami"));
+}

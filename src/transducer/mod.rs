@@ -15,7 +15,7 @@ use self::index_table::IndexTable;
 use self::transition_table::TransitionTable;
 use self::symbol_transition::SymbolTransition;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Transducer<'a> {
     buf: &'a [u8],
     header: TransducerHeader,
@@ -24,14 +24,14 @@ pub struct Transducer<'a> {
     transition_table: TransitionTable<'a>
 }
 
-impl<'a> Transducer<'a> {
+impl<'a, 'b> Transducer<'a> where 'a: 'b {
     pub fn from_bytes(buf: &[u8]) -> Transducer {
         let header = TransducerHeader::new(&buf);
         let alphabet_offset = header.alphabet_offset();
         let alphabet = TransducerAlphabet::new(&buf[alphabet_offset..buf.len()], header.symbol_count());
 
         let index_table_offset = alphabet_offset + alphabet.length();
-        
+
         let index_table_end = index_table_offset + TRANS_INDEX_SIZE * header.index_table_size();
         let index_table = IndexTable::new(&buf[index_table_offset..index_table_end], header.index_table_size() as u32);
 
@@ -50,11 +50,11 @@ impl<'a> Transducer<'a> {
     // Orig: get_key_table on alphabet ref
     // TODO: get_encoder
 
-    pub fn index_table(&self) -> &'a IndexTable {
+    pub fn index_table(&'b self) -> &'b IndexTable<'a> {
         &self.index_table
     }
 
-    pub fn transition_table(&self) -> &'a TransitionTable {
+    pub fn transition_table(&self) -> &TransitionTable<'a> {
         &self.transition_table
     }
 
@@ -89,7 +89,7 @@ impl<'a> Transducer<'a> {
         } else {
             match self.index_table.input_symbol(i + sym as u32) {
                 Some(res) => sym == res,
-                None => false   
+                None => false
             }
         }
     }
@@ -137,8 +137,8 @@ impl<'a> Transducer<'a> {
             if res != 0 {
                return None;
             }
-        } 
-        
+        }
+
         Some(self.transition_table.symbol_transition(i))
     }
 
@@ -147,18 +147,18 @@ impl<'a> Transducer<'a> {
             if res != 0 && !self.alphabet.is_flag(res) {
                return None;
             }
-        } 
-        
+        }
+
         Some(self.transition_table.symbol_transition(i))
     }
-    
+
     pub fn take_non_epsilons(&self, i: TransitionTableIndex, symbol: SymbolNumber) -> Option<SymbolTransition> {
         if let Some(res) = self.transition_table.input_symbol(i) {
             if res != symbol {
                return None;
             }
-        } 
-        
+        }
+
         Some(self.transition_table.symbol_transition(i))
     }
 
@@ -186,5 +186,5 @@ impl<'a> Transducer<'a> {
 
     pub fn is_weighted(&self) -> bool {
         self.header.has_flag(HeaderFlag::Weighted)
-    } 
+    }
 }

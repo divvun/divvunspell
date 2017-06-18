@@ -48,7 +48,7 @@ impl<'a> SpellerArchive<'a> {
         // Load transducers
         let acceptor_data = slice_by_name(&mut archive, &slice, &metadata.acceptor.id);
         let errmodel_data = slice_by_name(&mut archive, &slice, &metadata.errmodel.id);
-        
+
         let acceptor = Transducer::from_bytes(&acceptor_data);
         let errmodel = Transducer::from_bytes(&errmodel_data);
 
@@ -61,7 +61,7 @@ impl<'a> SpellerArchive<'a> {
         }
     }
 
-    pub fn speller(&self) -> &Speller<'a> {
+    pub fn speller<'b>(&'b self) -> &'b Speller<'a> where 'a: 'b {
         &self.speller
     }
 

@@ -13,7 +13,7 @@ use types::{SymbolNumber, Weight, FlagDiacriticOperation};
 
 type OperationMap = BTreeMap<SymbolNumber, FlagDiacriticOperation>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Speller<'a> {
     mutator: Transducer<'a>,
     lexicon: Transducer<'a>,
@@ -21,14 +21,14 @@ pub struct Speller<'a> {
     alphabet_translator: Vec<SymbolNumber>
 }
 
-struct SpellerWorker<'a> {
-    speller: &'a Speller<'a>,
+struct SpellerWorker<'a, 'b> where 'a: 'b {
+    speller: &'b Speller<'a>,
     input: Vec<SymbolNumber>,
     nodes: RefCell<Vec<TreeNode>>
 }
 
-impl<'a> SpellerWorker<'a> {
-    fn new(speller: &'a Speller<'a>) -> SpellerWorker<'a> {
+impl<'a, 'b> SpellerWorker<'a, 'b> where 'a: 'b {
+    fn new(speller: &'b Speller<'a>) -> SpellerWorker<'a, 'b> {
         SpellerWorker {
             speller: speller,
             input: vec![],
@@ -36,16 +36,16 @@ impl<'a> SpellerWorker<'a> {
         }
     }
 
-    fn lexicon_epsilons(&self, next_node: &TreeNode) {
-        let lexicon = self.speller.lexicon();
+    fn lexicon_epsilons(&'b self, next_node: &TreeNode) {
+        let lexicon: &'b Transducer<'a> = &self.speller.lexicon;
         let operations = self.speller.operations();
-        
+
         if !lexicon.has_epsilons_or_flags(next_node.lexicon_state + 1) {
             return
         }
 
         let mut next = lexicon.next(next_node.lexicon_state, 0).unwrap();
-        
+
         while let Some(transition) = lexicon.take_epsilons_and_flags(next) {
             // TODO: re-add weight limit checks
             if let Some(sym) = lexicon.transition_table().input_symbol(next) {
@@ -72,7 +72,7 @@ impl<'a> SpellerWorker<'a> {
         let mutator = self.speller.mutator();
         let lexicon = self.speller.lexicon();
         let alphabet_translator = self.speller.alphabet_translator();
-        
+
         if !mutator.has_transitions(next_node.mutator_state + 1, Some(0)) {
             return
         }
@@ -97,7 +97,7 @@ impl<'a> SpellerWorker<'a> {
                         // this input was not originally in the alphabet, so unknown or identity
                         // may apply
                         if lexicon.has_transitions(next_node.lexicon_state + 1, lexicon.alphabet().unknown()) {
-                            self.queue_lexicon_arcs(&next_node, lexicon.alphabet().unknown().unwrap(), 
+                            self.queue_lexicon_arcs(&next_node, lexicon.alphabet().unknown().unwrap(),
                                     transition.target().unwrap(), transition.weight().unwrap(), 0)
                         }
 
@@ -111,7 +111,7 @@ impl<'a> SpellerWorker<'a> {
                     continue;
                 }
 
-                self.queue_lexicon_arcs(&next_node, trans_sym, 
+                self.queue_lexicon_arcs(&next_node, trans_sym,
                         transition.target().unwrap(), transition.weight().unwrap(), 0);
                 next_m += 1;
             }
@@ -121,9 +121,9 @@ impl<'a> SpellerWorker<'a> {
     pub fn queue_lexicon_arcs(&self, next_node: &TreeNode, input_sym: SymbolNumber, mutator_state: u32, mutator_weight: Weight, input_increment: i16) {
         let lexicon = self.speller.lexicon();
         let alphabet_translator = self.speller.alphabet_translator();
-        
+
         let mut next = lexicon.next(next_node.lexicon_state, input_sym).unwrap();
-        
+
         while let Some(noneps_trans) = lexicon.take_non_epsilons(next, input_sym) {
             if let Some(mut sym) = noneps_trans.symbol() {
                 // TODO: wtf?
@@ -135,14 +135,14 @@ impl<'a> SpellerWorker<'a> {
                 // TODO: handle Correct mode
                 let mut nodes = self.nodes.borrow_mut();
                 nodes.push(next_node.update(
-                    sym, 
-                    Some(next_node.input_state + input_increment as u32), 
+                    sym,
+                    Some(next_node.input_state + input_increment as u32),
                     mutator_state,
                     noneps_trans.target().unwrap(),
                     noneps_trans.weight().unwrap()))
             }
 
-            next += 1 
+            next += 1
         }
     }
 
@@ -184,12 +184,12 @@ impl<'a> SpellerWorker<'a> {
                     continue;
                 }
 
-                self.queue_lexicon_arcs(&next_node, trans_sym, 
+                self.queue_lexicon_arcs(&next_node, trans_sym,
                         transition.target().unwrap(), transition.weight().unwrap(), 1);
                 next_m += 1;
             }
-            
-            
+
+
             // TODO: weight limit
 
         }
@@ -222,12 +222,12 @@ impl<'a> SpellerWorker<'a> {
     }
 }
 
-impl<'a> Speller<'a> {
+impl<'a, 'b> Speller<'a> where 'a: 'b {
     pub fn new(mutator: Transducer<'a>, mut lexicon: Transducer<'a>) -> Speller<'a> {
         // TODO: review why this i16 -> u16 is happening
         let size = lexicon.alphabet().state_size() as i16;
         let alphabet_translator = lexicon.mut_alphabet().create_translator_from(&mutator);
-        
+
         Speller {
             mutator: mutator,
             lexicon: lexicon,
@@ -236,11 +236,11 @@ impl<'a> Speller<'a> {
         }
     }
 
-    pub fn mutator(&'a self) -> &Transducer {
+    pub fn mutator(&'b self) -> &'b Transducer<'a> {
         &self.mutator
     }
 
-    pub fn lexicon(&'a self) -> &Transducer {
+    pub fn lexicon(&'b self) -> &'b Transducer<'a> {
         &self.lexicon
     }
 
@@ -259,7 +259,7 @@ impl<'a> Speller<'a> {
     }
 
     // orig: init_input
-    fn to_input_vec(&'a self, word: &str) -> Vec<SymbolNumber> {
+    fn to_input_vec(&'b self, word: &str) -> Vec<SymbolNumber> {
         // TODO: refactor for when mutator is optional
         let key_table = self.mutator().alphabet().key_table();
 
@@ -273,20 +273,20 @@ impl<'a> Speller<'a> {
         String::from("Hello")
     }
 
-    // Known as Speller::correct in C++    
-    pub fn suggest(&'a self, word: &str) -> Vec<String> {
+    // Known as Speller::correct in C++
+    pub fn suggest(&'b self, word: &str) -> Vec<String> {
         let lexicon = self.lexicon();
         let mutator = self.mutator();
 
         let mut worker = SpellerWorker::new(&self);
-        
+
         let start_node = TreeNode::empty(vec![self.state_size() as i16, 0]);
         let mut nodes = worker.nodes.borrow_mut();
         nodes.push(start_node);
 
         let mut corrections = BTreeMap::<String, Weight>::new();
         let mut input = self.to_input_vec(word);
-        
+
         while nodes.len() > 0 {
             let next_node = nodes.pop().unwrap();
 
@@ -300,15 +300,15 @@ impl<'a> Speller<'a> {
 
             let m_final = self.mutator().is_final(next_node.mutator_state);
             let l_final = self.lexicon().is_final(next_node.lexicon_state);
-            
+
             if !(m_final && l_final) {
                 continue;
             }
 
-            let weight = next_node.weight + 
-                self.lexicon().final_weight(next_node.lexicon_state).unwrap() + 
+            let weight = next_node.weight +
+                self.lexicon().final_weight(next_node.lexicon_state).unwrap() +
                 self.mutator().final_weight(next_node.mutator_state).unwrap();
-            
+
             // if weight > limit { }
             let key_table = self.lexicon().alphabet().key_table();
             let string: String = next_node.string.iter().map(|&s| key_table[s as usize].to_string()).collect();
@@ -324,7 +324,7 @@ impl<'a> Speller<'a> {
             .into_iter()
             .map(|x| StringWeightPair(x.0, x.1))
             .collect();
-        
+
         c.sort();
 
         c.into_iter().map(|x| x.0).collect()

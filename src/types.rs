@@ -1,6 +1,6 @@
 use std::mem;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum FlagDiacriticOperator {
     PositiveSet, NegativeSet, Require, Disallow, Clear, Unification
 }
@@ -32,7 +32,7 @@ pub enum HeaderFlag {
     HasUnweightedInputEpsilonCycles
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FlagDiacriticOperation {
     pub operation: FlagDiacriticOperator,
     pub feature: SymbolNumber,

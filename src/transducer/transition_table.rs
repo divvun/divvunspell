@@ -8,7 +8,7 @@ use constants::{TRANS_SIZE, TRANS_INDEX_SIZE};
 
 use transducer::symbol_transition::SymbolTransition;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TransitionTable<'a> {
     size: TransitionTableIndex,
     cursor: RefCell<Cursor<&'a [u8]>>
@@ -51,7 +51,7 @@ impl<'a> TransitionTable<'a> {
         if i >= self.size {
             return None;
         }
-        
+
         let index: u64 = ((TRANS_SIZE * i as usize) + (2 * mem::size_of::<SymbolNumber>())) as u64;
         let mut cursor = self.cursor.borrow_mut();
         cursor.set_position(index);
