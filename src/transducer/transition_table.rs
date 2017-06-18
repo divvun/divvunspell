@@ -6,6 +6,8 @@ use std::cell::{RefCell, RefMut};
 use types::{TransitionTableIndex, SymbolNumber, Weight};
 use constants::{TRANS_SIZE, TRANS_INDEX_SIZE};
 
+use transducer::symbol_transition::SymbolTransition;
+
 #[derive(Debug)]
 pub struct TransitionTable<'a> {
     size: TransitionTableIndex,
@@ -75,5 +77,9 @@ impl<'a> TransitionTable<'a> {
         self.input_symbol(i) == None &&
             self.output_symbol(i) == None &&
             self.target(i) == Some(1)
+    }
+
+    pub fn symbol_transition(&self, i: TransitionTableIndex) -> SymbolTransition {
+        SymbolTransition::new(self.target(i), self.output_symbol(i), self.weight(i))
     }
 }

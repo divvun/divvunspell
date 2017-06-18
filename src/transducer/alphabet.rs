@@ -205,7 +205,7 @@ impl TransducerAlphabet {
     }
 
     pub fn create_translator_from(&mut self, mutator: &Transducer) -> Vec<SymbolNumber> {
-        let mut from = mutator.alphabet();
+        let from = mutator.alphabet();
         let from_keys = from.key_table();
 
         let mut translator = vec![0];

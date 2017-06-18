@@ -7,6 +7,8 @@ use types::{
     Weight
 };
 
+use super::symbol_transition::SymbolTransition;
+
 #[derive(Debug, Clone)]
 pub struct TreeNode {
     pub string: Vec<SymbolNumber>,
@@ -33,11 +35,11 @@ impl TreeNode {
         &self.flag_state
     }
 
-    pub fn update_lexicon(&self, symbol: Option<SymbolNumber>, next_lexicon: TransitionTableIndex, weight: Weight) -> TreeNode {
-        let string = match symbol {
+    pub fn update_lexicon(&self, transition: SymbolTransition) -> TreeNode {
+        let string = match transition.symbol() {
             Some(value) => {
                 let mut string = self.string.clone();
-                string.push(value); // push_back?
+                string.push(value);
                 string
             },
             None => self.string.clone()
@@ -45,16 +47,16 @@ impl TreeNode {
 
         TreeNode {
             string: string,
-            lexicon_state: next_lexicon,
-            weight: self.weight + weight,
+            lexicon_state: transition.target().unwrap(),
+            weight: self.weight + transition.weight().unwrap(),
             ..self.clone()
         }
     }
 
-    pub fn update_mutator(&self, next_mutator: TransitionTableIndex, weight: Weight) -> TreeNode {
+    pub fn update_mutator(&self, transition: SymbolTransition) -> TreeNode {
         TreeNode {
-            mutator_state: next_mutator,
-            weight: self.weight + weight,
+            mutator_state: transition.target().unwrap(),
+            weight: self.weight + transition.weight().unwrap(),
             ..self.clone()
         }
     }
@@ -78,22 +80,28 @@ impl TreeNode {
         }
     }
 
-    fn update(&self, symbol: SymbolNumber, next_mutator: TransitionTableIndex, next_lexicon: TransitionTableIndex, weight: Weight) -> TreeNode {
-        let string = if symbol != 0 {
+    pub fn update(&self, output_symbol: SymbolNumber, next_input: Option<u32>, next_mutator: TransitionTableIndex, next_lexicon: TransitionTableIndex, weight: Weight) -> TreeNode {
+        let string = if output_symbol != 0 {
             let mut string = self.string.clone();
-            string.push(symbol); // push_back?
+            string.push(output_symbol); // push_back?
             string
         } else {
             self.string.clone()
         };
 
-        TreeNode {
+        let mut node = TreeNode {
             string: string,
             mutator_state: next_mutator,
             lexicon_state: next_lexicon,
             weight: self.weight + weight,
             ..self.clone()
+        };
+
+        if let Some(input) = next_input {
+            node.input_state = input;
         }
+
+        node
     }
 
     fn update_flag(&self, feature: SymbolNumber, value: i16) -> TreeNode {

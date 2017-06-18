@@ -7,7 +7,7 @@ pub mod tree_node;
 
 use std::collections::{BinaryHeap, BTreeMap};
 
-use types::{TransitionTableIndex, Weight, SymbolNumber};
+use types::{TransitionTableIndex, Weight, SymbolNumber, HeaderFlag};
 use constants::{TRANS_INDEX_SIZE, TRANS_SIZE, TARGET_TABLE};
 use self::header::TransducerHeader;
 use self::alphabet::TransducerAlphabet;
@@ -47,6 +47,9 @@ impl<'a> Transducer<'a> {
         }
     }
 
+    // Orig: get_key_table on alphabet ref
+    // TODO: get_encoder
+
     pub fn index_table(&self) -> &'a IndexTable {
         &self.index_table
     }
@@ -67,8 +70,7 @@ impl<'a> Transducer<'a> {
         if i >= TARGET_TABLE {
             self.transition_table.weight(i - TARGET_TABLE)
         } else {
-            panic!("final_weight on an index seems fishy as fuck")
-            //self.index_table.
+            self.index_table.final_weight(i)
         }
     }
 
@@ -79,104 +81,94 @@ impl<'a> Transducer<'a> {
 
         let sym = s.unwrap();
 
-        /*
         if i >= TARGET_TABLE {
-            if let res = self.transition_table().input_symbol(i - TARGET_TABLE)
+            match self.transition_table.input_symbol(i - TARGET_TABLE) {
+                Some(res) => sym == res,
+                None => false
+            }
         } else {
-            self.index_table(i + sym) == sym
+            match self.index_table.input_symbol(i + sym as u32) {
+                Some(res) => sym == res,
+                None => false   
+            }
         }
-        */
-        return true
     }
 
     pub fn has_epsilons_or_flags(&self, i: TransitionTableIndex) -> bool {
         if i >= TARGET_TABLE {
-            let sym = self.transition_table.input_symbol(i - TARGET_TABLE);
+            match self.transition_table.input_symbol(i - TARGET_TABLE) {
+                Some(res) => res == 0 || self.alphabet().is_flag(res),
+                None => false
+            }
+        } else if let Some(res) = self.index_table.input_symbol(i) {
+            res == 0
+        } else {
+            false
+        }
+    }
 
-            match sym {
-                Some(sym) => self.alphabet.is_flag(sym),
-                None => true
+    pub fn has_non_epsilons_or_flags(&self, i: TransitionTableIndex) -> bool {
+        if i >= TARGET_TABLE {
+            match self.transition_table.input_symbol(i - TARGET_TABLE) {
+                Some(res) => res != 0 && !self.alphabet().is_flag(res),
+                None => false
             }
         } else {
-            self.index_table.input_symbol(i).is_none()
+            let total = self.alphabet.key_table().len() as u16;
+
+            for j in 1..total {
+                let res = self.index_table.input_symbol(i + j as u32);
+
+                if res.is_none() {
+                    continue;
+                }
+
+                if res.unwrap() == j {
+                    return true;
+                }
+            }
+
+            false
         }
     }
 
-    pub fn take_epsilons(&self, i: TransitionTableIndex) -> SymbolTransition {
-        // TODO IMPLEMENT
-        unimplemented!()
-        //self.take_epsilons_and_flags(i)
+    pub fn take_epsilons(&self, i: TransitionTableIndex) -> Option<SymbolTransition> {
+        if let Some(res) = self.transition_table.input_symbol(i) {
+            if res != 0 {
+               return None;
+            }
+        } 
+        
+        Some(self.transition_table.symbol_transition(i))
     }
 
-    pub fn take_epsilons_and_flags(&self, i: TransitionTableIndex) -> SymbolTransition {
-        let sym = self.transition_table.input_symbol(i);
-
-        if sym.is_some() && !self.alphabet().is_flag(sym.unwrap()) {
-            return SymbolTransition::empty()
-        }
-
-        SymbolTransition {
-            index: self.transition_table.target(i).unwrap_or(0),
-            symbol: self.transition_table.output_symbol(i),
-            weight: self.transition_table.weight(i)
-        }
+    pub fn take_epsilons_and_flags(&self, i: TransitionTableIndex) -> Option<SymbolTransition> {
+        if let Some(res) = self.transition_table.input_symbol(i) {
+            if res != 0 && !self.alphabet.is_flag(res) {
+               return None;
+            }
+        } 
+        
+        Some(self.transition_table.symbol_transition(i))
     }
     
-    fn take_non_epsilons(&self, i: TransitionTableIndex, symbol: SymbolNumber) -> SymbolTransition {
-        if let Some(value) = self.transition_table.input_symbol(i) {
-            if value != symbol {
-                return SymbolTransition::empty()
+    pub fn take_non_epsilons(&self, i: TransitionTableIndex, symbol: SymbolNumber) -> Option<SymbolTransition> {
+        if let Some(res) = self.transition_table.input_symbol(i) {
+            if res != symbol {
+               return None;
             }
-        }
+        } 
         
-        SymbolTransition {
-            index: self.transition_table.target(i).unwrap_or(0),
-            symbol: self.transition_table.output_symbol(i),
-            weight: self.transition_table.weight(i)
-        }
+        Some(self.transition_table.symbol_transition(i))
     }
 
-/*
-    fn lookup(&self, line: &str) {
-        let mut analyses = BinaryHeap::new();
-        let mut outputs = BTreeMap::new();
-
-        let start_node = TreeNode::empty(vec![0; self.alphabet.flag_state_size as usize]);
-        let mut node_queue: Vec<TreeNode> = vec![start_node];
-
-        /*
-        while node_queue.len > 0 {
-            let next_node = node_queue.pop().unwrap();
-
-
-        }*/
-
-
-        while let Some(next_node) = node_queue.pop() {
-            // Final states
-            let node: TreeNode = next_node;
-
-            if node.input_state == line.len && self.is_final(node.lexicon_state) {
-                let weight = node.weight + self.final_weight(node.lexicon_state);
-                // TODO
-            }
-
-            // Epsilon loop
-
-
-            // Input consumption loop
-        }
-
-
-    }
-*/
-    pub fn next(&self, i: TransitionTableIndex, symbol: SymbolNumber) -> TransitionTableIndex {
+    pub fn next(&self, i: TransitionTableIndex, symbol: SymbolNumber) -> Option<TransitionTableIndex> {
         if i >= TARGET_TABLE {
-            i - TARGET_TABLE + 1
+            Some(i - TARGET_TABLE + 1)
         } else if let Some(v) = self.index_table.target(i + 1 + symbol as u32) {
-            v - TARGET_TABLE
+            Some(v - TARGET_TABLE)
         } else {
-            panic!("No next transition table index.")
+            None
         }
     }
 
@@ -191,4 +183,8 @@ impl<'a> Transducer<'a> {
     pub fn mut_alphabet(&mut self) -> &mut TransducerAlphabet {
         &mut self.alphabet
     }
+
+    pub fn is_weighted(&self) -> bool {
+        self.header.has_flag(HeaderFlag::Weighted)
+    } 
 }

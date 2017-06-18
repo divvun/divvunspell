@@ -8,6 +8,7 @@ use std::cmp::Ordering::Equal;
 use transducer::Transducer;
 use transducer::tree_node::TreeNode;
 use speller::suggestion::Suggestion;
+use transducer::symbol_transition::SymbolTransition;
 use types::{SymbolNumber, Weight, FlagDiacriticOperation};
 
 type OperationMap = BTreeMap<SymbolNumber, FlagDiacriticOperation>;
@@ -16,28 +17,250 @@ type OperationMap = BTreeMap<SymbolNumber, FlagDiacriticOperation>;
 pub struct Speller<'a> {
     mutator: Transducer<'a>,
     lexicon: Transducer<'a>,
-    input: Vec<SymbolNumber>,
-    nodes: RefCell<Vec<TreeNode>>,
-    operations: RefCell<OperationMap>,
+    operations: OperationMap,
     alphabet_translator: Vec<SymbolNumber>
+}
+
+struct SpellerWorker<'a> {
+    speller: &'a Speller<'a>,
+    input: Vec<SymbolNumber>,
+    nodes: RefCell<Vec<TreeNode>>
+}
+
+impl<'a> SpellerWorker<'a> {
+    fn lexicon_epsilons(&self, next_node: &TreeNode) {
+        let lexicon = self.speller.lexicon();
+        let operations = self.speller.operations();
+        
+        if !lexicon.has_epsilons_or_flags(next_node.lexicon_state + 1) {
+            return
+        }
+
+        let mut next = lexicon.next(next_node.lexicon_state, 0).unwrap();
+        
+        while let Some(transition) = lexicon.take_epsilons_and_flags(next) {
+            // TODO: re-add weight limit checks
+            if let Some(sym) = lexicon.transition_table().input_symbol(next) {
+                if sym == 0 {
+                    // TODO: handle mode (Correct appears to force epsilon here)
+                    let mut nodes = self.nodes.borrow_mut();
+                    nodes.push(next_node.update_lexicon(transition));
+                } else if let Some(op) = operations.get(&sym) {
+                    let (is_success, applied_node) = next_node.apply_operation(op);
+
+                    if is_success {
+                        let epsilon_transition = transition.clone_with_epsilon_target();
+                        let mut nodes = self.nodes.borrow_mut();
+                        nodes.push(applied_node.update_lexicon(epsilon_transition));
+                    }
+                }
+            }
+
+            next += 1;
+        }
+    }
+
+    fn mutator_epsilons(&self, next_node: &TreeNode) {
+        let mutator = self.speller.mutator();
+        let lexicon = self.speller.lexicon();
+        let alphabet_translator = self.speller.alphabet_translator();
+        
+        if !mutator.has_transitions(next_node.mutator_state + 1, Some(0)) {
+            return
+        }
+
+        let mut next_m = mutator.next(next_node.mutator_state, 0).unwrap();
+
+        while let Some(transition) = mutator.take_epsilons(next_m) {
+            if let Some(0) = transition.symbol() {
+                // TODO weight limit
+                let mut nodes = self.nodes.borrow_mut();
+                nodes.push(next_node.update_mutator(transition));
+                next_m += 1;
+                continue;
+            }
+
+            if let Some(sym) = transition.symbol() {
+                let trans_sym = alphabet_translator[sym as usize];
+
+                if !lexicon.has_transitions(next_node.lexicon_state + 1, Some(trans_sym)) {
+                    // we have no regular transitions for this
+                    if trans_sym >= lexicon.alphabet().initial_symbol_count() {
+                        // this input was not originally in the alphabet, so unknown or identity
+                        // may apply
+                        if lexicon.has_transitions(next_node.lexicon_state + 1, lexicon.alphabet().unknown()) {
+                            self.queue_lexicon_arcs(&next_node, lexicon.alphabet().unknown().unwrap(), 
+                                    transition.target().unwrap(), transition.weight().unwrap(), 0)
+                        }
+
+                        if lexicon.has_transitions(next_node.lexicon_state + 1, lexicon.alphabet().identity()) {
+                            self.queue_lexicon_arcs(&next_node, lexicon.alphabet().identity().unwrap(),
+                                    transition.target().unwrap(), transition.weight().unwrap(), 0)
+                        }
+                    }
+
+                    next_m += 1;
+                    continue;
+                }
+
+                self.queue_lexicon_arcs(&next_node, trans_sym, 
+                        transition.target().unwrap(), transition.weight().unwrap(), 0);
+                next_m += 1;
+            }
+        }
+    }
+
+    pub fn queue_lexicon_arcs(&self, next_node: &TreeNode, input_sym: SymbolNumber, mutator_state: u32, mutator_weight: Weight, input_increment: i16) {
+        let lexicon = self.speller.lexicon();
+        let alphabet_translator = self.speller.alphabet_translator();
+        
+        let mut next = lexicon.next(next_node.lexicon_state, input_sym).unwrap();
+        
+        while let Some(noneps_trans) = lexicon.take_non_epsilons(next, input_sym) {
+            if let Some(mut sym) = noneps_trans.symbol() {
+                // TODO: wtf?
+                if lexicon.alphabet().identity() == noneps_trans.symbol() {
+                    sym = self.input[next_node.input_state as usize];
+                }
+
+                // TODO: weight limit
+                // TODO: handle Correct mode
+                let mut nodes = self.nodes.borrow_mut();
+                nodes.push(next_node.update(
+                    sym, 
+                    Some(next_node.input_state + input_increment as u32), 
+                    mutator_state,
+                    noneps_trans.target().unwrap(),
+                    noneps_trans.weight().unwrap()))
+            }
+
+            next += 1 
+        }
+    }
+
+    fn queue_mutator_arcs(&self, next_node: &TreeNode, input_sym: SymbolNumber) {
+        unimplemented!();
+        let mutator = self.speller.mutator();
+        let lexicon = self.speller.lexicon();
+        let alphabet_translator = self.speller.alphabet_translator();
+
+        let mut next_m = mutator.next(next_node.mutator_state, input_sym).unwrap();
+
+        while let Some(transition) = mutator.take_non_epsilons(next_m, input_sym) {
+            if let Some(0) = transition.symbol() {
+                let mut nodes = self.nodes.borrow_mut();
+                nodes.push(next_node.update(
+                        0,
+                        Some(next_node.input_state + 1),
+                        transition.target().unwrap(),
+                        next_node.lexicon_state,
+                        transition.weight().unwrap()));
+                next_m += 1;
+                continue;
+            }
+
+            if let Some(sym) = transition.symbol() {
+                let trans_sym = alphabet_translator[sym as usize];
+
+                if !lexicon.has_transitions(next_node.lexicon_state + 1, Some(trans_sym)) {
+                    if trans_sym >= lexicon.alphabet().initial_symbol_count() {
+                        if lexicon.has_transitions(next_node.lexicon_state + 1, lexicon.alphabet().unknown()) {
+                            self.queue_lexicon_arcs(&next_node, lexicon.alphabet().unknown().unwrap(),
+                                    transition.target().unwrap(), transition.weight().unwrap(), 1);
+                        }
+                        if lexicon.has_transitions(next_node.lexicon_state + 1, lexicon.alphabet().identity()) {
+                            self.queue_lexicon_arcs(&next_node, lexicon.alphabet().identity().unwrap(),
+                                    transition.target().unwrap(), transition.weight().unwrap(), 1);
+                        }
+                    }
+                    next_m += 1;
+                    continue;
+                }
+
+                self.queue_lexicon_arcs(&next_node, trans_sym, 
+                        transition.target().unwrap(), transition.weight().unwrap(), 1);
+                next_m += 1;
+            }
+            
+            
+            // TODO: weight limit
+
+        }
+
+        /*
+        TransitionTableIndex next_m = mutator->next(next_node.mutator_state, input_sym);
+        STransition mutator_i_s = mutator->take_non_epsilons(next_m, input_sym);
+        while (mutator_i_s.symbol != NO_SYMBOL) {
+            if (mutator_i_s.symbol == 0) {
+                if (is_under_weight_limit(next_node.weight + mutator_i_s.weight)) {
+                    queue.push_back(next_node.update(0, next_node.input_state + 1,
+                                                    mutator_i_s.index,
+                                                    next_node.lexicon_state,
+                                                    mutator_i_s.weight));
+                }
+                ++next_m;
+                mutator_i_s = mutator->take_non_epsilons(next_m, input_sym);
+                continue;
+            } else if (!lexicon->has_transitions(next_node.lexicon_state + 1, alphabet_translator[mutator_i_s.symbol])) {
+                // we have no regular transitions for this
+                if (alphabet_translator[mutator_i_s.symbol] >= lexicon->get_alphabet()->get_orig_symbol_count()) {
+                    // this input was not originally in the alphabet, so unknown or identity
+                    // may apply
+                    if (lexicon->get_unknown() != NO_SYMBOL && lexicon->has_transitions(next_node.lexicon_state + 1,  lexicon->get_unknown())) {
+                        queue_lexicon_arcs(lexicon->get_unknown(), mutator_i_s.index, mutator_i_s.weight, 1);
+                    }
+                    if (lexicon->get_identity() != NO_SYMBOL && lexicon->has_transitions(next_node.lexicon_state + 1, lexicon->get_identity())) {
+                        queue_lexicon_arcs(lexicon->get_identity(), mutator_i_s.index, mutator_i_s.weight, 1);
+                    }
+                }
+                ++next_m;
+                mutator_i_s = mutator->take_non_epsilons(next_m, input_sym);
+                continue;
+            }
+            queue_lexicon_arcs(alphabet_translator[mutator_i_s.symbol], mutator_i_s.index, mutator_i_s.weight, 1);
+            ++next_m;
+            mutator_i_s = mutator->take_non_epsilons(next_m, input_sym);
+        }
+        */
+    }
+
+    fn consume_input(&self, next_node: &TreeNode) {
+        let mutator = self.speller.mutator();
+        let lexicon = self.speller.lexicon();
+        let input_state = next_node.input_state as usize;
+
+        if input_state >= self.input.len() {
+            return;
+        }
+
+        let input_sym = self.input[input_state];
+
+        if !mutator.has_transitions(next_node.mutator_state + 1, Some(input_sym)) {
+            // we have no regular transitions for this
+            if input_sym >= mutator.alphabet().initial_symbol_count() {
+                if mutator.has_transitions(next_node.mutator_state + 1, mutator.alphabet().identity()) {
+                    self.queue_mutator_arcs(&next_node, mutator.alphabet().identity().unwrap());
+                }
+                if mutator.has_transitions(next_node.mutator_state + 1, mutator.alphabet().unknown()) {
+                    self.queue_mutator_arcs(&next_node, mutator.alphabet().unknown().unwrap());
+                }
+            }
+        } else {
+            self.queue_mutator_arcs(&next_node, input_sym);
+        }
+    }
 }
 
 impl<'a> Speller<'a> {
     pub fn new(mutator: Transducer<'a>, mut lexicon: Transducer<'a>) -> Speller<'a> {
         // TODO: review why this i16 -> u16 is happening
         let size = lexicon.alphabet().state_size() as i16;
-        let alphabet_translator: Vec<SymbolNumber>;
-        {
-            let mut alphabet = lexicon.mut_alphabet();
-            alphabet_translator = alphabet.create_translator_from(&mutator);
-        }
+        let alphabet_translator = lexicon.mut_alphabet().create_translator_from(&mutator);
         
         Speller {
             mutator: mutator,
             lexicon: lexicon,
-            input: vec![],
-            nodes: RefCell::new(vec![]),
-            operations: RefCell::new(BTreeMap::new()),
+            operations: BTreeMap::new(),
             alphabet_translator: alphabet_translator
         }
     }
@@ -50,151 +273,18 @@ impl<'a> Speller<'a> {
         &self.lexicon
     }
 
+    pub fn operations(&self) -> &OperationMap {
+        &self.operations
+    }
+
+    fn alphabet_translator(&self) -> &Vec<SymbolNumber> {
+        &self.alphabet_translator
+    }
+
     // TODO: this passthrough function really doesn't need to exist surely
     // Rename to lexicon_state_size?
     fn state_size(&self) -> SymbolNumber {
         self.lexicon.alphabet().state_size()
-    }
-
-    // TODO: move this to the Lexicon itself, this is stupid to be here.
-    fn lexicon_epsilons(lexicon: &'a Transducer<'a>, operations: &OperationMap, nodes: &mut Vec<TreeNode>, next_node: &TreeNode) {
-        if !lexicon.has_epsilons_or_flags(next_node.lexicon_state + 1) {
-            return
-        }
-
-        let mut next = lexicon.next(next_node.lexicon_state, 0);
-        let mut i_s = lexicon.take_epsilons_and_flags(next);
-        
-        while let Some(_) = i_s.symbol {
-            // TODO: re-add weight limit checks
-            match lexicon.transition_table().input_symbol(next) {
-                None => {
-                    // TODO: unwrap_or reqview
-                    let x = next_node.update_lexicon(i_s.symbol, i_s.index, i_s.weight.unwrap_or(0.0));
-                    
-                    nodes.push(x);
-                },
-                Some(sym) => {
-                    if let Some(op) = operations.get(&sym) {
-                        let (is_success, applied_node) = next_node.apply_operation(op);
-
-                        if is_success {
-                            nodes.push(applied_node.update_lexicon(None, i_s.index, i_s.weight.unwrap_or(0.0)));
-                        }
-                    }
-                }
-            };
-
-            next += 1;
-            i_s = lexicon.take_epsilons_and_flags(next);
-        }
-    }
-
-    fn mutator_epsilons(mutator: &Transducer, lexicon: &Transducer, alphabet_translator: &Vec<SymbolNumber>, nodes: &mut Vec<TreeNode>, next_node: &TreeNode) {
-        if !mutator.has_transitions(next_node.mutator_state + 1, Some(0)) {
-            return
-        }
-
-        let mut next_m = mutator.next(next_node.mutator_state, 0);
-        let mut mutator_i_s = mutator.take_epsilons(next_m);
-
-        while let Some(sym) = mutator_i_s.symbol {
-            if sym == 0 {
-                // TODO weight limit
-                nodes.push(next_node.update_mutator(mutator_i_s.index, mutator_i_s.weight.unwrap_or(0.0)));
-                next_m += 1;
-                mutator_i_s = mutator.take_epsilons(next_m);
-                continue;
-            }
-
-            let sym = alphabet_translator[mutator_i_s.symbol.unwrap_or(0) as usize];
-            
-            if !lexicon.has_transitions(next_node.lexicon_state + 1, Some(sym)) {
-                //if sym >= lexicon.alphabet().orig_symbol_count() {
-
-                //}
-
-                next_m += 1;
-                mutator_i_s = mutator.take_epsilons(next_m);
-                continue;
-            }
-
-            Speller::queue_lexicon_arcs(
-                sym, mutator_i_s.index, mutator_i_s.weight.unwrap_or(0.0), 0);
-            
-            next_m += 1;
-            mutator_i_s = mutator.take_epsilons(next_m);
-        }
-    }
-
-    pub fn queue_lexicon_arcs(input: SymbolNumber, mutator_state: u32, mutator_weight: Weight, input_increment: i16) {
-        /*
-        TransitionTableIndex next = lexicon->next(next_node.lexicon_state,
-                                              input_sym);
-        STransition i_s = lexicon->take_non_epsilons(next, input_sym);
-        while (i_s.symbol != NO_SYMBOL)
-        {
-            if (i_s.symbol == lexicon->get_identity())
-            {
-                i_s.symbol = input[next_node.input_state];
-            }
-            if (mode == Correct || is_under_weight_limit(next_node.weight + i_s.weight + mutator_weight))
-            {
-                node_queue.push_back(next_node.update(
-                                        (mode == Correct) ? input_sym : i_s.symbol,
-                                        next_node.input_state + input_increment,
-                                        mutator_state,
-                                        i_s.index,
-                                        i_s.weight + mutator_weight));
-            }
-            ++next;
-            i_s = lexicon->take_non_epsilons(next, input_sym);
-        }
-        */
-    }
-
-    fn consume_input(self, mutator: &Transducer, next_node: &TreeNode, input: &str) {
-        unimplemented!()
-        /*
-        let input_state = next_node.input_state as usize;
-
-        if input_state >= input.len() {
-            return;
-        }
-
-        let input_sym = input.chars().nth(input_state);
-
-        if !mutator.has_transitions(next_node.mutator_state + 1, input_sym) {
-            // we have no regular transitions for this
-
-        }
-        */
-        /*
-        if (next_node.input_state >= input.size()) {
-            return; // not enough input to consume
-        }
-        SymbolNumber input_sym = input[next_node.input_state];
-        if (!mutator->has_transitions(next_node.mutator_state + 1,
-                                    input_sym)) {
-            // we have no regular transitions for this
-            if (input_sym >= mutator->get_alphabet()->get_orig_symbol_count()) {
-                // this input was not originally in the alphabet, so unknown or identity
-                // may apply
-                if (mutator->get_identity() != NO_SYMBOL &&
-                    mutator->has_transitions(next_node.mutator_state + 1,
-                                            mutator->get_identity())) {
-                    queue_mutator_arcs(mutator->get_identity());
-                }
-                if (mutator->get_unknown() != NO_SYMBOL &&
-                    mutator->has_transitions(next_node.mutator_state + 1,
-                                            mutator->get_unknown())) {
-                    queue_mutator_arcs(mutator->get_unknown());
-                }
-            }
-        } else {
-            queue_mutator_arcs(input_sym);
-        }
-        */
     }
 
     // orig: init_input

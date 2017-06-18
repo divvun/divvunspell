@@ -43,7 +43,7 @@ impl<'a> IndexTable<'a> {
         if x == u32::MAX { None } else { Some(x) }
     }
 
-    fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight> {
+    pub fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight> {
         if i >= self.size {
             return None;
         }
