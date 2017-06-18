@@ -28,6 +28,14 @@ struct SpellerWorker<'a> {
 }
 
 impl<'a> SpellerWorker<'a> {
+    fn new(speller: &'a Speller<'a>) -> SpellerWorker<'a> {
+        SpellerWorker {
+            speller: speller,
+            input: vec![],
+            nodes: RefCell::new(vec![])
+        }
+    }
+
     fn lexicon_epsilons(&self, next_node: &TreeNode) {
         let lexicon = self.speller.lexicon();
         let operations = self.speller.operations();
@@ -139,7 +147,6 @@ impl<'a> SpellerWorker<'a> {
     }
 
     fn queue_mutator_arcs(&self, next_node: &TreeNode, input_sym: SymbolNumber) {
-        unimplemented!();
         let mutator = self.speller.mutator();
         let lexicon = self.speller.lexicon();
         let alphabet_translator = self.speller.alphabet_translator();
@@ -186,42 +193,6 @@ impl<'a> SpellerWorker<'a> {
             // TODO: weight limit
 
         }
-
-        /*
-        TransitionTableIndex next_m = mutator->next(next_node.mutator_state, input_sym);
-        STransition mutator_i_s = mutator->take_non_epsilons(next_m, input_sym);
-        while (mutator_i_s.symbol != NO_SYMBOL) {
-            if (mutator_i_s.symbol == 0) {
-                if (is_under_weight_limit(next_node.weight + mutator_i_s.weight)) {
-                    queue.push_back(next_node.update(0, next_node.input_state + 1,
-                                                    mutator_i_s.index,
-                                                    next_node.lexicon_state,
-                                                    mutator_i_s.weight));
-                }
-                ++next_m;
-                mutator_i_s = mutator->take_non_epsilons(next_m, input_sym);
-                continue;
-            } else if (!lexicon->has_transitions(next_node.lexicon_state + 1, alphabet_translator[mutator_i_s.symbol])) {
-                // we have no regular transitions for this
-                if (alphabet_translator[mutator_i_s.symbol] >= lexicon->get_alphabet()->get_orig_symbol_count()) {
-                    // this input was not originally in the alphabet, so unknown or identity
-                    // may apply
-                    if (lexicon->get_unknown() != NO_SYMBOL && lexicon->has_transitions(next_node.lexicon_state + 1,  lexicon->get_unknown())) {
-                        queue_lexicon_arcs(lexicon->get_unknown(), mutator_i_s.index, mutator_i_s.weight, 1);
-                    }
-                    if (lexicon->get_identity() != NO_SYMBOL && lexicon->has_transitions(next_node.lexicon_state + 1, lexicon->get_identity())) {
-                        queue_lexicon_arcs(lexicon->get_identity(), mutator_i_s.index, mutator_i_s.weight, 1);
-                    }
-                }
-                ++next_m;
-                mutator_i_s = mutator->take_non_epsilons(next_m, input_sym);
-                continue;
-            }
-            queue_lexicon_arcs(alphabet_translator[mutator_i_s.symbol], mutator_i_s.index, mutator_i_s.weight, 1);
-            ++next_m;
-            mutator_i_s = mutator->take_non_epsilons(next_m, input_sym);
-        }
-        */
     }
 
     fn consume_input(&self, next_node: &TreeNode) {
@@ -265,11 +236,11 @@ impl<'a> Speller<'a> {
         }
     }
 
-    pub fn mutator(&self) -> &'a Transducer {
+    pub fn mutator(&'a self) -> &Transducer {
         &self.mutator
     }
 
-    pub fn lexicon(&self) -> &'a Transducer {
+    pub fn lexicon(&'a self) -> &Transducer {
         &self.lexicon
     }
 
@@ -288,71 +259,77 @@ impl<'a> Speller<'a> {
     }
 
     // orig: init_input
-    fn to_input_vec(word: &str) -> Vec<SymbolNumber> {
-        unimplemented!()
+    fn to_input_vec(&'a self, word: &str) -> Vec<SymbolNumber> {
+        // TODO: refactor for when mutator is optional
+        let key_table = self.mutator().alphabet().key_table();
+
+        word.chars().filter_map(|ch| {
+            let s = ch.to_string();
+            key_table.iter().position(|x| x == &s)
+        }).map(|x| x as u16).collect()
+    }
+
+    pub fn test(&self) -> String {
+        String::from("Hello")
     }
 
     // Known as Speller::correct in C++    
-    pub fn suggest(&self, word: &str) -> Vec<String> {
-        unimplemented!()
-        // let correction_queue = BinaryHeap::<StringWeightPair>::new();
-        // let start_node = TreeNode::empty(vec![self.state_size() as i16, 0]);
+    pub fn suggest(&'a self, word: &str) -> Vec<String> {
+        let lexicon = self.lexicon();
+        let mutator = self.mutator();
 
-        // let mut nodes = self.nodes.borrow_mut();
-        // nodes.clear();
-        // nodes.push(start_node);
-
-        // let corrections = BTreeMap::<String, Weight>::new();
-
-        // let mut input = Speller::to_input_vec(word);
+        let mut worker = SpellerWorker::new(&self);
         
-        // while nodes.len() > 0 {
-        //     let next_node = nodes.pop().unwrap();
-        //     let lexicon = self.lexicon();
-        //     let mutator = self.mutator();
-            
-        //     Speller::lexicon_epsilons(lexicon, &self.operations.borrow(), &mut nodes, &next_node);
-        //     Speller::mutator_epsilons(mutator, lexicon, &self.alphabet_translator, &mut nodes, &next_node);
+        let start_node = TreeNode::empty(vec![self.state_size() as i16, 0]);
+        let mut nodes = worker.nodes.borrow_mut();
+        nodes.push(start_node);
+
+        let mut corrections = BTreeMap::<String, Weight>::new();
+        let mut input = self.to_input_vec(word);
         
-        //     if next_node.input_state as usize != input.len() {
-        //         self.consume_input(mutator, &next_node, &input);
-        //         continue;
-        //     }
+        while nodes.len() > 0 {
+            let next_node = nodes.pop().unwrap();
 
-        //     let m_final = mutator.is_final(next_node.mutator_state());
-        //     let l_final = lexicon.is_final(next_node.lexicon_state());
+            worker.lexicon_epsilons(&next_node);
+            worker.mutator_epsilons(&next_node);
+
+            if next_node.input_state as usize != input.len() {
+                worker.consume_input(&next_node);
+                continue;
+            }
+
+            let m_final = self.mutator().is_final(next_node.mutator_state);
+            let l_final = self.lexicon().is_final(next_node.lexicon_state);
             
-        //     if !(m_final && l_final) {
-        //         continue;
-        //     }
+            if !(m_final && l_final) {
+                continue;
+            }
 
-        //     let weight = next_node.weight() + 
-        //         lexicon.final_weight(next_node.lexicon_state()) + 
-        //         mutator.final_weight(next_node.mutator_state());
+            let weight = next_node.weight + 
+                self.lexicon().final_weight(next_node.lexicon_state).unwrap() + 
+                self.mutator().final_weight(next_node.mutator_state).unwrap();
             
-        //     // if weight > limit { }
+            // if weight > limit { }
+            let key_table = self.lexicon().alphabet().key_table();
+            let string: String = next_node.string.iter().map(|&s| key_table[s as usize].to_string()).collect();
 
-        //     let string = to_string(lexicon.key_table(), next_node.string());
+            let entry = corrections.entry(string).or_insert(weight);
 
-        //     corrections.entry(string).or_insert(weight);
+            if *entry > weight {
+                *entry = weight;
+            }
+        }
 
-        //     if corrections[string] > weight {
-        //         corrections[string] = weight;
-        //     }
-        // }
+        let mut c: Vec<StringWeightPair> = corrections
+            .into_iter()
+            .map(|x| StringWeightPair(x.0, x.1))
+            .collect();
+        
+        c.sort();
 
-        // for (string, weight) in corrections {
-        //     correction_queue.push(StringWeightPair(string, weight));
-        // }
-
-        // return correction_queue.into_sorted_vec();
+        c.into_iter().map(|x| x.0).collect()
     }
 }
-
-// TODO: what was I thinking here?
-// fn to_string(key_table: &Vec<String>, symbols: &Vec<SymbolNumber>) -> String {
-//     symbols.iter().map(|s| key_table[s]).collect()
-// }
 
 struct StringWeightPair(String, Weight);
 
@@ -376,9 +353,8 @@ impl PartialEq for StringWeightPair {
     }
 }
 
-
 impl<'a> Drop for Speller<'a> {
     fn drop(&mut self) {
-        // println!("Dropped: {:?}", self);
+        println!("Dropped: {:?}", self);
     }
 }

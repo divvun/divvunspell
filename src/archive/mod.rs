@@ -35,7 +35,7 @@ fn slice_by_name<'a, R: Read + Seek>(archive: &mut ZipArchive<R>, slice: &'a [u8
 }
 
 impl<'a> SpellerArchive<'a> {
-    pub fn new(file_path: &str) -> SpellerArchive<'a> {
+    pub fn new(file_path: &str) -> SpellerArchive {
         let mmap = Mmap::open_path(file_path, Protection::Read).unwrap();
         let slice = unsafe { slice::from_raw_parts(mmap.ptr(), mmap.len()) };
 
@@ -61,7 +61,7 @@ impl<'a> SpellerArchive<'a> {
         }
     }
 
-    pub fn speller(&self) -> &'a Speller {
+    pub fn speller(&self) -> &Speller<'a> {
         &self.speller
     }
 

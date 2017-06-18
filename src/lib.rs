@@ -11,3 +11,10 @@ pub mod ffi;
 pub mod transducer;
 pub mod types;
 pub mod speller;
+
+#[test]
+fn test_load_zhfst() {
+    let zhfst = archive::SpellerArchive::new("./sma-store.zhfst");
+    let two = zhfst.speller();
+    let res = two.suggest("sami");
+}
