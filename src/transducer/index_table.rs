@@ -1,21 +1,22 @@
 use byteorder::{LittleEndian, BigEndian, ReadBytesExt};
 use std::io::Cursor;
-use std::mem;
+use std::{mem, u16, u32};
 
-use types::{TransitionTableIndex, SymbolNumber};
+use types::{TransitionTableIndex, SymbolNumber, Weight};
 use constants::TRANS_INDEX_SIZE;
+use std::cell::{RefCell, RefMut};
 
 #[derive(Debug)]
 pub struct IndexTable<'a> {
-    buf: &'a [u8],
-    size: TransitionTableIndex
+    size: TransitionTableIndex,
+    cursor: RefCell<Cursor<&'a [u8]>>
 }
 
 impl<'a> IndexTable<'a> {
     pub fn new(buf: &[u8], size: TransitionTableIndex) -> IndexTable {
         IndexTable {
-            buf: buf,
-            size: size
+            size: size,
+            cursor: RefCell::new(Cursor::new(buf))
         }
     }
 
@@ -24,17 +25,10 @@ impl<'a> IndexTable<'a> {
             return None;
         }
 
-        let mut rdr = Cursor::new(self.buf);
-        let index: u64 = TRANS_INDEX_SIZE as u64 * i as u64;
-
-        rdr.set_position(index);
-        let symbol = rdr.read_u16::<LittleEndian>().unwrap();
-
-        if symbol == SymbolNumber::max_value() {
-            return None;
-        }
-
-        Some(symbol)
+        let mut cursor = self.cursor.borrow_mut();
+        cursor.set_position(TRANS_INDEX_SIZE as u64 * i as u64);
+        let x = cursor.read_u16::<LittleEndian>().unwrap();
+        if x == u16::MAX { None } else { Some(x) }
     }
 
     pub fn target(&self, i: TransitionTableIndex) -> Option<TransitionTableIndex> {
@@ -42,34 +36,26 @@ impl<'a> IndexTable<'a> {
             return None;
         }
 
-        let mut rdr = Cursor::new(self.buf);
         let index: u64 = (TRANS_INDEX_SIZE * (i as usize) + mem::size_of::<SymbolNumber>()) as u64;
-
-        rdr.set_position(index);
-        let trans = rdr.read_u32::<LittleEndian>().unwrap();
-
-        if trans == TransitionTableIndex::max_value() {
-            return None;
-        }
-
-        Some(trans)
+        let mut cursor = self.cursor.borrow_mut();
+        cursor.set_position(index);
+        let x = cursor.read_u32::<LittleEndian>().unwrap();
+        if x == u32::MAX { None } else { Some(x) }
     }
 
-    /*
     fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight> {
         if i >= self.size {
             return None;
         }
 
-        let mut rdr = Cursor::new(self.buf);
-        let index: u64 = (TRANS_INDEX_SIZE() * (i as usize) + mem::size_of::<SymbolNumber>()) as u64;
-
-        rdr.set_position(index);
-        let weight = rdr.read_Weight::<LittleEndian>().unwrap();
-
-        Some(weight)
+        // BUG: see below
+        // TODO: this is the same as target, and therefore probably a bug
+        
+        let index: u64 = (TRANS_INDEX_SIZE * (i as usize) + mem::size_of::<SymbolNumber>()) as u64;
+        let mut cursor = self.cursor.borrow_mut();
+        cursor.set_position(index);
+        Some(cursor.read_f32::<LittleEndian>().unwrap())
     }
-    */
 
     pub fn is_final(&self, i: TransitionTableIndex) -> bool {
         self.input_symbol(i) == None && self.target(i) != None

@@ -61,11 +61,11 @@ impl<'a> SpellerArchive<'a> {
         }
     }
 
-    pub fn speller(&self) -> &Speller {
-        return &self.speller
+    pub fn speller(&self) -> &'a Speller {
+        &self.speller
     }
 
     pub fn metadata(&self) -> &SpellerMetadata {
-        return &self.metadata
+        &self.metadata
     }
 }

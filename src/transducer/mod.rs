@@ -27,14 +27,16 @@ pub struct Transducer<'a> {
 impl<'a> Transducer<'a> {
     pub fn from_bytes(buf: &[u8]) -> Transducer {
         let header = TransducerHeader::new(&buf);
-        let alphabet = TransducerAlphabet::new(&buf[header.alphabet_offset..buf.len()], header.symbols);
+        let alphabet_offset = header.alphabet_offset();
+        let alphabet = TransducerAlphabet::new(&buf[alphabet_offset..buf.len()], header.symbol_count());
 
-        let index_table_offset = header.alphabet_offset + alphabet.length;
-        let index_table_end = index_table_offset + TRANS_INDEX_SIZE * header.trans_index_table;
-        let index_table = IndexTable::new(&buf[index_table_offset..index_table_end], header.trans_index_table as u32);
+        let index_table_offset = alphabet_offset + alphabet.length();
+        
+        let index_table_end = index_table_offset + TRANS_INDEX_SIZE * header.index_table_size();
+        let index_table = IndexTable::new(&buf[index_table_offset..index_table_end], header.index_table_size() as u32);
 
-        let trans_table_end = index_table_end + TRANS_SIZE * header.trans_target_table;
-        let trans_table = TransitionTable::new(&buf[index_table_end..trans_table_end], header.trans_target_table as u32);
+        let trans_table_end = index_table_end + TRANS_SIZE * header.target_table_size();
+        let trans_table = TransitionTable::new(&buf[index_table_end..trans_table_end], header.target_table_size() as u32);
 
         Transducer {
             buf: buf,
@@ -45,11 +47,11 @@ impl<'a> Transducer<'a> {
         }
     }
 
-    pub fn index_table(&self) -> &IndexTable {
+    pub fn index_table(&self) -> &'a IndexTable {
         &self.index_table
     }
 
-    pub fn transition_table(&self) -> &TransitionTable {
+    pub fn transition_table(&self) -> &'a TransitionTable {
         &self.transition_table
     }
 
@@ -102,8 +104,8 @@ impl<'a> Transducer<'a> {
 
     pub fn take_epsilons(&self, i: TransitionTableIndex) -> SymbolTransition {
         // TODO IMPLEMENT
-
-        self.take_epsilons_and_flags(i)
+        unimplemented!()
+        //self.take_epsilons_and_flags(i)
     }
 
     pub fn take_epsilons_and_flags(&self, i: TransitionTableIndex) -> SymbolTransition {
@@ -184,5 +186,9 @@ impl<'a> Transducer<'a> {
 
     pub fn alphabet(&self) -> &TransducerAlphabet {
         &self.alphabet
+    }
+
+    pub fn mut_alphabet(&mut self) -> &mut TransducerAlphabet {
+        &mut self.alphabet
     }
 }

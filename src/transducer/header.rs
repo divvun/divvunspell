@@ -1,19 +1,19 @@
 use byteorder::{LittleEndian, BigEndian, ReadBytesExt};
 use std::io::Cursor;
 
-use types::{SymbolNumber, TransitionTableIndex};
+use types::{SymbolNumber, TransitionTableIndex, HeaderFlag};
 
 #[derive(Debug)]
 pub struct TransducerHeader {
-    pub symbols: SymbolNumber,
-    pub input_symbols: SymbolNumber,
-    pub trans_index_table: usize,
-    pub trans_target_table: usize,
-    pub states: TransitionTableIndex,
-    pub transitions: TransitionTableIndex,
+    symbols: SymbolNumber,
+    input_symbols: SymbolNumber,
+    trans_index_table: usize,
+    trans_target_table: usize,
+    states: TransitionTableIndex,
+    transitions: TransitionTableIndex,
 
     properties: [bool; 9],
-    pub alphabet_offset: usize
+    alphabet_offset: usize
 }
 
 impl TransducerHeader {
@@ -58,5 +58,37 @@ impl TransducerHeader {
 
             alphabet_offset: rdr.position() as usize
         }
+    }
+
+    pub fn symbol_count(&self) -> SymbolNumber {
+        self.symbols
+    }
+
+    pub fn input_symbol_count(&self) -> SymbolNumber {
+        self.input_symbols
+    }
+
+    pub fn index_table_size(&self) -> usize {
+        self.trans_index_table
+    }
+
+    pub fn target_table_size(&self) -> usize {
+        self.trans_target_table
+    }
+
+    pub fn has_flag(&self, flag: HeaderFlag) -> bool {
+        self.properties[flag as usize]
+    }
+
+    pub fn states(&self) -> TransitionTableIndex {
+        self.states
+    }
+
+    pub fn transitions(&self) -> TransitionTableIndex {
+        self.transitions
+    }
+
+    pub fn alphabet_offset(&self) -> usize {
+        self.alphabet_offset
     }
 }
