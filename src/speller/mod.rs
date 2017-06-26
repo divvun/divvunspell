@@ -421,7 +421,7 @@ impl<'data, 'a> Speller<'data> where 'data: 'a {
     }
 
     // Known as Speller::correct in C++
-    pub fn suggest(&'a self, word: &str) -> Vec<String> {
+    pub fn suggest(&'a self, word: &str) -> Vec<Suggestion> {
         let mut input = self.to_input_vec(word);
         let mut worker = SpellerWorker::new(&self, SpellerWorkerMode::Correct, input);
 
@@ -473,41 +473,14 @@ impl<'data, 'a> Speller<'data> where 'data: 'a {
 
         debug!("Here we go!");
 
-        let mut c: Vec<StringWeightPair> = corrections
+        let mut c: Vec<Suggestion> = corrections
             .into_iter()
-            .map(|x| StringWeightPair(x.0, x.1))
+            .map(|x| Suggestion::new(x.0, x.1))
             .collect();
 
         c.sort();
 
-        c.into_iter().map(|x| x.0).collect()
+        c
     }
 }
 
-struct StringWeightPair(String, Weight);
-
-impl Eq for StringWeightPair {}
-
-impl Ord for StringWeightPair {
-    fn cmp(&self, other: &StringWeightPair) -> Ordering {
-        self.1.partial_cmp(&other.1).unwrap_or(Equal)
-    }
-}
-
-impl PartialOrd for StringWeightPair {
-    fn partial_cmp(&self, other: &StringWeightPair) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for StringWeightPair {
-    fn eq(&self, other: &StringWeightPair) -> bool {
-        self.1 == other.1
-    }
-}
-
-impl<'data> Drop for Speller<'data> {
-    fn drop(&mut self) {
-        //debug!("Dropped: {:?}", self);
-    }
-}
