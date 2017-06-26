@@ -4,7 +4,7 @@ use types::{
     Weight
 };
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct SymbolTransition {
     target: Option<TransitionTableIndex>,
     symbol: Option<SymbolNumber>,

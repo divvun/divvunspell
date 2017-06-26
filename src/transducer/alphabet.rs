@@ -4,7 +4,7 @@ use super::Transducer;
 
 type OperationsMap = BTreeMap<SymbolNumber, FlagDiacriticOperation>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct TransducerAlphabet {
     key_table: Vec<String>,
     initial_symbol_count: SymbolNumber,
@@ -49,9 +49,10 @@ impl TransducerAlphabetParser {
 
     fn handle_special_symbol(&mut self, i: SymbolNumber, key: &str) {
         let mut chunks = key.split('.');
-        let fdo = FlagDiacriticOperator::from_str(chunks.next().unwrap()).unwrap();
+        //println!("chunks: {:?}", chunks);
+        let fdo = FlagDiacriticOperator::from_str(&chunks.next().unwrap()[1..]).unwrap();
         let feature = chunks.next().unwrap_or("").to_string();
-        let value = chunks.next().unwrap_or("").to_string();
+        let value = chunks.next().unwrap_or("").to_string().chars().filter(|x| x != &'@').collect();
 
         let mut incr_feat = false;
         let mut incr_val = false;
@@ -86,7 +87,7 @@ impl TransducerAlphabetParser {
     fn parse_inner(&mut self, buf: &[u8], symbols: SymbolNumber) {
         let mut offset = 0usize;
 
-        for i in 1..symbols {
+        for i in 0..symbols {
             let mut end = 0usize;
 
             while buf[offset + end] != 0 {
@@ -94,6 +95,7 @@ impl TransducerAlphabetParser {
             }
 
             let key = String::from_utf8_lossy(&buf[offset..offset+end]).into_owned();
+            //println!("{}", key);
 
             if key.starts_with("@") && key.ends_with("@") {
                 if key.chars().nth(2).unwrap() == '.' {
@@ -112,8 +114,6 @@ impl TransducerAlphabetParser {
                     // No idea, skip.
                     self.key_table.push(String::from(""));
                 }
-
-                continue;
             } else {
                 self.key_table.push(key.to_string());
                 self.string_to_symbol.insert(key, i);

@@ -6,14 +6,17 @@ use types::{TransitionTableIndex, SymbolNumber, Weight};
 use constants::TRANS_INDEX_SIZE;
 use std::cell::{RefCell, RefMut};
 
-#[derive(Debug, Clone)]
-pub struct IndexTable<'a> {
+#[derive(Debug)]
+pub struct IndexTable<'data> {
     size: TransitionTableIndex,
-    cursor: RefCell<Cursor<&'a [u8]>>
+    cursor: RefCell<Cursor<&'data [u8]>>
 }
 
-impl<'a> IndexTable<'a> {
+impl<'data> IndexTable<'data> {
     pub fn new(buf: &[u8], size: TransitionTableIndex) -> IndexTable {
+        //let o: Vec<i8> = buf[0..16].iter().map(|x| *x as i8).collect();
+        println!("IndexTable: {:?}", &buf[0..32]);
+
         IndexTable {
             size: size,
             cursor: RefCell::new(Cursor::new(buf))
@@ -24,9 +27,9 @@ impl<'a> IndexTable<'a> {
         if i >= self.size {
             return None;
         }
-
+        let index = TRANS_INDEX_SIZE * i as usize;
         let mut cursor = self.cursor.borrow_mut();
-        cursor.set_position(TRANS_INDEX_SIZE as u64 * i as u64);
+        cursor.set_position(index as u64);
         let x = cursor.read_u16::<LittleEndian>().unwrap();
         if x == u16::MAX { None } else { Some(x) }
     }

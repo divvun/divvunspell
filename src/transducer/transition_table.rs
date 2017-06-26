@@ -8,13 +8,13 @@ use constants::{TRANS_SIZE, TRANS_INDEX_SIZE};
 
 use transducer::symbol_transition::SymbolTransition;
 
-#[derive(Debug, Clone)]
-pub struct TransitionTable<'a> {
+#[derive(Debug)]
+pub struct TransitionTable<'data> {
     size: TransitionTableIndex,
-    cursor: RefCell<Cursor<&'a [u8]>>
+    cursor: RefCell<Cursor<&'data [u8]>>
 }
 
-impl<'a> TransitionTable<'a> {
+impl<'data> TransitionTable<'data> {
     pub fn new(buf: &[u8], size: u32) -> TransitionTable {
         TransitionTable {
             size: size,

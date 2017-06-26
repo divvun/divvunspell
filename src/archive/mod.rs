@@ -10,11 +10,11 @@ use self::meta::SpellerMetadata;
 use transducer::Transducer;
 use speller::Speller;
 
-pub struct SpellerArchive<'a> {
+pub struct SpellerArchive<'data> {
     #[allow(dead_code)]
     handle: Mmap,
     metadata: SpellerMetadata,
-    speller: Speller<'a>
+    speller: Speller<'data>
 }
 
 #[inline]
@@ -23,7 +23,7 @@ fn partial_slice(slice: &[u8], start: usize, offset: usize) -> &[u8] {
     &slice[start..end]
 }
 
-fn slice_by_name<'a, R: Read + Seek>(archive: &mut ZipArchive<R>, slice: &'a [u8], name: &str) -> &'a [u8] {
+fn slice_by_name<'data, R: Read + Seek>(archive: &mut ZipArchive<R>, slice: &'data [u8], name: &str) -> &'data [u8] {
     let index = archive.by_name(name).unwrap();
 
     if index.compressed_size() != index.size() {
@@ -34,7 +34,7 @@ fn slice_by_name<'a, R: Read + Seek>(archive: &mut ZipArchive<R>, slice: &'a [u8
     partial_slice(&slice, index.data_start() as usize, index.size() as usize)
 }
 
-impl<'a> SpellerArchive<'a> {
+impl<'data> SpellerArchive<'data> {
     pub fn new(file_path: &str) -> SpellerArchive {
         let mmap = Mmap::open_path(file_path, Protection::Read).unwrap();
         let slice = unsafe { slice::from_raw_parts(mmap.ptr(), mmap.len()) };
@@ -61,7 +61,7 @@ impl<'a> SpellerArchive<'a> {
         }
     }
 
-    pub fn speller<'b>(&'b self) -> &'b Speller<'a> where 'a: 'b {
+    pub fn speller<'a>(&'a self) -> &'a Speller<'data> where 'data: 'a {
         &self.speller
     }
 
