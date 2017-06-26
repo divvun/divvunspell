@@ -32,10 +32,10 @@ impl SymbolTransition {
         self.weight
     }
 
-    pub fn clone_with_epsilon_target(&self) -> SymbolTransition {
+    pub fn clone_with_epsilon_symbol(&self) -> SymbolTransition {
         SymbolTransition {
-            target: Some(0),
-            symbol: self.symbol,
+            target: self.target,
+            symbol: Some(0),
             weight: self.weight
         }
     }

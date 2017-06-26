@@ -15,7 +15,7 @@ pub struct IndexTable<'data> {
 impl<'data> IndexTable<'data> {
     pub fn new(buf: &[u8], size: TransitionTableIndex) -> IndexTable {
         //let o: Vec<i8> = buf[0..16].iter().map(|x| *x as i8).collect();
-        println!("IndexTable: {:?}", &buf[0..32]);
+        debug!("IndexTable: {:?}", &buf[0..32]);
 
         IndexTable {
             size: size,

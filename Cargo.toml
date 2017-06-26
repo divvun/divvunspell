@@ -16,3 +16,8 @@ serde = "0.9"
 serde_derive = "0.9"
 serde-xml-rs = "0.1"
 zip = { git = "https://github.com/mvdnes/zip-rs.git", default-features = false }
+log = "0.3.7"
+env_logger = "0.4.3"
+
+[dev-dependencies]
+lazy_static = "*"

@@ -46,11 +46,11 @@ impl<T> IntoCVec for Vec<T> {
 
 impl<T> Drop for CVec<T> {
     fn drop(&mut self) {
-        println!("Dropped cvec");
+        debug!("Dropped cvec");
     }
 }
 
-#[test]
+//#[test]
 fn test_convert_vec() {
     let test = vec!["this".to_string(), "works".to_string()];
 

@@ -35,7 +35,9 @@ impl<'data> TransitionTable<'data> {
         }
 
         let index: u64 = TRANS_SIZE as u64 * i as u64;
-        self.read_symbol_from_cursor(index)
+        let sym = self.read_symbol_from_cursor(index);
+        debug!("input_symbol: {:?}", sym);
+        sym
     }
 
     pub fn output_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
@@ -74,6 +76,8 @@ impl<'data> TransitionTable<'data> {
     }
 
     pub fn is_final(&self, i: TransitionTableIndex) -> bool {
+        debug!("transition_final: i:{} is:{:?} os:{:?} t:{:?}", i, self.input_symbol(i), self.output_symbol(i), self.target(i));
+        
         self.input_symbol(i) == None &&
             self.output_symbol(i) == None &&
             self.target(i) == Some(1)

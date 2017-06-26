@@ -5,6 +5,11 @@ extern crate memmap;
 extern crate byteorder;
 extern crate zip;
 
+#[macro_use] extern crate log;
+extern crate env_logger;
+
+#[macro_use] extern crate lazy_static;
+
 pub mod archive;
 pub mod constants;
 pub mod ffi;
@@ -12,12 +17,21 @@ pub mod transducer;
 pub mod types;
 pub mod speller;
 
+use std::collections::HashMap;
+use log::{LogRecord, LogLevelFilter};
+use env_logger::LogBuilder;
+use std::sync::Mutex;
+
+lazy_static! {
+    static ref COUNTER: Mutex<HashMap<&'static str, u32>> = Mutex::new(HashMap::new());
+}
+
 // #[test]
 // fn test_load_zhfst() {
 //     let zhfst = archive::SpellerArchive::new("./se-store.zhfst");
 //     let two = zhfst.speller();
 //     let res = two.suggest("sami");
-//     println!("{:?}", res);
+//     debug!("{:?}", res);
 // }
 
 #[test]
@@ -28,17 +42,26 @@ fn test_speller() {
     use speller::Speller;
     use transducer::Transducer;
 
-    let acceptor = File::open("./sp/acceptor.default.hfst").unwrap();
+    use COUNTER;
+
+    // let format = |record: &LogRecord| {
+    //     format!("[{}] {} ({}:{})", record.level(), record.args(), record.location().file(), record.location().line())
+    // };
+    // let mut builder = LogBuilder::new();
+    // builder.format(format).filter(None, LogLevelFilter::Debug).init().unwrap();
+
+    let acceptor = File::open("./se/acceptor.default.hfst").unwrap();
     let mut acceptor_buf = vec![];
     let _ = BufReader::new(acceptor).read_to_end(&mut acceptor_buf);
 
-    let errmodel = File::open("./sp/errmodel.default.hfst").unwrap();
+    let errmodel = File::open("./se/errmodel.default.hfst").unwrap();
     let mut errmodel_buf = vec![];
     let _ = BufReader::new(errmodel).read_to_end(&mut errmodel_buf);
 
-    let mutator = Transducer::from_bytes(&acceptor_buf);
-    let lexicon = Transducer::from_bytes(&errmodel_buf);
+    let lexicon = Transducer::from_bytes(&acceptor_buf);
+    let mutator = Transducer::from_bytes(&errmodel_buf);
 
-    let speller = Speller::new(lexicon, mutator);//, lexicon);
-    println!("{:?}", speller.suggest("ol"));
+    let speller = Speller::new(mutator, lexicon);
+    println!("{:?}", speller.suggest("viegažeahppz"));
+    println!("{:?}", *COUNTER.lock().unwrap());
 }

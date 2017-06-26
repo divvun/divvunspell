@@ -18,7 +18,6 @@ type OperationMap = BTreeMap<SymbolNumber, FlagDiacriticOperation>;
 pub struct Speller<'data> {
     mutator: Transducer<'data>,
     lexicon: Transducer<'data>,
-    operations: OperationMap,
     alphabet_translator: Vec<SymbolNumber>
 }
 
@@ -27,6 +26,14 @@ struct SpellerWorker<'data, 'a> where 'data: 'a {
     input: Vec<SymbolNumber>,
     nodes: Rc<RefCell<Vec<TreeNode>>>,
     mode: SpellerWorkerMode
+}
+
+fn debug_incr(key: &'static str) {
+    debug!("{}", key);
+    use COUNTER;
+    let mut c = COUNTER.lock().unwrap();
+    let mut entry = c.entry(key).or_insert(0);
+    *entry += 1;
 }
 
 impl<'data, 'a> SpellerWorker<'data, 'a> where 'data: 'a {
@@ -40,15 +47,18 @@ impl<'data, 'a> SpellerWorker<'data, 'a> where 'data: 'a {
     }
 
     fn lexicon_epsilons(&'a self, next_node: &TreeNode) {
+        debug_incr("lexicon_epsilons");
+        
+        debug!("Begin lexicon epsilons");
+
         let lexicon: &'a Transducer<'data> = &self.speller.lexicon;
-        let operations = self.speller.operations();
+        let operations = lexicon.alphabet().operations();
 
         if !lexicon.has_epsilons_or_flags(next_node.lexicon_state + 1) {
-            println!("No epsilons or flags, bye!");
+            debug!("Has no epsilons or flags, returning");
             return
         }
 
-        println!("lexicon_eps next: {}", next_node.lexicon_state);
         let mut next = lexicon.next(next_node.lexicon_state, 0).unwrap();
 
         while let Some(transition) = lexicon.take_epsilons_and_flags(next) {
@@ -57,18 +67,28 @@ impl<'data, 'a> SpellerWorker<'data, 'a> where 'data: 'a {
                     if sym == 0 {
                         let mut nodes = self.nodes.borrow_mut();
                         if let SpellerWorkerMode::Correct = self.mode {
-                            let epsilon_transition = transition.clone_with_epsilon_target();
+                            let epsilon_transition = transition.clone_with_epsilon_symbol();
+                            debug_incr("lexicon_epsilons push node epsilon_transition CORRECT MODE");
                             nodes.push(next_node.update_lexicon(epsilon_transition));
                         } else {
+                            debug_incr("lexicon_epsilons push node transition");
                             nodes.push(next_node.update_lexicon(transition));
                         }
-                    } else if let Some(op) = operations.get(&sym) {
-                        let (is_success, applied_node) = next_node.apply_operation(op);
+                    } else {
+                        let operation = operations.get(&sym);
+                        println!("{}: {:?}", sym, operation);
 
-                        if is_success {
-                            let mut nodes = self.nodes.borrow_mut();
-                            let epsilon_transition = transition.clone_with_epsilon_target();
-                            nodes.push(applied_node.update_lexicon(epsilon_transition));
+                        if let Some(op) = operation {
+                            let (is_success, applied_node) = next_node.apply_operation(op);
+
+                            debug_incr(if is_success { "is_success" } else { "isnt_success" });
+
+                            if is_success {
+                                let mut nodes = self.nodes.borrow_mut();
+                                let epsilon_transition = transition.clone_with_epsilon_symbol();
+                                debug_incr("lexicon_epsilons push node cloned with eps target epsilon_transition");
+                                nodes.push(applied_node.update_lexicon(epsilon_transition));
+                            }
                         }
                     }
                 }
@@ -76,26 +96,34 @@ impl<'data, 'a> SpellerWorker<'data, 'a> where 'data: 'a {
 
             next += 1;
         }
+
+        debug!("lexicon epsilons, nodes length: {}", self.nodes.borrow().len());
     }
 
     fn mutator_epsilons(&self, next_node: &TreeNode) {
+        debug_incr("mutator_epsilons");
+        // debug!("Begin mutator epsilons");
+
         let mutator = self.speller.mutator();
         let lexicon = self.speller.lexicon();
         let alphabet_translator = self.speller.alphabet_translator();
 
         if !mutator.has_transitions(next_node.mutator_state + 1, Some(0)) {
+            debug!("Mutator has no transitions, skipping");
             return
         }
 
         let mut next_m = mutator.next(next_node.mutator_state, 0).unwrap();
 
         while let Some(transition) = mutator.take_epsilons(next_m) {
-            //println!("trans mut next: {}", next_m);
-            //println!("{}", next_node.weight);
+            //debug!("trans mut next: {}", next_m);
+            //debug!("{}", next_node.weight);
+            // debug!("Current taken epsilon: {}", next_m);
 
             if let Some(0) = transition.symbol() {
                 if self.is_under_weight_limit(next_node.weight + transition.weight().unwrap()) {
                     let mut nodes = self.nodes.borrow_mut();
+                    debug_incr("mutator_epsilons push node update_mutator transition");
                     nodes.push(next_node.update_mutator(transition));
                 }
                 
@@ -112,11 +140,13 @@ impl<'data, 'a> SpellerWorker<'data, 'a> where 'data: 'a {
                         // this input was not originally in the alphabet, so unknown or identity
                         // may apply
                         if lexicon.has_transitions(next_node.lexicon_state + 1, lexicon.alphabet().unknown()) {
+                            debug_incr("qla unknown mutator_eps");
                             self.queue_lexicon_arcs(&next_node, lexicon.alphabet().unknown().unwrap(),
                                     transition.target().unwrap(), transition.weight().unwrap(), 0)
                         }
 
                         if lexicon.has_transitions(next_node.lexicon_state + 1, lexicon.alphabet().identity()) {
+                            debug_incr("qla identity mutator_eps");
                             self.queue_lexicon_arcs(&next_node, lexicon.alphabet().identity().unwrap(),
                                     transition.target().unwrap(), transition.weight().unwrap(), 0)
                         }
@@ -126,45 +156,53 @@ impl<'data, 'a> SpellerWorker<'data, 'a> where 'data: 'a {
                     continue;
                 }
 
+                debug_incr("qla alpha_trans mutator_eps");
                 self.queue_lexicon_arcs(&next_node, trans_sym,
                         transition.target().unwrap(), transition.weight().unwrap(), 0);
             }
 
             next_m += 1;
         }
+
+        debug!("mutator epsilons, nodes length: {}", self.nodes.borrow().len());
+
+        // debug!("End mutator epsilons");
     }
 
     pub fn queue_lexicon_arcs(&self, next_node: &TreeNode, input_sym: SymbolNumber, mutator_state: u32, mutator_weight: Weight, input_increment: i16) {
-        println!("next_node lexstate:{}", next_node.lexicon_state);
+        debug!("Begin queue lexicon arcs");
+        //debug!("next_node lexstate:{}", next_node.lexicon_state);
 
         let lexicon = self.speller.lexicon();
         let alphabet_translator = self.speller.alphabet_translator();
 
         let mut next = lexicon.next(next_node.lexicon_state, input_sym).unwrap();
-        println!("next: {}", next);
+        //debug!("next: {}", next);
 
         let identity = lexicon.alphabet().identity();
 
         while let Some(noneps_trans) = lexicon.take_non_epsilons(next, input_sym) {
-            println!("noneps next: {:?}", &noneps_trans);
+            //debug!("noneps next: {:?}", &noneps_trans);
+            debug!("qla noneps input_sym:{}, next: {}, t:{} s:{} w:{}", input_sym, next, noneps_trans.target().unwrap(), noneps_trans.symbol().unwrap(), noneps_trans.weight().unwrap());
+
             if let Some(mut sym) = noneps_trans.symbol() {
                 // TODO: wtf?
                 if let Some(id) = identity {
-                    if (sym == id) {
+                    if sym == id {
                         sym = self.input[next_node.input_state as usize];
                     }
                 }
 
-                //println!("{}: {} {} {} n:{}", next, sym, next_node.weight, mutator_weight, self.nodes.borrow().len());
+                //debug!("{}: {} {} {} n:{}", next, sym, next_node.weight, mutator_weight, self.nodes.borrow().len());
 
-                let next_sym = if let SpellerWorkerMode::Correct = self.mode {
-                    input_sym
-                } else {
-                    sym
+                let next_sym = match &self.mode {
+                    Correct => input_sym,
+                    _ => sym
                 };
 
                 if self.is_under_weight_limit(next_node.weight + noneps_trans.weight().unwrap() + mutator_weight) {
                     let mut nodes = self.nodes.borrow_mut();
+                    debug_incr("queue_lexicon_arcs push node update");
                     nodes.push(next_node.update(
                         next_sym,
                         Some(next_node.input_state + input_increment as u32),
@@ -174,14 +212,18 @@ impl<'data, 'a> SpellerWorker<'data, 'a> where 'data: 'a {
                 }
             }
 
-            next += 1
+            next += 1;
+            debug!("qla noneps NEXT input_sym:{}, next: {}", input_sym, next);
         }
 
-        //println!("End lexicon arcs");
+        debug!("qla, nodes length: {}", self.nodes.borrow().len());
+        debug!("--- qla noneps end ---");
+
+        //debug!("End lexicon arcs");
     }
 
     fn queue_mutator_arcs(&self, next_node: &TreeNode, input_sym: SymbolNumber) {
-        //println!("Mutator arcs");
+        //debug!("Mutator arcs");
         let mutator = self.speller.mutator();
         let lexicon = self.speller.lexicon();
         let alphabet_translator = self.speller.alphabet_translator();
@@ -189,11 +231,12 @@ impl<'data, 'a> SpellerWorker<'data, 'a> where 'data: 'a {
         let mut next_m = mutator.next(next_node.mutator_state, input_sym).unwrap();
 
         while let Some(transition) = mutator.take_non_epsilons(next_m, input_sym) {
-            //println!("mut arc loop: {}", next_m);
+            //debug!("mut arc loop: {}", next_m);
 
             if let Some(0) = transition.symbol() {
                 if self.is_under_weight_limit(next_node.weight + transition.weight().unwrap()) {
                     let mut nodes = self.nodes.borrow_mut();
+                    debug_incr("queue_mutator_arcs push node update");
                     nodes.push(next_node.update(
                             0,
                             Some(next_node.input_state + 1),
@@ -212,10 +255,12 @@ impl<'data, 'a> SpellerWorker<'data, 'a> where 'data: 'a {
                 if !lexicon.has_transitions(next_node.lexicon_state + 1, Some(trans_sym)) {
                     if trans_sym >= lexicon.alphabet().initial_symbol_count() {
                         if lexicon.has_transitions(next_node.lexicon_state + 1, lexicon.alphabet().unknown()) {
+                            debug_incr("qla unknown qma");
                             self.queue_lexicon_arcs(&next_node, lexicon.alphabet().unknown().unwrap(),
                                     transition.target().unwrap(), transition.weight().unwrap(), 1);
                         }
                         if lexicon.has_transitions(next_node.lexicon_state + 1, lexicon.alphabet().identity()) {
+                            debug_incr("qla identity qma");
                             self.queue_lexicon_arcs(&next_node, lexicon.alphabet().identity().unwrap(),
                                     transition.target().unwrap(), transition.weight().unwrap(), 1);
                         }
@@ -224,6 +269,7 @@ impl<'data, 'a> SpellerWorker<'data, 'a> where 'data: 'a {
                     continue;
                 }
 
+                debug_incr("qla alpha_trans qma");
                 self.queue_lexicon_arcs(&next_node, trans_sym,
                         transition.target().unwrap(), transition.weight().unwrap(), 1);
             }
@@ -234,7 +280,8 @@ impl<'data, 'a> SpellerWorker<'data, 'a> where 'data: 'a {
             // TODO: weight limit
 
         }
-        println!("End mutator arcs");
+
+        debug!("qma, nodes length: {}", self.nodes.borrow().len());
     }
 
     fn consume_input(&self, next_node: &TreeNode) {
@@ -262,7 +309,7 @@ impl<'data, 'a> SpellerWorker<'data, 'a> where 'data: 'a {
             self.queue_mutator_arcs(&next_node, input_sym);
         }
 
-        println!("finish consume input");
+        debug!("finish consume input");
     }
 
     fn lexicon_consume(&self, next_node: &TreeNode) {
@@ -294,49 +341,11 @@ impl<'data, 'a> SpellerWorker<'data, 'a> where 'data: 'a {
         }   
 
         self.queue_lexicon_arcs(&next_node, input_sym, next_node.mutator_state, 0.0, 1);
-
-        // unsigned int input_state = next_node.input_state;
-        // if (input_state >= input.size()) {
-        //     // no more input
-        //     return;
-        // }
-        // SymbolNumber this_input;
-        // if (mutator != NULL) {
-        //     this_input = alphabet_translator[input[input_state]];
-        // } else {
-        //     // To support zhfst spellers without error models, we allow
-        //     // for the case with plain lexicon symbols
-        //     this_input = input[input_state];
-        // }
-        // if(!lexicon->has_transitions(
-        //     next_node.lexicon_state + 1, this_input)) {
-        //     // we have no regular transitions for this
-        //     if (this_input >= lexicon->get_alphabet()->get_orig_symbol_count()) {
-        //         // this input was not originally in the alphabet, so unknown or identity
-        //         // may apply
-        //         if (lexicon->get_unknown() != NO_SYMBOL &&
-        //             lexicon->has_transitions(next_node.lexicon_state + 1,
-        //                                     lexicon->get_unknown())) {
-        //             queue_lexicon_arcs(lexicon->get_unknown(),
-        //                             next_node.mutator_state,
-        //                             0.0, 1);
-        //         }
-        //         if (lexicon->get_identity() != NO_SYMBOL &&
-        //             lexicon->has_transitions(next_node.lexicon_state + 1,
-        //                                     lexicon->get_identity())) {
-        //             queue_lexicon_arcs(lexicon->get_identity(),
-        //                             next_node.mutator_state,
-        //                             0.0, 1);
-        //         }
-        //     }
-        //     return;
-        // }
-        // queue_lexicon_arcs(this_input,
-        //                 next_node.mutator_state, 0.0, 1);
     }
 
     fn is_under_weight_limit(&self, w: Weight) -> bool {
-        w < 10.0
+        use std::f32;
+        w < f32::MAX
     }
 }
 
@@ -349,7 +358,6 @@ impl<'data, 'a> Speller<'data> where 'data: 'a {
         Speller {
             mutator: mutator,
             lexicon: lexicon,
-            operations: BTreeMap::new(),
             alphabet_translator: alphabet_translator
         }
     }
@@ -360,10 +368,6 @@ impl<'data, 'a> Speller<'data> where 'data: 'a {
 
     pub fn lexicon(&'a self) -> &'a Transducer<'data> {
         &self.lexicon
-    }
-
-    pub fn operations(&self) -> &OperationMap {
-        &self.operations
     }
 
     fn alphabet_translator(&self) -> &Vec<SymbolNumber> {
@@ -381,7 +385,7 @@ impl<'data, 'a> Speller<'data> where 'data: 'a {
         // TODO: refactor for when mutator is optional
         let key_table = self.mutator().alphabet().key_table();
 
-        //println!("kt: {:?}; word: {}", key_table, word);
+        //debug!("kt: {:?}; word: {}", key_table, word);
 
         word.chars().filter_map(|ch| {
             let s = ch.to_string();
@@ -397,7 +401,7 @@ impl<'data, 'a> Speller<'data> where 'data: 'a {
         let mut input = self.to_input_vec(word);
         let mut worker = SpellerWorker::new(&self, SpellerWorkerMode::Unknown, input);
 
-        let start_node = TreeNode::empty(vec![self.state_size() as i16, 0]);
+        let start_node = TreeNode::empty(vec![0; self.state_size() as usize]);
         worker.nodes.borrow_mut().push(start_node);
 
         while worker.nodes.borrow().len() > 0 {
@@ -408,9 +412,9 @@ impl<'data, 'a> Speller<'data> where 'data: 'a {
                 return true;
             }
 
-            println!("lexicon_epsilons");
+            debug!("lexicon_epsilons");
             worker.lexicon_epsilons(&next_node);
-            println!("lexicon_consume");
+            debug!("lexicon_consume");
             worker.lexicon_consume(&next_node);
         }
         
@@ -419,39 +423,40 @@ impl<'data, 'a> Speller<'data> where 'data: 'a {
 
     // Known as Speller::correct in C++
     pub fn suggest(&'a self, word: &str) -> Vec<String> {
-        use std::io;
-
-        println!("suggest");
         let mut input = self.to_input_vec(word);
-        println!("{:?}", &input);
         let mut worker = SpellerWorker::new(&self, SpellerWorkerMode::Correct, input);
 
-        let start_node = TreeNode::empty(vec![self.state_size() as i16, 0]);
+        let start_node = TreeNode::empty(vec![0; self.state_size() as usize]);
         worker.nodes.borrow_mut().push(start_node);
 
         let mut corrections = BTreeMap::<String, Weight>::new();
 
         while worker.nodes.borrow().len() > 0 {
-            //println!("Worker nodes: {}", worker.nodes.borrow().len());
+            debug_incr("Worker node loop count");
+
             let next_node = worker.nodes.borrow_mut().pop().unwrap();
-            println!("sugloop node: is:{}", next_node.input_state);
+            debug!("Suggest loop");
+            debug!("{:?}", next_node);
+
+            debug!("sugloop next_node: is:{} w:{} ms:{} ls:{}", next_node.input_state, next_node.weight, next_node.mutator_state, next_node.lexicon_state);
 
             if !worker.is_under_weight_limit(next_node.weight) {
             //    continue
             }
 
-            println!("LEX");
             worker.lexicon_epsilons(&next_node);
-            println!("MUT");
             worker.mutator_epsilons(&next_node);
 
             if next_node.input_state as usize == worker.input.len() {
+                debug_incr("input_state eq input size");
+                debug!("is_final ms:{} ls:{}", next_node.mutator_state, next_node.lexicon_state);
                 if self.mutator().is_final(next_node.mutator_state) && self.lexicon().is_final(next_node.lexicon_state) {
-                    //panic!();
+                    debug_incr("is_final");
+
                     let key_table = self.lexicon().alphabet().key_table();
                     let string: String = next_node.string.iter().map(|&s| key_table[s as usize].to_string()).collect();
 
-                    //println!("string: {}", string);
+                    //debug!("string: {}", string);
 
                     let weight = next_node.weight +
                         self.lexicon().final_weight(next_node.lexicon_state).unwrap() +
@@ -467,7 +472,7 @@ impl<'data, 'a> Speller<'data> where 'data: 'a {
             }
 
             // if next_node.input_state as usize != worker.input.len() {
-            //     //println!("CONSUME");
+            //     //debug!("CONSUME");
             //     worker.consume_input(&next_node);
             //     continue;
             // }
@@ -476,7 +481,7 @@ impl<'data, 'a> Speller<'data> where 'data: 'a {
             // let l_final = self.lexicon().is_final(next_node.lexicon_state);
 
             // if !(m_final && l_final) {
-            //     println!("is not final!");
+            //     debug!("is not final!");
             //     continue;
             // }
 
@@ -488,7 +493,7 @@ impl<'data, 'a> Speller<'data> where 'data: 'a {
             // let key_table = self.lexicon().alphabet().key_table();
             // let string: String = next_node.string.iter().map(|&s| key_table[s as usize].to_string()).collect();
 
-            // println!("string: {}", string);
+            // debug!("string: {}", string);
 
             // let entry = corrections.entry(string).or_insert(weight);
 
@@ -497,7 +502,7 @@ impl<'data, 'a> Speller<'data> where 'data: 'a {
             // }
         }
 
-        println!("Here we go!");
+        debug!("Here we go!");
 
         let mut c: Vec<StringWeightPair> = corrections
             .into_iter()
@@ -534,6 +539,6 @@ impl PartialEq for StringWeightPair {
 
 impl<'data> Drop for Speller<'data> {
     fn drop(&mut self) {
-        //println!("Dropped: {:?}", self);
+        //debug!("Dropped: {:?}", self);
     }
 }

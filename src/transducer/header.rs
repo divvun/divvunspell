@@ -20,7 +20,7 @@ impl TransducerHeader {
     pub fn new(buf: &[u8]) -> TransducerHeader {
         let mut rdr = Cursor::new(buf);
 
-        println!("Loading transducer");
+        debug!("Loading transducer");
 
         // Skip HFST string
         rdr.set_position(5);
@@ -29,7 +29,7 @@ impl TransducerHeader {
 
         rdr.set_position(8);
 
-        //println!("{:?}", header_len);
+        //debug!("{:?}", header_len);
         let pos = rdr.position() + header_len;
         rdr.set_position(pos);
 
@@ -47,7 +47,7 @@ impl TransducerHeader {
             props[i] = v != 0
         }
 
-        println!("{:?} {:?} {:?} {:?} {:?} {:?} {:?}", input_symbols, symbols, trans_index_table, trans_target_table, states, transitions, props);
+        debug!("{:?} {:?} {:?} {:?} {:?} {:?} {:?}", input_symbols, symbols, trans_index_table, trans_target_table, states, transitions, props);
 
         TransducerHeader {
             symbols: symbols,

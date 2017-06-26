@@ -49,38 +49,31 @@ impl TransducerAlphabetParser {
 
     fn handle_special_symbol(&mut self, i: SymbolNumber, key: &str) {
         let mut chunks = key.split('.');
-        //println!("chunks: {:?}", chunks);
-        let fdo = FlagDiacriticOperator::from_str(&chunks.next().unwrap()[1..]).unwrap();
-        let feature = chunks.next().unwrap_or("").to_string();
-        let value = chunks.next().unwrap_or("").to_string().chars().filter(|x| x != &'@').collect();
+        //debug!("chunks: {:?}", chunks);
 
-        let mut incr_feat = false;
-        let mut incr_val = false;
+        let fdo = FlagDiacriticOperator::from_str(&chunks.next().unwrap()[1..]).unwrap();
+        let feature: String = chunks.next().unwrap_or("").to_string().chars().filter(|x| x != &'@').collect();
+        let value: String = chunks.next().unwrap_or("").to_string().chars().filter(|x| x != &'@').collect();
 
         if !self.feature_bucket.contains_key(&feature) {
-            self.feature_bucket.insert(feature, self.feat_n);
-            incr_feat = true;
-        }
-
-        if !self.value_bucket.contains_key(&value) {
-            self.value_bucket.insert(value, self.val_n);
-            incr_val = true;
-        }
-
-        self.operations.insert(i, FlagDiacriticOperation {
-            operation: fdo,
-            feature: self.feat_n,
-            value: self.val_n
-        });
-
-        if incr_feat {
+            self.feature_bucket.insert(feature.clone(), self.feat_n);
             self.feat_n += 1;
         }
 
-        if incr_val {
+        if !self.value_bucket.contains_key(&value) {
+            self.value_bucket.insert(value.clone(), self.val_n);
             self.val_n += 1;
         }
 
+        let op = FlagDiacriticOperation {
+            operation: fdo,
+            feature: *self.feature_bucket.get(&feature).unwrap(),
+            value: *self.value_bucket.get(&value).unwrap()
+        };
+
+        println!("{}: {:?}", i, &op);
+
+        self.operations.insert(i, op);
         self.key_table.push("".to_string());
     }
 
@@ -95,10 +88,11 @@ impl TransducerAlphabetParser {
             }
 
             let key = String::from_utf8_lossy(&buf[offset..offset+end]).into_owned();
-            //println!("{}", key);
+            //debug!("{}", key);
 
             if key.starts_with("@") && key.ends_with("@") {
                 if key.chars().nth(2).unwrap() == '.' {
+                    println!("{}", key);
                     self.handle_special_symbol(i, &key);
                 } else if key == "@_EPSILON_SYMBOL_@" {
                     self.value_bucket.insert("".to_string(), self.val_n);
@@ -123,6 +117,7 @@ impl TransducerAlphabetParser {
         }
 
         self.flag_state_size = self.feature_bucket.len() as SymbolNumber;
+        println!("{:?}", self.feature_bucket);
         self.length = offset;
     }
 

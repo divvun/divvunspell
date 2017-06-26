@@ -33,12 +33,12 @@ impl<'data, 'a> Transducer<'data> where 'data: 'a {
         let index_table_offset = alphabet_offset + alphabet.length();
         let index_table_end = index_table_offset + TRANS_INDEX_SIZE * header.index_table_size();
 
-        //println!("Index table: {:?}", &buf[index_table_offset..index_table_offset+64]);
+        //debug!("Index table: {:?}", &buf[index_table_offset..index_table_offset+64]);
 
         let index_table = IndexTable::new(&buf[index_table_offset..index_table_end], header.index_table_size() as u32);
 
         let trans_table_end = index_table_end + TRANS_SIZE * header.target_table_size();
-        //println!("Trans table: {:?}", &buf[index_table_end..index_table_end+16]);
+        //debug!("Trans table: {:?}", &buf[index_table_end..index_table_end+16]);
         let trans_table = TransitionTable::new(&buf[index_table_end..trans_table_end], header.target_table_size() as u32);
 
         Transducer {
@@ -98,19 +98,21 @@ impl<'data, 'a> Transducer<'data> where 'data: 'a {
     }
 
     pub fn has_epsilons_or_flags(&self, i: TransitionTableIndex) -> bool {
-        println!("has_epsilons_or_flags {}", i);
+        debug!("has_epsilons_or_flags {}", i);
 
         if i >= TARGET_TABLE {
-            let sym = self.transition_table.input_symbol(i - TARGET_TABLE).unwrap();
-            sym == 0 || self.alphabet.is_flag(sym)
+            match self.transition_table.input_symbol(i - TARGET_TABLE) {
+                Some(sym) => sym == 0 || self.alphabet.is_flag(sym),
+                None => false
+            }
         } else {
-            println!("input_symbol {:?}", self.index_table.input_symbol(i));
+            debug!("input_symbol {:?}", self.index_table.input_symbol(i));
             if let Some(0) = self.index_table.input_symbol(i) {
                 true
             } else {
                 false
             }
-            // println!("input_symbol {}", .unwrap());
+            // debug!("input_symbol {}", .unwrap());
             // self.index_table.input_symbol(i).unwrap() == 0
         }
 
@@ -172,15 +174,29 @@ impl<'data, 'a> Transducer<'data> where 'data: 'a {
     }
 
     pub fn take_non_epsilons(&self, i: TransitionTableIndex, symbol: SymbolNumber) -> Option<SymbolTransition> {
-        if let Some(symbol) = self.transition_table.input_symbol(i) {
-            Some(self.transition_table.symbol_transition(i))
-        } else {
-            None
-        }
+        let v = match self.transition_table.input_symbol(i) {
+            Some(input_sym) => {
+                if input_sym != symbol {
+                    None
+                } else {
+                    Some(self.transition_table.symbol_transition(i))
+                }
+            },
+            None => None
+        };
+        // let v = if let Some(symbol) = self.transition_table.input_symbol(i) {
+        //     Some(self.transition_table.symbol_transition(i))
+        // } else {
+        //     None
+        // };
+
+        debug!("take_non_epsilons i:{} sym:{} v:{:?}", i, symbol, v);
+
+        v
     }
 
     pub fn next(&self, i: TransitionTableIndex, symbol: SymbolNumber) -> Option<TransitionTableIndex> {
-        println!("transducer next: {} {}", i, symbol);
+        debug!("transducer next: {} {}", i, symbol);
 
         if i >= TARGET_TABLE {
             Some(i - TARGET_TABLE + 1)

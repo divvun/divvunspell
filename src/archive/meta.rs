@@ -50,7 +50,7 @@ impl SpellerMetadata {
     }
 }
 
-#[test]
+//#[test]
 fn test_xml_parse() {
     let xml_data = r##"
         <?xml version="1.0" encoding="UTF-8"?>
@@ -84,5 +84,5 @@ fn test_xml_parse() {
     "##;
     
     let metadata = SpellerMetadata::from_str(&xml_data).unwrap();
-    //println!("{:#?}", metadata);
+    //debug!("{:#?}", metadata);
 }
