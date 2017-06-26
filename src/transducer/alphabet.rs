@@ -71,8 +71,6 @@ impl TransducerAlphabetParser {
             value: *self.value_bucket.get(&value).unwrap()
         };
 
-        println!("{}: {:?}", i, &op);
-
         self.operations.insert(i, op);
         self.key_table.push("".to_string());
     }
@@ -92,7 +90,6 @@ impl TransducerAlphabetParser {
 
             if key.starts_with("@") && key.ends_with("@") {
                 if key.chars().nth(2).unwrap() == '.' {
-                    println!("{}", key);
                     self.handle_special_symbol(i, &key);
                 } else if key == "@_EPSILON_SYMBOL_@" {
                     self.value_bucket.insert("".to_string(), self.val_n);
@@ -117,7 +114,6 @@ impl TransducerAlphabetParser {
         }
 
         self.flag_state_size = self.feature_bucket.len() as SymbolNumber;
-        println!("{:?}", self.feature_bucket);
         self.length = offset;
     }
 

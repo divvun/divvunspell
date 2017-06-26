@@ -76,7 +76,6 @@ impl<'data, 'a> SpellerWorker<'data, 'a> where 'data: 'a {
                         }
                     } else {
                         let operation = operations.get(&sym);
-                        println!("{}: {:?}", sym, operation);
 
                         if let Some(op) = operation {
                             let (is_success, applied_node) = next_node.apply_operation(op);
@@ -470,36 +469,6 @@ impl<'data, 'a> Speller<'data> where 'data: 'a {
             } else {
                 worker.consume_input(&next_node);
             }
-
-            // if next_node.input_state as usize != worker.input.len() {
-            //     //debug!("CONSUME");
-            //     worker.consume_input(&next_node);
-            //     continue;
-            // }
-
-            // let m_final = self.mutator().is_final(next_node.mutator_state);
-            // let l_final = self.lexicon().is_final(next_node.lexicon_state);
-
-            // if !(m_final && l_final) {
-            //     debug!("is not final!");
-            //     continue;
-            // }
-
-            // let weight = next_node.weight +
-            //     self.lexicon().final_weight(next_node.lexicon_state).unwrap() +
-            //     self.mutator().final_weight(next_node.mutator_state).unwrap();
-
-            // // if weight > limit { }
-            // let key_table = self.lexicon().alphabet().key_table();
-            // let string: String = next_node.string.iter().map(|&s| key_table[s as usize].to_string()).collect();
-
-            // debug!("string: {}", string);
-
-            // let entry = corrections.entry(string).or_insert(weight);
-
-            // if *entry > weight {
-            //     *entry = weight;
-            // }
         }
 
         debug!("Here we go!");
