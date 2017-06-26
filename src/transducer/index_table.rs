@@ -9,7 +9,7 @@ use std::cell::{RefCell, RefMut};
 #[derive(Debug)]
 pub struct IndexTable<'data> {
     size: TransitionTableIndex,
-    cursor: RefCell<Cursor<&'data [u8]>>
+    cursor: RefCell<Cursor<&'data [u8]>>,
 }
 
 impl<'data> IndexTable<'data> {
@@ -19,7 +19,7 @@ impl<'data> IndexTable<'data> {
 
         IndexTable {
             size: size,
-            cursor: RefCell::new(Cursor::new(buf))
+            cursor: RefCell::new(Cursor::new(buf)),
         }
     }
 
@@ -31,7 +31,11 @@ impl<'data> IndexTable<'data> {
         let mut cursor = self.cursor.borrow_mut();
         cursor.set_position(index as u64);
         let x = cursor.read_u16::<LittleEndian>().unwrap();
-        if x == u16::MAX { None } else { Some(x) }
+        if x == u16::MAX {
+            None
+        } else {
+            Some(x)
+        }
     }
 
     pub fn target(&self, i: TransitionTableIndex) -> Option<TransitionTableIndex> {
@@ -43,7 +47,11 @@ impl<'data> IndexTable<'data> {
         let mut cursor = self.cursor.borrow_mut();
         cursor.set_position(index);
         let x = cursor.read_u32::<LittleEndian>().unwrap();
-        if x == u32::MAX { None } else { Some(x) }
+        if x == u32::MAX {
+            None
+        } else {
+            Some(x)
+        }
     }
 
     pub fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight> {

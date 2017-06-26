@@ -18,7 +18,8 @@ fn test_trans_size() {
     use std::mem;
     use types::*;
 
-    let c = 2 * mem::size_of::<SymbolNumber>() + mem::size_of::<TransitionTableIndex>() + mem::size_of::<Weight>();
+    let c = 2 * mem::size_of::<SymbolNumber>() + mem::size_of::<TransitionTableIndex>() +
+        mem::size_of::<Weight>();
 
     assert!(TRANS_SIZE == c);
 }

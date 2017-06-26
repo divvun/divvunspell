@@ -13,7 +13,7 @@ pub struct TransducerAlphabet {
     string_to_symbol: BTreeMap<String, SymbolNumber>,
     operations: OperationsMap,
     identity_symbol: Option<SymbolNumber>,
-    unknown_symbol: Option<SymbolNumber>
+    unknown_symbol: Option<SymbolNumber>,
 }
 
 struct TransducerAlphabetParser {
@@ -27,7 +27,7 @@ struct TransducerAlphabetParser {
     val_n: ValueNumber,
     feat_n: SymbolNumber,
     identity_symbol: Option<SymbolNumber>,
-    unknown_symbol: Option<SymbolNumber>
+    unknown_symbol: Option<SymbolNumber>,
 }
 
 impl TransducerAlphabetParser {
@@ -43,7 +43,7 @@ impl TransducerAlphabetParser {
             val_n: 0i16,
             feat_n: 0u16,
             identity_symbol: None,
-            unknown_symbol: None
+            unknown_symbol: None,
         }
     }
 
@@ -52,8 +52,20 @@ impl TransducerAlphabetParser {
         //debug!("chunks: {:?}", chunks);
 
         let fdo = FlagDiacriticOperator::from_str(&chunks.next().unwrap()[1..]).unwrap();
-        let feature: String = chunks.next().unwrap_or("").to_string().chars().filter(|x| x != &'@').collect();
-        let value: String = chunks.next().unwrap_or("").to_string().chars().filter(|x| x != &'@').collect();
+        let feature: String = chunks
+            .next()
+            .unwrap_or("")
+            .to_string()
+            .chars()
+            .filter(|x| x != &'@')
+            .collect();
+        let value: String = chunks
+            .next()
+            .unwrap_or("")
+            .to_string()
+            .chars()
+            .filter(|x| x != &'@')
+            .collect();
 
         if !self.feature_bucket.contains_key(&feature) {
             self.feature_bucket.insert(feature.clone(), self.feat_n);
@@ -68,7 +80,7 @@ impl TransducerAlphabetParser {
         let op = FlagDiacriticOperation {
             operation: fdo,
             feature: *self.feature_bucket.get(&feature).unwrap(),
-            value: *self.value_bucket.get(&value).unwrap()
+            value: *self.value_bucket.get(&value).unwrap(),
         };
 
         self.operations.insert(i, op);
@@ -85,7 +97,7 @@ impl TransducerAlphabetParser {
                 end += 1;
             }
 
-            let key = String::from_utf8_lossy(&buf[offset..offset+end]).into_owned();
+            let key = String::from_utf8_lossy(&buf[offset..offset + end]).into_owned();
             //debug!("{}", key);
 
             if key.starts_with("@") && key.ends_with("@") {
@@ -98,7 +110,7 @@ impl TransducerAlphabetParser {
                 } else if key == "@_IDENTITY_SYMBOL_@" {
                     self.identity_symbol = Some(i);
                     self.key_table.push(key);
-                } else if key == "@_UNKNOWN_SYMBOL_@"{
+                } else if key == "@_UNKNOWN_SYMBOL_@" {
                     self.unknown_symbol = Some(i);
                     self.key_table.push(key);
                 } else {
@@ -129,7 +141,7 @@ impl TransducerAlphabetParser {
             string_to_symbol: p.string_to_symbol,
             operations: p.operations,
             identity_symbol: p.identity_symbol,
-            unknown_symbol: p.unknown_symbol
+            unknown_symbol: p.unknown_symbol,
         }
     }
 }
@@ -167,7 +179,8 @@ impl TransducerAlphabet {
     }
 
     pub fn add_symbol(&mut self, string: &str) {
-        self.string_to_symbol.insert(string.to_string(), self.key_table.len() as u16);
+        self.string_to_symbol
+            .insert(string.to_string(), self.key_table.len() as u16);
         self.key_table.push(string.to_string());
     }
 

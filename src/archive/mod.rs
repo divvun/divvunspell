@@ -14,7 +14,7 @@ pub struct SpellerArchive<'data> {
     #[allow(dead_code)]
     handle: Mmap,
     metadata: SpellerMetadata,
-    speller: Speller<'data>
+    speller: Speller<'data>,
 }
 
 #[inline]
@@ -23,7 +23,11 @@ fn partial_slice(slice: &[u8], start: usize, offset: usize) -> &[u8] {
     &slice[start..end]
 }
 
-fn slice_by_name<'data, R: Read + Seek>(archive: &mut ZipArchive<R>, slice: &'data [u8], name: &str) -> &'data [u8] {
+fn slice_by_name<'data, R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    slice: &'data [u8],
+    name: &str,
+) -> &'data [u8] {
     let index = archive.by_name(name).unwrap();
 
     if index.compressed_size() != index.size() {
@@ -52,20 +56,31 @@ impl<'data> SpellerArchive<'data> {
         let acceptor = Transducer::from_bytes(&acceptor_data);
         let errmodel = Transducer::from_bytes(&errmodel_data);
 
-        let speller = Speller::new(acceptor, errmodel);
+        let speller = Speller::new(errmodel, acceptor);
 
         SpellerArchive {
             handle: mmap,
             metadata: metadata,
-            speller: speller
+            speller: speller,
         }
     }
 
-    pub fn speller<'a>(&'a self) -> &'a Speller<'data> where 'data: 'a {
+    pub fn speller<'a>(&'a self) -> &'a Speller<'data>
+    where
+        'data: 'a,
+    {
         &self.speller
     }
 
     pub fn metadata(&self) -> &SpellerMetadata {
         &self.metadata
     }
+}
+
+#[test]
+fn test_load_zhfst() {
+    let zhfst = SpellerArchive::new("./se-store.zhfst");
+    let two = zhfst.speller();
+    let res = two.suggest("nuvviDspeller");
+    println!("{:?}", res);
 }

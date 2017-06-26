@@ -4,7 +4,7 @@ use serde_xml_rs::{ParserConfig, deserialize, Error};
 pub struct SpellerMetadata {
     pub info: SpellerMetadataInfo,
     pub acceptor: SpellerMetadataAcceptor,
-    pub errmodel: SpellerMetadataErrmodel
+    pub errmodel: SpellerMetadataErrmodel,
 }
 
 #[derive(Deserialize, Debug)]
@@ -12,7 +12,7 @@ pub struct SpellerMetadataInfo {
     pub locale: String,
     pub title: String,
     pub description: String,
-    pub producer: String
+    pub producer: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -21,7 +21,7 @@ pub struct SpellerMetadataAcceptor {
     pub type_: String,
     pub id: String,
     pub title: String,
-    pub description: String
+    pub description: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -30,7 +30,7 @@ pub struct SpellerMetadataErrmodel {
     //type_: String,
     pub id: String,
     pub title: String,
-    pub description: String
+    pub description: String,
 }
 
 impl SpellerMetadata {
@@ -82,7 +82,7 @@ fn test_xml_parse() {
         </errmodel>
         </hfstspeller>
     "##;
-    
+
     let metadata = SpellerMetadata::from_str(&xml_data).unwrap();
     //debug!("{:#?}", metadata);
 }

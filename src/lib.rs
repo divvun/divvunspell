@@ -1,14 +1,17 @@
-#[macro_use] extern crate serde_derive;
+#[macro_use]
+extern crate serde_derive;
 extern crate serde_xml_rs;
 extern crate libc;
 extern crate memmap;
 extern crate byteorder;
 extern crate zip;
 
-#[macro_use] extern crate log;
+#[macro_use]
+extern crate log;
 extern crate env_logger;
 
-#[macro_use] extern crate lazy_static;
+#[macro_use]
+extern crate lazy_static;
 
 pub mod archive;
 pub mod constants;
@@ -26,15 +29,7 @@ lazy_static! {
     static ref COUNTER: Mutex<HashMap<&'static str, u32>> = Mutex::new(HashMap::new());
 }
 
-// #[test]
-// fn test_load_zhfst() {
-//     let zhfst = archive::SpellerArchive::new("./se-store.zhfst");
-//     let two = zhfst.speller();
-//     let res = two.suggest("sami");
-//     debug!("{:?}", res);
-// }
-
-#[test]
+//#[test]
 fn test_speller() {
     use std::fs::File;
     use std::io::BufReader;

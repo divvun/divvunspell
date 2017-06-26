@@ -5,14 +5,14 @@ use types::Weight;
 #[derive(Clone, Debug)]
 pub struct Suggestion {
     value: String,
-    weight: Weight
+    weight: Weight,
 }
 
 impl Suggestion {
     pub fn new(value: String, weight: Weight) -> Suggestion {
         Suggestion {
             value: value,
-            weight: weight
+            weight: weight,
         }
     }
 
@@ -33,7 +33,11 @@ impl PartialOrd for Suggestion {
 
 impl Ord for Suggestion {
     fn cmp(&self, other: &Self) -> Ordering {
-        other.weight.partial_cmp(&self.weight).unwrap_or(Equal).reverse()
+        other
+            .weight
+            .partial_cmp(&self.weight)
+            .unwrap_or(Equal)
+            .reverse()
     }
 }
 

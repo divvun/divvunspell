@@ -6,7 +6,7 @@ use std::mem;
 pub struct CVec<T> {
     pub ptr: *mut T,
     pub len: size_t,
-    pub capacity: size_t
+    pub capacity: size_t,
 }
 
 pub trait IntoCVec {
@@ -29,7 +29,7 @@ impl<T> IntoCVec for Vec<T> {
         let c_vec = Box::new(CVec {
             ptr: p,
             len: len,
-            capacity: cap
+            capacity: cap,
         });
 
         mem::forget(self);
@@ -39,7 +39,7 @@ impl<T> IntoCVec for Vec<T> {
 
     unsafe fn from_c_vec_raw(ptr: *mut CVec<Self::Item>) -> Vec<Self::Item> {
         let c_vec = Box::from_raw(&mut *ptr);
-        
+
         Vec::from_raw_parts(c_vec.ptr, c_vec.len, c_vec.capacity)
     }
 }

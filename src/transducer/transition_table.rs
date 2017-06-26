@@ -11,14 +11,14 @@ use transducer::symbol_transition::SymbolTransition;
 #[derive(Debug)]
 pub struct TransitionTable<'data> {
     size: TransitionTableIndex,
-    cursor: RefCell<Cursor<&'data [u8]>>
+    cursor: RefCell<Cursor<&'data [u8]>>,
 }
 
 impl<'data> TransitionTable<'data> {
     pub fn new(buf: &[u8], size: u32) -> TransitionTable {
         TransitionTable {
             size: size,
-            cursor: RefCell::new(Cursor::new(buf))
+            cursor: RefCell::new(Cursor::new(buf)),
         }
     }
 
@@ -26,7 +26,11 @@ impl<'data> TransitionTable<'data> {
         let mut cursor = self.cursor.borrow_mut();
         cursor.set_position(index);
         let x = cursor.read_u16::<LittleEndian>().unwrap();
-        if x == u16::MAX { None } else { Some(x) }
+        if x == u16::MAX {
+            None
+        } else {
+            Some(x)
+        }
     }
 
     pub fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
@@ -58,7 +62,11 @@ impl<'data> TransitionTable<'data> {
         let mut cursor = self.cursor.borrow_mut();
         cursor.set_position(index);
         let x = cursor.read_u32::<LittleEndian>().unwrap();
-        if x == u32::MAX { None } else { Some(x) }
+        if x == u32::MAX {
+            None
+        } else {
+            Some(x)
+        }
     }
 
     pub fn weight(&self, i: TransitionTableIndex) -> Option<Weight> {
@@ -66,9 +74,9 @@ impl<'data> TransitionTable<'data> {
             return None;
         }
 
-        let index: u64 = ((TRANS_SIZE * i as usize) +
-            (2 * mem::size_of::<SymbolNumber>()) +
-            mem::size_of::<TransitionTableIndex>()) as u64;
+        let index: u64 = ((TRANS_SIZE * i as usize) + (2 * mem::size_of::<SymbolNumber>()) +
+                              mem::size_of::<TransitionTableIndex>()) as
+            u64;
 
         let mut cursor = self.cursor.borrow_mut();
         cursor.set_position(index);
@@ -76,11 +84,15 @@ impl<'data> TransitionTable<'data> {
     }
 
     pub fn is_final(&self, i: TransitionTableIndex) -> bool {
-        debug!("transition_final: i:{} is:{:?} os:{:?} t:{:?}", i, self.input_symbol(i), self.output_symbol(i), self.target(i));
-        
-        self.input_symbol(i) == None &&
-            self.output_symbol(i) == None &&
-            self.target(i) == Some(1)
+        debug!(
+            "transition_final: i:{} is:{:?} os:{:?} t:{:?}",
+            i,
+            self.input_symbol(i),
+            self.output_symbol(i),
+            self.target(i)
+        );
+
+        self.input_symbol(i) == None && self.output_symbol(i) == None && self.target(i) == Some(1)
     }
 
     pub fn symbol_transition(&self, i: TransitionTableIndex) -> SymbolTransition {

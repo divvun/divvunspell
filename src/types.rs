@@ -2,7 +2,12 @@ use std::mem;
 
 #[derive(Debug, Clone, Copy)]
 pub enum FlagDiacriticOperator {
-    PositiveSet, NegativeSet, Require, Disallow, Clear, Unification
+    PositiveSet,
+    NegativeSet,
+    Require,
+    Disallow,
+    Clear,
+    Unification,
 }
 
 impl FlagDiacriticOperator {
@@ -14,7 +19,7 @@ impl FlagDiacriticOperator {
             "D" => Some(FlagDiacriticOperator::Disallow),
             "C" => Some(FlagDiacriticOperator::Clear),
             "U" => Some(FlagDiacriticOperator::Unification),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -29,14 +34,14 @@ pub enum HeaderFlag {
     HasEpsilonEpsilonTransitions,
     HasInputEpsilonTransitions,
     HasInputEpsilonCycles,
-    HasUnweightedInputEpsilonCycles
+    HasUnweightedInputEpsilonCycles,
 }
 
 #[derive(Debug)]
 pub struct FlagDiacriticOperation {
     pub operation: FlagDiacriticOperator,
     pub feature: SymbolNumber,
-    pub value: ValueNumber
+    pub value: ValueNumber,
 }
 
 pub type SymbolNumber = u16;
@@ -47,5 +52,5 @@ pub type FlagDiacriticState = Vec<i16>;
 
 pub enum SpellerWorkerMode {
     Correct,
-    Unknown
+    Unknown,
 }

@@ -1,11 +1,5 @@
-use types::{
-    TransitionTableIndex,
-    SymbolNumber,
-    FlagDiacriticState,
-    FlagDiacriticOperator,
-    FlagDiacriticOperation,
-    Weight
-};
+use types::{TransitionTableIndex, SymbolNumber, FlagDiacriticState, FlagDiacriticOperator,
+            FlagDiacriticOperation, Weight};
 
 use super::symbol_transition::SymbolTransition;
 
@@ -16,7 +10,7 @@ pub struct TreeNode {
     pub mutator_state: TransitionTableIndex,
     pub lexicon_state: TransitionTableIndex,
     pub flag_state: FlagDiacriticState,
-    pub weight: Weight
+    pub weight: Weight,
 }
 
 impl TreeNode {
@@ -27,7 +21,7 @@ impl TreeNode {
             mutator_state: 0,
             lexicon_state: 0,
             flag_state: start_state,
-            weight: 0.0
+            weight: 0.0,
         }
     }
 
@@ -41,8 +35,8 @@ impl TreeNode {
                 let mut string = self.string.clone();
                 string.push(value);
                 string
-            },
-            None => self.string.clone()
+            }
+            None => self.string.clone(),
         };
 
         TreeNode {
@@ -61,7 +55,14 @@ impl TreeNode {
         }
     }
 
-    fn update_input(&self, symbol: SymbolNumber, next_input: u32, next_mutator: TransitionTableIndex, next_lexicon: TransitionTableIndex, weight: Weight) -> TreeNode {
+    fn update_input(
+        &self,
+        symbol: SymbolNumber,
+        next_input: u32,
+        next_mutator: TransitionTableIndex,
+        next_lexicon: TransitionTableIndex,
+        weight: Weight,
+    ) -> TreeNode {
         let string = if symbol != 0 {
             let mut string = self.string.clone();
             string.push(symbol); // push_back?
@@ -80,7 +81,14 @@ impl TreeNode {
         }
     }
 
-    pub fn update(&self, output_symbol: SymbolNumber, next_input: Option<u32>, next_mutator: TransitionTableIndex, next_lexicon: TransitionTableIndex, weight: Weight) -> TreeNode {
+    pub fn update(
+        &self,
+        output_symbol: SymbolNumber,
+        next_input: Option<u32>,
+        next_mutator: TransitionTableIndex,
+        next_lexicon: TransitionTableIndex,
+        weight: Weight,
+    ) -> TreeNode {
         let string = if output_symbol != 0 {
             let mut string = self.string.clone();
             string.push(output_symbol); // push_back?
@@ -118,7 +126,10 @@ impl TreeNode {
     pub fn apply_operation(&self, op: &FlagDiacriticOperation) -> (bool, TreeNode) {
         match op.operation {
             FlagDiacriticOperator::PositiveSet => (true, self.update_flag(op.feature, op.value)),
-            FlagDiacriticOperator::NegativeSet => (true, self.update_flag(op.feature, -1 * op.value)),
+            FlagDiacriticOperator::NegativeSet => (
+                true,
+                self.update_flag(op.feature, -1 * op.value),
+            ),
             FlagDiacriticOperator::Require => {
                 let res = if op.value == 0 {
                     self.flag_state[op.feature as usize] != 0
@@ -127,7 +138,7 @@ impl TreeNode {
                 };
 
                 (res, self.clone())
-            },
+            }
             FlagDiacriticOperator::Disallow => {
                 let res = if op.value == 0 {
                     self.flag_state[op.feature as usize] == 0
@@ -136,7 +147,7 @@ impl TreeNode {
                 };
 
                 (res, self.clone())
-            },
+            }
             FlagDiacriticOperator::Clear => (true, self.update_flag(op.feature, 0)),
             FlagDiacriticOperator::Unification => {
                 // if the feature is unset OR the feature is to this value already OR

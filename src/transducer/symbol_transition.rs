@@ -1,22 +1,22 @@
-use types::{
-    TransitionTableIndex,
-    SymbolNumber,
-    Weight
-};
+use types::{TransitionTableIndex, SymbolNumber, Weight};
 
 #[derive(Debug, Clone)]
 pub struct SymbolTransition {
     target: Option<TransitionTableIndex>,
     symbol: Option<SymbolNumber>,
-    weight: Option<Weight>
+    weight: Option<Weight>,
 }
 
 impl SymbolTransition {
-    pub fn new(target: Option<TransitionTableIndex>, symbol: Option<SymbolNumber>, weight: Option<Weight>) -> SymbolTransition {
+    pub fn new(
+        target: Option<TransitionTableIndex>,
+        symbol: Option<SymbolNumber>,
+        weight: Option<Weight>,
+    ) -> SymbolTransition {
         SymbolTransition {
             target: target,
             symbol: symbol,
-            weight: weight
+            weight: weight,
         }
     }
 
@@ -36,7 +36,7 @@ impl SymbolTransition {
         SymbolTransition {
             target: self.target,
             symbol: Some(0),
-            weight: self.weight
+            weight: self.weight,
         }
     }
 }

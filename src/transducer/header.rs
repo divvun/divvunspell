@@ -13,7 +13,7 @@ pub struct TransducerHeader {
     transitions: TransitionTableIndex,
 
     properties: [bool; 9],
-    alphabet_offset: usize
+    alphabet_offset: usize,
 }
 
 impl TransducerHeader {
@@ -47,7 +47,16 @@ impl TransducerHeader {
             props[i] = v != 0
         }
 
-        debug!("{:?} {:?} {:?} {:?} {:?} {:?} {:?}", input_symbols, symbols, trans_index_table, trans_target_table, states, transitions, props);
+        debug!(
+            "{:?} {:?} {:?} {:?} {:?} {:?} {:?}",
+            input_symbols,
+            symbols,
+            trans_index_table,
+            trans_target_table,
+            states,
+            transitions,
+            props
+        );
 
         TransducerHeader {
             symbols: symbols,
@@ -58,7 +67,7 @@ impl TransducerHeader {
             transitions: transitions,
             properties: props,
 
-            alphabet_offset: rdr.position() as usize
+            alphabet_offset: rdr.position() as usize,
         }
     }
 
