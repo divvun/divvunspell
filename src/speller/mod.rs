@@ -1,6 +1,7 @@
 pub mod suggestion;
 
 use std::collections::BTreeMap;
+use std::f32;
 
 use transducer::Transducer;
 use transducer::tree_node::TreeNode;
@@ -17,13 +18,17 @@ fn debug_incr(key: &'static str) {
 
 #[derive(Clone, Debug)]
 pub struct SpellerConfig {
+    pub n_best: Option<usize>,
     pub max_weight: Option<Weight>,
+    pub beam: Option<Weight>,
 }
 
 impl SpellerConfig {
     pub fn default() -> SpellerConfig {
         SpellerConfig {
-            max_weight: None
+            n_best: None,
+            max_weight: None,
+            beam: None
         }
     }
 }
@@ -52,14 +57,12 @@ struct SpellerState {
 
 impl SpellerState {
     pub fn new(size: usize, config: &SpellerConfig) -> SpellerState {
-        use std::f32;
-
         let start_node = TreeNode::empty(vec![0; size]);
         let nodes = vec![start_node];
 
         SpellerState {
             nodes: nodes,
-            max_weight: config.max_weight.unwrap_or(f32::MAX)
+            max_weight: config.max_weight.unwrap_or(f32::INFINITY)
         }
     }
 }
@@ -463,6 +466,22 @@ where
         self.queue_lexicon_arcs(state, &next_node, input_sym, next_node.mutator_state, 0.0, 1);
     }
 
+    fn update_weight_limit(&self, state: &mut SpellerState, best_weight: Weight) {
+        use std::cmp::Ordering::{Less, Equal};
+
+        let c = &self.config;
+        let max_weight = c.max_weight.unwrap_or(f32::INFINITY);
+
+        if let Some(beam) = c.beam {
+            let candidate_weight = best_weight + beam;
+
+            state.max_weight = match max_weight.partial_cmp(&candidate_weight).unwrap_or(Equal) {
+                Less => max_weight,
+                _ => candidate_weight
+            };
+        }
+    }
+
     fn is_under_weight_limit(&self, state: &SpellerState, w: Weight) -> bool {
         w < state.max_weight
     }
@@ -474,8 +493,11 @@ where
     fn suggest(&self) -> Vec<Suggestion> {
         let mut state = SpellerState::new(self.state_size() as usize, &self.config);
         let mut corrections = BTreeMap::<String, Weight>::new();
+        let mut best_weight = self.config.max_weight.unwrap_or(f32::INFINITY);
 
         while let Some(next_node) = state.nodes.pop() {
+            self.update_weight_limit(&mut state, best_weight);
+            
             debug_incr("Worker node loop count");
             debug!("{:?}", next_node);
 
@@ -524,6 +546,11 @@ where
                             .mutator()
                             .final_weight(next_node.mutator_state)
                             .unwrap();
+
+                    if weight < best_weight {
+                        best_weight = weight;
+                    }
+                    
                     let entry = corrections.entry(string).or_insert(weight);
 
                     if *entry > weight {
@@ -543,6 +570,10 @@ where
             .collect();
 
         c.sort();
+
+        if let Some(n) = self.config.n_best {
+            c.truncate(n);
+        }
 
         c
     }
