@@ -33,7 +33,7 @@ struct TransducerAlphabetParser {
 impl TransducerAlphabetParser {
     fn new() -> TransducerAlphabetParser {
         TransducerAlphabetParser {
-            key_table: vec![],
+            key_table: Vec::with_capacity(64),
             flag_state_size: 0,
             length: 0,
             string_to_symbol: BTreeMap::new(),
@@ -212,7 +212,8 @@ impl TransducerAlphabet {
         let from = mutator.alphabet();
         let from_keys = from.key_table();
 
-        let mut translator = vec![0];
+        let mut translator = Vec::with_capacity(64);
+        translator.push(0);
 
         for i in 1..from_keys.len() {
             let from_sym = &from_keys[i];

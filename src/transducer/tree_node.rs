@@ -16,7 +16,7 @@ pub struct TreeNode {
 impl TreeNode {
     pub fn empty(start_state: FlagDiacriticState) -> TreeNode {
         TreeNode {
-            string: vec![],
+            string: Vec::with_capacity(32),
             input_state: 0,
             mutator_state: 0,
             lexicon_state: 0,
@@ -41,9 +41,11 @@ impl TreeNode {
 
         TreeNode {
             string: string,
+            input_state: self.input_state,
+            mutator_state: self.mutator_state,
             lexicon_state: transition.target().unwrap(),
-            weight: self.weight + transition.weight().unwrap(),
-            ..self.clone()
+            flag_state: self.flag_state.clone(),
+            weight: self.weight + transition.weight().unwrap()
         }
     }
 

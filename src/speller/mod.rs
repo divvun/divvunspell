@@ -8,13 +8,13 @@ use transducer::tree_node::TreeNode;
 use speller::suggestion::Suggestion;
 use types::{SymbolNumber, Weight, SpellerWorkerMode};
 
-fn debug_incr(key: &'static str) {
-    debug!("{}", key);
-    use COUNTER;
-    let mut c = COUNTER.lock().unwrap();
-    let mut entry = c.entry(key).or_insert(0);
-    *entry += 1;
-}
+// fn debug_incr(key: &'static str) {
+//     debug!("{}", key);
+//     use COUNTER;
+//     let mut c = COUNTER.lock().unwrap();
+//     let mut entry = c.entry(key).or_insert(0);
+//     *entry += 1;
+// }
 
 #[derive(Clone, Debug)]
 pub struct SpellerConfig {
@@ -58,7 +58,8 @@ struct SpellerState {
 impl SpellerState {
     pub fn new(size: usize, config: &SpellerConfig) -> SpellerState {
         let start_node = TreeNode::empty(vec![0; size]);
-        let nodes = vec![start_node];
+        let mut nodes = Vec::with_capacity(256);
+        nodes.push(start_node);
 
         SpellerState {
             nodes: nodes,
@@ -86,7 +87,7 @@ where
     }
 
     fn lexicon_epsilons(&self, state: &mut SpellerState, next_node: &TreeNode) {
-        debug_incr("lexicon_epsilons");
+        // debug_incr("lexicon_epsilons");
 
         debug!("Begin lexicon epsilons");
 
@@ -106,12 +107,12 @@ where
                     if sym == 0 {
                         if let SpellerWorkerMode::Correct = self.mode {
                             let epsilon_transition = transition.clone_with_epsilon_symbol();
-                            debug_incr(
-                                "lexicon_epsilons push node epsilon_transition CORRECT MODE",
-                            );
+                            // debug_incr(
+                            //     "lexicon_epsilons push node epsilon_transition CORRECT MODE",
+                            // );
                             state.nodes.push(next_node.update_lexicon(epsilon_transition));
                         } else {
-                            debug_incr("lexicon_epsilons push node transition");
+                            // debug_incr("lexicon_epsilons push node transition");
                             state.nodes.push(next_node.update_lexicon(transition));
                         }
                     } else {
@@ -120,17 +121,17 @@ where
                         if let Some(op) = operation {
                             let (is_success, applied_node) = next_node.apply_operation(op);
 
-                            debug_incr(if is_success {
-                                "is_success"
-                            } else {
-                                "isnt_success"
-                            });
+                            // debug_incr(if is_success {
+                            //     "is_success"
+                            // } else {
+                            //     "isnt_success"
+                            // });
 
                             if is_success {
                                 let epsilon_transition = transition.clone_with_epsilon_symbol();
-                                debug_incr(
-                                    "lexicon_epsilons push node cloned with eps target epsilon_transition",
-                                );
+                                // debug_incr(
+                                //     "lexicon_epsilons push node cloned with eps target epsilon_transition",
+                                // );
                                 state.nodes.push(applied_node.update_lexicon(epsilon_transition));
                             }
                         }
@@ -148,7 +149,7 @@ where
     }
 
     fn mutator_epsilons(&self, state: &mut SpellerState, next_node: &TreeNode) {
-        debug_incr("mutator_epsilons");
+        // debug_incr("mutator_epsilons");
         // debug!("Begin mutator epsilons");
 
         let mutator = self.speller.mutator();
@@ -169,7 +170,7 @@ where
 
             if let Some(0) = transition.symbol() {
                 if self.is_under_weight_limit(state, next_node.weight + transition.weight().unwrap()) {
-                    debug_incr("mutator_epsilons push node update_mutator transition");
+                    // debug_incr("mutator_epsilons push node update_mutator transition");
                     state.nodes.push(next_node.update_mutator(transition));
                 }
 
@@ -189,7 +190,7 @@ where
                             next_node.lexicon_state + 1,
                             lexicon.alphabet().unknown(),
                         ) {
-                            debug_incr("qla unknown mutator_eps");
+                            // debug_incr("qla unknown mutator_eps");
                             self.queue_lexicon_arcs(
                                 state,
                                 &next_node,
@@ -204,7 +205,7 @@ where
                             next_node.lexicon_state + 1,
                             lexicon.alphabet().identity(),
                         ) {
-                            debug_incr("qla identity mutator_eps");
+                            // debug_incr("qla identity mutator_eps");
                             self.queue_lexicon_arcs(
                                 state,
                                 &next_node,
@@ -220,7 +221,7 @@ where
                     continue;
                 }
 
-                debug_incr("qla alpha_trans mutator_eps");
+                // debug_incr("qla alpha_trans mutator_eps");
                 self.queue_lexicon_arcs(
                     state,
                     &next_node,
@@ -287,7 +288,7 @@ where
                     state,
                     next_node.weight + noneps_trans.weight().unwrap() + mutator_weight,
                 ) {
-                    debug_incr("queue_lexicon_arcs push node update");
+                    // debug_incr("queue_lexicon_arcs push node update");
                     state.nodes.push(next_node.update(
                         next_sym,
                         Some(next_node.input_state + input_increment as u32),
@@ -321,7 +322,7 @@ where
 
             if let Some(0) = transition.symbol() {
                 if self.is_under_weight_limit(state, next_node.weight + transition.weight().unwrap()) {
-                    debug_incr("queue_mutator_arcs push node update");
+                    // debug_incr("queue_mutator_arcs push node update");
                     state.nodes.push(next_node.update(
                         0,
                         Some(next_node.input_state + 1),
@@ -344,7 +345,7 @@ where
                             next_node.lexicon_state + 1,
                             lexicon.alphabet().unknown(),
                         ) {
-                            debug_incr("qla unknown qma");
+                            // debug_incr("qla unknown qma");
                             self.queue_lexicon_arcs(
                                 state,
                                 &next_node,
@@ -358,7 +359,7 @@ where
                             next_node.lexicon_state + 1,
                             lexicon.alphabet().identity(),
                         ) {
-                            debug_incr("qla identity qma");
+                            // debug_incr("qla identity qma");
                             self.queue_lexicon_arcs(
                                 state,
                                 &next_node,
@@ -373,7 +374,7 @@ where
                     continue;
                 }
 
-                debug_incr("qla alpha_trans qma");
+                // debug_incr("qla alpha_trans qma");
                 self.queue_lexicon_arcs(
                     state,
                     &next_node,
@@ -498,7 +499,7 @@ where
         while let Some(next_node) = state.nodes.pop() {
             self.update_weight_limit(&mut state, best_weight);
             
-            debug_incr("Worker node loop count");
+            // debug_incr("Worker node loop count");
             debug!("{:?}", next_node);
 
             debug!(
@@ -517,7 +518,7 @@ where
             self.mutator_epsilons(&mut state, &next_node);
 
             if next_node.input_state as usize == self.input.len() {
-                debug_incr("input_state eq input size");
+                // debug_incr("input_state eq input size");
                 debug!(
                     "is_final ms:{} ls:{}",
                     next_node.mutator_state,
@@ -526,7 +527,7 @@ where
                 if self.speller.mutator().is_final(next_node.mutator_state) &&
                     self.speller.lexicon().is_final(next_node.lexicon_state)
                 {
-                    debug_incr("is_final");
+                    // debug_incr("is_final");
 
                     let key_table = self.speller.lexicon().alphabet().key_table();
                     let string: String = next_node
