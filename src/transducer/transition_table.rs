@@ -1,7 +1,6 @@
 use byteorder::{LittleEndian, BigEndian, ReadBytesExt};
 use std::io::Cursor;
 use std::{mem, u16, u32};
-use std::cell::{RefCell, RefMut};
 
 use types::{TransitionTableIndex, SymbolNumber, Weight};
 use constants::{TRANS_SIZE, TRANS_INDEX_SIZE};
@@ -11,19 +10,19 @@ use transducer::symbol_transition::SymbolTransition;
 #[derive(Debug)]
 pub struct TransitionTable<'data> {
     size: TransitionTableIndex,
-    cursor: RefCell<Cursor<&'data [u8]>>,
+    cursor: Cursor<&'data [u8]>,
 }
 
 impl<'data> TransitionTable<'data> {
     pub fn new(buf: &[u8], size: u32) -> TransitionTable {
         TransitionTable {
             size: size,
-            cursor: RefCell::new(Cursor::new(buf)),
+            cursor: Cursor::new(buf),
         }
     }
 
     fn read_symbol_from_cursor(&self, index: u64) -> Option<SymbolNumber> {
-        let mut cursor = self.cursor.borrow_mut();
+        let mut cursor = self.cursor.clone();
         cursor.set_position(index);
         let x = cursor.read_u16::<LittleEndian>().unwrap();
         if x == u16::MAX {
@@ -59,7 +58,7 @@ impl<'data> TransitionTable<'data> {
         }
 
         let index: u64 = ((TRANS_SIZE * i as usize) + (2 * mem::size_of::<SymbolNumber>())) as u64;
-        let mut cursor = self.cursor.borrow_mut();
+        let mut cursor = self.cursor.clone();
         cursor.set_position(index);
         let x = cursor.read_u32::<LittleEndian>().unwrap();
         if x == u32::MAX {
@@ -78,7 +77,7 @@ impl<'data> TransitionTable<'data> {
                               mem::size_of::<TransitionTableIndex>()) as
             u64;
 
-        let mut cursor = self.cursor.borrow_mut();
+        let mut cursor = self.cursor.clone();
         cursor.set_position(index);
         Some(cursor.read_f32::<LittleEndian>().unwrap())
     }

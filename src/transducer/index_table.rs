@@ -4,12 +4,11 @@ use std::{mem, u16, u32};
 
 use types::{TransitionTableIndex, SymbolNumber, Weight};
 use constants::TRANS_INDEX_SIZE;
-use std::cell::{RefCell, RefMut};
 
 #[derive(Debug)]
 pub struct IndexTable<'data> {
     size: TransitionTableIndex,
-    cursor: RefCell<Cursor<&'data [u8]>>,
+    cursor: Cursor<&'data [u8]>,
 }
 
 impl<'data> IndexTable<'data> {
@@ -19,7 +18,7 @@ impl<'data> IndexTable<'data> {
 
         IndexTable {
             size: size,
-            cursor: RefCell::new(Cursor::new(buf)),
+            cursor: Cursor::new(buf),
         }
     }
 
@@ -28,7 +27,7 @@ impl<'data> IndexTable<'data> {
             return None;
         }
         let index = TRANS_INDEX_SIZE * i as usize;
-        let mut cursor = self.cursor.borrow_mut();
+        let mut cursor = self.cursor.clone();
         cursor.set_position(index as u64);
         let x = cursor.read_u16::<LittleEndian>().unwrap();
         if x == u16::MAX {
@@ -44,7 +43,7 @@ impl<'data> IndexTable<'data> {
         }
 
         let index: u64 = (TRANS_INDEX_SIZE * (i as usize) + mem::size_of::<SymbolNumber>()) as u64;
-        let mut cursor = self.cursor.borrow_mut();
+        let mut cursor = self.cursor.clone();
         cursor.set_position(index);
         let x = cursor.read_u32::<LittleEndian>().unwrap();
         if x == u32::MAX {
@@ -54,16 +53,15 @@ impl<'data> IndexTable<'data> {
         }
     }
 
+    // Final weight reads from the same position as target, but for a different tuple
+    // This can probably be abstracted out more nicely
     pub fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight> {
         if i >= self.size {
             return None;
         }
 
-        // BUG: see below
-        // TODO: this is the same as target, and therefore probably a bug
-
         let index: u64 = (TRANS_INDEX_SIZE * (i as usize) + mem::size_of::<SymbolNumber>()) as u64;
-        let mut cursor = self.cursor.borrow_mut();
+        let mut cursor = self.cursor.clone();
         cursor.set_position(index);
         Some(cursor.read_f32::<LittleEndian>().unwrap())
     }

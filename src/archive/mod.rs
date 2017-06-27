@@ -81,6 +81,6 @@ impl<'data> SpellerArchive<'data> {
 fn test_load_zhfst() {
     let zhfst = SpellerArchive::new("./se-store.zhfst");
     let two = zhfst.speller();
-    let res = two.suggest("nuvviDspeller");
+    let res = two.suggest_one("nuvviDspeller");
     println!("{:?}", res);
 }
