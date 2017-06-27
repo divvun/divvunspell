@@ -1,6 +1,6 @@
 pub mod suggestion;
 
-use std::collections::{BinaryHeap, BTreeMap};
+use std::collections::BTreeMap;
 use std::cmp::Ordering;
 use std::cmp::Ordering::Equal;
 
@@ -8,9 +8,28 @@ use transducer::Transducer;
 use transducer::tree_node::TreeNode;
 use speller::suggestion::Suggestion;
 use transducer::symbol_transition::SymbolTransition;
-use types::{SymbolNumber, Weight, FlagDiacriticOperation, SpellerWorkerMode};
+use types::{SymbolNumber, Weight, FlagDiacriticOperation, SpellerWorkerMode, OperationMap};
 
-type OperationMap = BTreeMap<SymbolNumber, FlagDiacriticOperation>;
+fn debug_incr(key: &'static str) {
+    debug!("{}", key);
+    use COUNTER;
+    let mut c = COUNTER.lock().unwrap();
+    let mut entry = c.entry(key).or_insert(0);
+    *entry += 1;
+}
+
+#[derive(Clone, Debug)]
+pub struct SpellerConfig {
+    pub max_weight: Option<Weight>,
+}
+
+impl SpellerConfig {
+    pub fn default() -> SpellerConfig {
+        SpellerConfig {
+            max_weight: None
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Speller<'data> {
@@ -26,14 +45,7 @@ where
     speller: &'a Speller<'data>,
     input: Vec<SymbolNumber>,
     mode: SpellerWorkerMode,
-}
-
-fn debug_incr(key: &'static str) {
-    debug!("{}", key);
-    use COUNTER;
-    let mut c = COUNTER.lock().unwrap();
-    let mut entry = c.entry(key).or_insert(0);
-    *entry += 1;
+    max_weight: Option<Weight>,
 }
 
 impl<'data, 'a> SpellerWorker<'data, 'a>
@@ -44,11 +56,13 @@ where
         speller: &'a Speller<'data>,
         mode: SpellerWorkerMode,
         input: Vec<SymbolNumber>,
+        config: &SpellerConfig
     ) -> SpellerWorker<'data, 'a> {
         SpellerWorker {
             speller: speller,
             input: input,
             mode: mode,
+            max_weight: config.max_weight
         }
     }
 
@@ -444,14 +458,16 @@ where
 
     fn is_under_weight_limit(&self, w: Weight) -> bool {
         use std::f32;
-        w < f32::MAX
+
+        let limit = self.max_weight.unwrap_or(f32::MAX);
+        w < limit
     }
 
     fn state_size(&self) -> usize {
         self.speller.lexicon().alphabet().state_size() as usize
     }
 
-    fn suggest_one(&self) -> Vec<Suggestion> {
+    fn suggest(&self) -> Vec<Suggestion> {
         let start_node = TreeNode::empty(vec![0; self.state_size() as usize]);
         let mut nodes = vec![start_node];
 
@@ -589,19 +605,29 @@ where
 
     pub fn is_correct(&'a self, word: &str) -> bool {
         let mut input = self.to_input_vec(word);
-        let mut worker = SpellerWorker::new(&self, SpellerWorkerMode::Unknown, input);
+        let mut worker = SpellerWorker::new(
+            &self,
+            SpellerWorkerMode::Unknown,
+            input,
+            &SpellerConfig::default()
+        );
 
         worker.is_correct()
-    }    
-    
-    pub fn suggest(&'a self, words: &[&str]) -> Vec<Vec<Suggestion>> {
-        words.iter().map(|w| self.suggest_one(w)).collect()
     }
 
-    pub fn suggest_one(&'a self, word: &str) -> Vec<Suggestion> {
-        let mut input = self.to_input_vec(word);
-        let mut worker = SpellerWorker::new(&self, SpellerWorkerMode::Correct, input);
+    pub fn suggest(&'a self, word: &str) -> Vec<Suggestion> {
+        self.suggest_with_config(word, &SpellerConfig::default())
+    }
 
-        worker.suggest_one()
+    pub fn suggest_with_config(&'a self, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
+        let mut input = self.to_input_vec(word);
+        let mut worker = SpellerWorker::new(
+            &self,
+            SpellerWorkerMode::Correct,
+            input,
+            config
+        );
+
+        worker.suggest()
     }
 }

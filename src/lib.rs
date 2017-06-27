@@ -57,6 +57,6 @@ fn test_speller() {
     let mutator = Transducer::from_bytes(&errmodel_buf);
 
     let speller = Speller::new(mutator, lexicon);
-    println!("{:?}", speller.suggest_one("nuvviDspeller"));
+    println!("{:?}", speller.suggest("nuvviDspeller"));
     println!("{:?}", *COUNTER.lock().unwrap());
 }
