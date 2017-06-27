@@ -5,8 +5,6 @@ pub mod symbol_transition;
 pub mod transition_table;
 pub mod tree_node;
 
-use std::collections::{BinaryHeap, BTreeMap};
-
 use types::{TransitionTableIndex, Weight, SymbolNumber, HeaderFlag};
 use constants::{TRANS_INDEX_SIZE, TRANS_SIZE, TARGET_TABLE};
 use self::header::TransducerHeader;
@@ -106,13 +104,11 @@ where
                 Some(sym) => sym == 0 || self.alphabet.is_flag(sym),
                 None => false,
             }
-        } else {
-            if let Some(0) = self.index_table.input_symbol(i) {
-                true
-            } else {
-                false
-            }
-        }
+        } else if let Some(0) = self.index_table.input_symbol(i) {
+    true
+} else {
+    false
+}
     }
 
     pub fn has_non_epsilons_or_flags(&self, i: TransitionTableIndex) -> bool {

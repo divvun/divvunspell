@@ -3,7 +3,7 @@ pub const TRANS_INDEX_SIZE: usize = 6;
 pub const TRANS_SIZE: usize = 12;
 pub const TARGET_TABLE: u32 = 2147483648;
 
-//#[test]
+#[test]
 fn test_trans_index_size() {
     use std::mem;
     use types::*;
@@ -13,7 +13,7 @@ fn test_trans_index_size() {
     assert!(TRANS_INDEX_SIZE == c);
 }
 
-//#[test]
+#[test]
 fn test_trans_size() {
     use std::mem;
     use types::*;

@@ -1,4 +1,4 @@
-use byteorder::{LittleEndian, BigEndian, ReadBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::Cursor;
 use std::{mem, u16, u32};
 

@@ -1,10 +1,9 @@
-use byteorder::{LittleEndian, BigEndian, ReadBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::Cursor;
 use std::{mem, u16, u32};
 
 use types::{TransitionTableIndex, SymbolNumber, Weight};
-use constants::{TRANS_SIZE, TRANS_INDEX_SIZE};
-
+use constants::TRANS_SIZE;
 use transducer::symbol_transition::SymbolTransition;
 
 #[derive(Debug)]

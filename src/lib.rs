@@ -21,15 +21,13 @@ pub mod types;
 pub mod speller;
 
 use std::collections::HashMap;
-use log::{LogRecord, LogLevelFilter};
-use env_logger::LogBuilder;
 use std::sync::Mutex;
 
 lazy_static! {
     static ref COUNTER: Mutex<HashMap<&'static str, u32>> = Mutex::new(HashMap::new());
 }
 
-//#[test]
+#[test]
 fn test_speller() {
     use std::fs::File;
     use std::io::BufReader;
@@ -38,12 +36,6 @@ fn test_speller() {
     use transducer::Transducer;
 
     use COUNTER;
-
-    // let format = |record: &LogRecord| {
-    //     format!("[{}] {} ({}:{})", record.level(), record.args(), record.location().file(), record.location().line())
-    // };
-    // let mut builder = LogBuilder::new();
-    // builder.format(format).filter(None, LogLevelFilter::Debug).init().unwrap();
 
     let acceptor = File::open("./se/acceptor.default.hfst").unwrap();
     let mut acceptor_buf = vec![];

@@ -1,4 +1,4 @@
-use types::{SymbolNumber, ValueNumber, FlagDiacriticOperator, FlagDiacriticOperation, Weight};
+use types::{SymbolNumber, ValueNumber, FlagDiacriticOperator, FlagDiacriticOperation};
 use std::collections::BTreeMap;
 use super::Transducer;
 
@@ -79,8 +79,8 @@ impl TransducerAlphabetParser {
 
         let op = FlagDiacriticOperation {
             operation: fdo,
-            feature: *self.feature_bucket.get(&feature).unwrap(),
-            value: *self.value_bucket.get(&value).unwrap(),
+            feature: *&self.feature_bucket[&feature],
+            value: *&self.value_bucket[&value],
         };
 
         self.operations.insert(i, op);
@@ -100,7 +100,7 @@ impl TransducerAlphabetParser {
             let key = String::from_utf8_lossy(&buf[offset..offset + end]).into_owned();
             //debug!("{}", key);
 
-            if key.starts_with("@") && key.ends_with("@") {
+            if key.starts_with('@') && key.ends_with('@') {
                 if key.chars().nth(2).unwrap() == '.' {
                     self.handle_special_symbol(i, &key);
                 } else if key == "@_EPSILON_SYMBOL_@" {
@@ -215,60 +215,17 @@ impl TransducerAlphabet {
         let mut translator = vec![0];
 
         for i in 1..from_keys.len() {
-            let from_sym = from_keys.get(i).unwrap();
+            let from_sym = &from_keys[i];
 
             if let Some(&sym) = self.string_to_symbol.get(from_sym) {
-                // translator at i points to lexicon's symbol for mutator's string for
-                // mutator's symbol number i
                 translator.push(sym);
             } else {
                 let lexicon_key = self.key_table.len() as SymbolNumber;
                 translator.push(lexicon_key);
-                // lexicon->get_encoder()->read_input_symbol(sym, lexicon_key);
                 self.add_symbol(from_sym);
             }
         }
 
         translator
-    }
-}
-
-// TODO: refactor this out; kept for completeness
-struct LetterTrie;
-
-impl LetterTrie {
-    pub fn new() -> LetterTrie {
-        LetterTrie {}
-    }
-
-    pub fn add_string(s: String, symbol_key: SymbolNumber) {
-        unimplemented!()
-    }
-
-    pub fn find_key(s: String) -> Option<SymbolNumber> {
-        unimplemented!()
-    }
-}
-
-// TODO: refactor this out; kept for completeness
-struct Encoder;
-
-impl Encoder {
-    pub fn new() -> Encoder {
-        Encoder {}
-    }
-
-    // TODO: this just seems to be a late initialiser?
-    pub fn read_input_symbols(key_table: Vec<String>, input_symbol_count: SymbolNumber) {
-        unimplemented!()
-    }
-
-    // TODO: check this signature is correct
-    pub fn read_input_symbol(s: String, symbol: SymbolNumber) {
-        unimplemented!()
-    }
-
-    pub fn find_key(s: String) -> Option<SymbolNumber> {
-        unimplemented!()
     }
 }

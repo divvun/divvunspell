@@ -1,14 +1,11 @@
 pub mod suggestion;
 
 use std::collections::BTreeMap;
-use std::cmp::Ordering;
-use std::cmp::Ordering::Equal;
 
 use transducer::Transducer;
 use transducer::tree_node::TreeNode;
 use speller::suggestion::Suggestion;
-use transducer::symbol_transition::SymbolTransition;
-use types::{SymbolNumber, Weight, FlagDiacriticOperation, SpellerWorkerMode, OperationMap};
+use types::{SymbolNumber, Weight, SpellerWorkerMode};
 
 fn debug_incr(key: &'static str) {
     debug!("{}", key);
@@ -252,15 +249,10 @@ where
         input_increment: i16,
     ) {
         debug!("Begin queue lexicon arcs");
-        //debug!("next_node lexstate:{}", next_node.lexicon_state);
 
         let lexicon = self.speller.lexicon();
-        let alphabet_translator = self.speller.alphabet_translator();
-
-        let mut next = lexicon.next(next_node.lexicon_state, input_sym).unwrap();
-        //debug!("next: {}", next);
-
         let identity = lexicon.alphabet().identity();
+        let mut next = lexicon.next(next_node.lexicon_state, input_sym).unwrap();
 
         while let Some(noneps_trans) = lexicon.take_non_epsilons(next, input_sym) {
             //debug!("noneps next: {:?}", &noneps_trans);
@@ -283,8 +275,8 @@ where
 
                 //debug!("{}: {} {} {} n:{}", next, sym, next_node.weight, mutator_weight, nodes.len());
 
-                let next_sym = match &self.mode {
-                    Correct => input_sym,
+                let next_sym = match self.mode {
+                    SpellerWorkerMode::Correct => input_sym,
                     _ => sym,
                 };
 
@@ -397,7 +389,6 @@ where
 
     fn consume_input(&self, state: &mut SpellerState, next_node: &TreeNode) {
         let mutator = self.speller.mutator();
-        let lexicon = self.speller.lexicon();
         let input_state = next_node.input_state as usize;
 
         if input_state >= self.input.len() {
@@ -473,8 +464,6 @@ where
     }
 
     fn is_under_weight_limit(&self, state: &SpellerState, w: Weight) -> bool {
-        use std::f32;
-
         w < state.max_weight
     }
 
@@ -590,11 +579,11 @@ where
         }
     }
 
-    fn mutator(&'a self) -> &'a Transducer<'data> {
+    pub fn mutator(&'a self) -> &'a Transducer<'data> {
         &self.mutator
     }
 
-    fn lexicon(&'a self) -> &'a Transducer<'data> {
+    pub fn lexicon(&'a self) -> &'a Transducer<'data> {
         &self.lexicon
     }
 
@@ -616,11 +605,10 @@ where
     }
 
     pub fn is_correct(&'a self, word: &str) -> bool {
-        let mut input = self.to_input_vec(word);
-        let mut worker = SpellerWorker::new(
+        let worker = SpellerWorker::new(
             &self,
             SpellerWorkerMode::Unknown,
-            input,
+            self.to_input_vec(word),
             &SpellerConfig::default()
         );
 
@@ -632,11 +620,10 @@ where
     }
 
     pub fn suggest_with_config(&'a self, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
-        let mut input = self.to_input_vec(word);
-        let mut worker = SpellerWorker::new(
+        let worker = SpellerWorker::new(
             &self,
             SpellerWorkerMode::Correct,
-            input,
+            self.to_input_vec(word),
             config
         );
 

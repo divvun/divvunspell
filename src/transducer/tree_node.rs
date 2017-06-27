@@ -55,32 +55,6 @@ impl TreeNode {
         }
     }
 
-    fn update_input(
-        &self,
-        symbol: SymbolNumber,
-        next_input: u32,
-        next_mutator: TransitionTableIndex,
-        next_lexicon: TransitionTableIndex,
-        weight: Weight,
-    ) -> TreeNode {
-        let string = if symbol != 0 {
-            let mut string = self.string.clone();
-            string.push(symbol); // push_back?
-            string
-        } else {
-            self.string.clone()
-        };
-
-        TreeNode {
-            string: string,
-            input_state: next_input,
-            mutator_state: next_mutator,
-            lexicon_state: next_lexicon,
-            weight: self.weight + weight,
-            ..self.clone()
-        }
-    }
-
     pub fn update(
         &self,
         output_symbol: SymbolNumber,

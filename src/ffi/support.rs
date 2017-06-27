@@ -50,7 +50,7 @@ impl<T> Drop for CVec<T> {
     }
 }
 
-//#[test]
+#[test]
 fn test_convert_vec() {
     let test = vec!["this".to_string(), "works".to_string()];
 
