@@ -45,7 +45,26 @@ where
     speller: &'a Speller<'data>,
     input: Vec<SymbolNumber>,
     mode: SpellerWorkerMode,
-    max_weight: Option<Weight>,
+    config: SpellerConfig
+}
+
+struct SpellerState {
+    nodes: Vec<TreeNode>,
+    max_weight: Weight
+}
+
+impl SpellerState {
+    pub fn new(size: usize, config: &SpellerConfig) -> SpellerState {
+        use std::f32;
+
+        let start_node = TreeNode::empty(vec![0; size]);
+        let nodes = vec![start_node];
+
+        SpellerState {
+            nodes: nodes,
+            max_weight: config.max_weight.unwrap_or(f32::MAX)
+        }
+    }
 }
 
 impl<'data, 'a> SpellerWorker<'data, 'a>
@@ -62,11 +81,11 @@ where
             speller: speller,
             input: input,
             mode: mode,
-            max_weight: config.max_weight
+            config: config.clone()
         }
     }
 
-    fn lexicon_epsilons(&self, nodes: &mut Vec<TreeNode>, next_node: &TreeNode) {
+    fn lexicon_epsilons(&self, state: &mut SpellerState, next_node: &TreeNode) {
         debug_incr("lexicon_epsilons");
 
         debug!("Begin lexicon epsilons");
@@ -82,7 +101,7 @@ where
         let mut next = lexicon.next(next_node.lexicon_state, 0).unwrap();
 
         while let Some(transition) = lexicon.take_epsilons_and_flags(next) {
-            if self.is_under_weight_limit(next_node.weight + transition.weight().unwrap()) {
+            if self.is_under_weight_limit(state, next_node.weight + transition.weight().unwrap()) {
                 if let Some(sym) = lexicon.transition_table().input_symbol(next) {
                     if sym == 0 {
                         if let SpellerWorkerMode::Correct = self.mode {
@@ -90,10 +109,10 @@ where
                             debug_incr(
                                 "lexicon_epsilons push node epsilon_transition CORRECT MODE",
                             );
-                            nodes.push(next_node.update_lexicon(epsilon_transition));
+                            state.nodes.push(next_node.update_lexicon(epsilon_transition));
                         } else {
                             debug_incr("lexicon_epsilons push node transition");
-                            nodes.push(next_node.update_lexicon(transition));
+                            state.nodes.push(next_node.update_lexicon(transition));
                         }
                     } else {
                         let operation = operations.get(&sym);
@@ -112,7 +131,7 @@ where
                                 debug_incr(
                                     "lexicon_epsilons push node cloned with eps target epsilon_transition",
                                 );
-                                nodes.push(applied_node.update_lexicon(epsilon_transition));
+                                state.nodes.push(applied_node.update_lexicon(epsilon_transition));
                             }
                         }
                     }
@@ -124,11 +143,11 @@ where
 
         debug!(
             "lexicon epsilons, nodes length: {}",
-            nodes.len()
+            state.nodes.len()
         );
     }
 
-    fn mutator_epsilons(&self, nodes: &mut Vec<TreeNode>, next_node: &TreeNode) {
+    fn mutator_epsilons(&self, state: &mut SpellerState, next_node: &TreeNode) {
         debug_incr("mutator_epsilons");
         // debug!("Begin mutator epsilons");
 
@@ -149,9 +168,9 @@ where
             // debug!("Current taken epsilon: {}", next_m);
 
             if let Some(0) = transition.symbol() {
-                if self.is_under_weight_limit(next_node.weight + transition.weight().unwrap()) {
+                if self.is_under_weight_limit(state, next_node.weight + transition.weight().unwrap()) {
                     debug_incr("mutator_epsilons push node update_mutator transition");
-                    nodes.push(next_node.update_mutator(transition));
+                    state.nodes.push(next_node.update_mutator(transition));
                 }
 
                 next_m += 1;
@@ -172,7 +191,7 @@ where
                         ) {
                             debug_incr("qla unknown mutator_eps");
                             self.queue_lexicon_arcs(
-                                nodes,
+                                state,
                                 &next_node,
                                 lexicon.alphabet().unknown().unwrap(),
                                 transition.target().unwrap(),
@@ -187,7 +206,7 @@ where
                         ) {
                             debug_incr("qla identity mutator_eps");
                             self.queue_lexicon_arcs(
-                                nodes,
+                                state,
                                 &next_node,
                                 lexicon.alphabet().identity().unwrap(),
                                 transition.target().unwrap(),
@@ -203,7 +222,7 @@ where
 
                 debug_incr("qla alpha_trans mutator_eps");
                 self.queue_lexicon_arcs(
-                    nodes,
+                    state,
                     &next_node,
                     trans_sym,
                     transition.target().unwrap(),
@@ -217,7 +236,7 @@ where
 
         debug!(
             "mutator epsilons, nodes length: {}",
-            nodes.len()
+            state.nodes.len()
         );
 
         // debug!("End mutator epsilons");
@@ -225,7 +244,7 @@ where
 
     pub fn queue_lexicon_arcs(
         &self,
-        nodes: &mut Vec<TreeNode>,
+        state: &mut SpellerState,
         next_node: &TreeNode,
         input_sym: SymbolNumber,
         mutator_state: u32,
@@ -270,10 +289,11 @@ where
                 };
 
                 if self.is_under_weight_limit(
+                    state,
                     next_node.weight + noneps_trans.weight().unwrap() + mutator_weight,
                 ) {
                     debug_incr("queue_lexicon_arcs push node update");
-                    nodes.push(next_node.update(
+                    state.nodes.push(next_node.update(
                         next_sym,
                         Some(next_node.input_state + input_increment as u32),
                         mutator_state,
@@ -287,13 +307,13 @@ where
             debug!("qla noneps NEXT input_sym:{}, next: {}", input_sym, next);
         }
 
-        debug!("qla, nodes length: {}", nodes.len());
+        debug!("qla, nodes length: {}", state.nodes.len());
         debug!("--- qla noneps end ---");
 
         //debug!("End lexicon arcs");
     }
 
-    fn queue_mutator_arcs(&self, nodes: &mut Vec<TreeNode>, next_node: &TreeNode, input_sym: SymbolNumber) {
+    fn queue_mutator_arcs(&self, state: &mut SpellerState, next_node: &TreeNode, input_sym: SymbolNumber) {
         //debug!("Mutator arcs");
         let mutator = self.speller.mutator();
         let lexicon = self.speller.lexicon();
@@ -305,9 +325,9 @@ where
             //debug!("mut arc loop: {}", next_m);
 
             if let Some(0) = transition.symbol() {
-                if self.is_under_weight_limit(next_node.weight + transition.weight().unwrap()) {
+                if self.is_under_weight_limit(state, next_node.weight + transition.weight().unwrap()) {
                     debug_incr("queue_mutator_arcs push node update");
-                    nodes.push(next_node.update(
+                    state.nodes.push(next_node.update(
                         0,
                         Some(next_node.input_state + 1),
                         transition.target().unwrap(),
@@ -331,7 +351,7 @@ where
                         ) {
                             debug_incr("qla unknown qma");
                             self.queue_lexicon_arcs(
-                                nodes,
+                                state,
                                 &next_node,
                                 lexicon.alphabet().unknown().unwrap(),
                                 transition.target().unwrap(),
@@ -345,7 +365,7 @@ where
                         ) {
                             debug_incr("qla identity qma");
                             self.queue_lexicon_arcs(
-                                nodes,
+                                state,
                                 &next_node,
                                 lexicon.alphabet().identity().unwrap(),
                                 transition.target().unwrap(),
@@ -360,7 +380,7 @@ where
 
                 debug_incr("qla alpha_trans qma");
                 self.queue_lexicon_arcs(
-                    nodes,
+                    state,
                     &next_node,
                     trans_sym,
                     transition.target().unwrap(),
@@ -370,16 +390,12 @@ where
             }
 
             next_m += 1;
-
-
-            // TODO: weight limit
-
         }
 
-        debug!("qma, nodes length: {}", nodes.len());
+        debug!("qma, nodes length: {}", state.nodes.len());
     }
 
-    fn consume_input(&self, nodes: &mut Vec<TreeNode>, next_node: &TreeNode) {
+    fn consume_input(&self, state: &mut SpellerState, next_node: &TreeNode) {
         let mutator = self.speller.mutator();
         let lexicon = self.speller.lexicon();
         let input_state = next_node.input_state as usize;
@@ -396,22 +412,22 @@ where
                 if mutator
                     .has_transitions(next_node.mutator_state + 1, mutator.alphabet().identity())
                 {
-                    self.queue_mutator_arcs(nodes, &next_node, mutator.alphabet().identity().unwrap());
+                    self.queue_mutator_arcs(state, &next_node, mutator.alphabet().identity().unwrap());
                 }
                 if mutator
                     .has_transitions(next_node.mutator_state + 1, mutator.alphabet().unknown())
                 {
-                    self.queue_mutator_arcs(nodes, &next_node, mutator.alphabet().unknown().unwrap());
+                    self.queue_mutator_arcs(state, &next_node, mutator.alphabet().unknown().unwrap());
                 }
             }
         } else {
-            self.queue_mutator_arcs(nodes, &next_node, input_sym);
+            self.queue_mutator_arcs(state, &next_node, input_sym);
         }
 
         debug!("finish consume input");
     }
 
-    fn lexicon_consume(&self, nodes: &mut Vec<TreeNode>, next_node: &TreeNode) {
+    fn lexicon_consume(&self, state: &mut SpellerState, next_node: &TreeNode) {
         let mutator = self.speller.mutator();
         let lexicon = self.speller.lexicon();
         let alphabet_translator = self.speller.alphabet_translator();
@@ -430,7 +446,7 @@ where
             if input_sym >= lexicon.alphabet().initial_symbol_count() {
                 if lexicon.has_transitions(next_lexicon_state, mutator.alphabet().identity()) {
                     self.queue_lexicon_arcs(
-                        nodes,
+                        state,
                         &next_node,
                         lexicon.alphabet().identity().unwrap(),
                         next_node.mutator_state,
@@ -440,7 +456,7 @@ where
                 }
                 if lexicon.has_transitions(next_lexicon_state, mutator.alphabet().unknown()) {
                     self.queue_lexicon_arcs(
-                        nodes,
+                        state,
                         &next_node,
                         lexicon.alphabet().unknown().unwrap(),
                         next_node.mutator_state,
@@ -453,14 +469,13 @@ where
             return;
         }
 
-        self.queue_lexicon_arcs(nodes, &next_node, input_sym, next_node.mutator_state, 0.0, 1);
+        self.queue_lexicon_arcs(state, &next_node, input_sym, next_node.mutator_state, 0.0, 1);
     }
 
-    fn is_under_weight_limit(&self, w: Weight) -> bool {
+    fn is_under_weight_limit(&self, state: &SpellerState, w: Weight) -> bool {
         use std::f32;
 
-        let limit = self.max_weight.unwrap_or(f32::MAX);
-        w < limit
+        w < state.max_weight
     }
 
     fn state_size(&self) -> usize {
@@ -468,12 +483,10 @@ where
     }
 
     fn suggest(&self) -> Vec<Suggestion> {
-        let start_node = TreeNode::empty(vec![0; self.state_size() as usize]);
-        let mut nodes = vec![start_node];
-
+        let mut state = SpellerState::new(self.state_size() as usize, &self.config);
         let mut corrections = BTreeMap::<String, Weight>::new();
 
-        while let Some(next_node) = nodes.pop() {
+        while let Some(next_node) = state.nodes.pop() {
             debug_incr("Worker node loop count");
             debug!("{:?}", next_node);
 
@@ -485,12 +498,12 @@ where
                 next_node.lexicon_state
             );
 
-            if !self.is_under_weight_limit(next_node.weight) {
-                //    continue
+            if !self.is_under_weight_limit(&mut state, next_node.weight) {
+                continue
             }
 
-            self.lexicon_epsilons(&mut nodes, &next_node);
-            self.mutator_epsilons(&mut nodes, &next_node);
+            self.lexicon_epsilons(&mut state, &next_node);
+            self.mutator_epsilons(&mut state, &next_node);
 
             if next_node.input_state as usize == self.input.len() {
                 debug_incr("input_state eq input size");
@@ -529,7 +542,7 @@ where
                     }
                 }
             } else {
-                self.consume_input(&mut nodes, &next_node);
+                self.consume_input(&mut state, &next_node);
             }
         }
 
@@ -546,18 +559,17 @@ where
     }
 
     pub fn is_correct(&self) -> bool {
-        let start_node = TreeNode::empty(vec![0; self.state_size() as usize]);
-        let mut nodes = vec![start_node];
+        let mut state = SpellerState::new(self.state_size() as usize, &self.config);
 
-        while let Some(next_node) = nodes.pop() {
+        while let Some(next_node) = state.nodes.pop() {
             if next_node.input_state as usize == self.input.len() &&
                 self.speller.lexicon().is_final(next_node.lexicon_state)
             {
                 return true;
             }
 
-            self.lexicon_epsilons(&mut nodes, &next_node);
-            self.lexicon_consume(&mut nodes, &next_node);
+            self.lexicon_epsilons(&mut state, &next_node);
+            self.lexicon_consume(&mut state, &next_node);
         }
 
         false
@@ -578,11 +590,11 @@ where
         }
     }
 
-    pub fn mutator(&'a self) -> &'a Transducer<'data> {
+    fn mutator(&'a self) -> &'a Transducer<'data> {
         &self.mutator
     }
 
-    pub fn lexicon(&'a self) -> &'a Transducer<'data> {
+    fn lexicon(&'a self) -> &'a Transducer<'data> {
         &self.lexicon
     }
 
