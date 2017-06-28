@@ -33,11 +33,16 @@ impl PartialOrd for Suggestion {
 
 impl Ord for Suggestion {
     fn cmp(&self, other: &Self) -> Ordering {
-        other
+        let x = self
             .weight
-            .partial_cmp(&self.weight)
-            .unwrap_or(Equal)
-            .reverse()
+            .partial_cmp(&other.weight)
+            .unwrap_or(Equal);
+
+        if let Equal = x {
+            return self.value.cmp(&other.value)
+        }
+
+        x
     }
 }
 
