@@ -14,8 +14,8 @@ extern crate env_logger;
 extern crate lazy_static;
 
 pub mod archive;
+pub mod c_api;
 pub mod constants;
-pub mod ffi;
 pub mod transducer;
 pub mod types;
 pub mod speller;
