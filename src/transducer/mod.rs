@@ -161,15 +161,14 @@ where
         i: TransitionTableIndex,
         symbol: SymbolNumber,
     ) -> Option<SymbolTransition> {
-        match self.transition_table.input_symbol(i) {
-            Some(input_sym) => {
-                if input_sym != symbol {
-                    None
-                } else {
-                    Some(self.transition_table.symbol_transition(i))
-                }
+        if let Some(input_sym) = self.transition_table.input_symbol(i) {
+            if input_sym != symbol {
+                None
+            } else {
+                Some(self.transition_table.symbol_transition(i))
             }
-            None => None,
+        } else {
+            None
         }
     }
 
