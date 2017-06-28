@@ -10,8 +10,8 @@ extern crate zip;
 extern crate log;
 extern crate env_logger;
 
-#[macro_use]
-extern crate lazy_static;
+// #[macro_use]
+// extern crate lazy_static;
 
 pub mod archive;
 pub mod c_api;
@@ -20,12 +20,12 @@ pub mod transducer;
 pub mod types;
 pub mod speller;
 
-use std::collections::HashMap;
-use std::sync::Mutex;
+// use std::collections::HashMap;
+// use std::sync::Mutex;
 
-lazy_static! {
-    static ref COUNTER: Mutex<HashMap<&'static str, u32>> = Mutex::new(HashMap::new());
-}
+// lazy_static! {
+//     pub static ref COUNTER: Mutex<HashMap<&'static str, u32>> = Mutex::new(HashMap::new());
+// }
 
 #[test]
 fn test_speller() {
@@ -35,7 +35,7 @@ fn test_speller() {
     use speller::Speller;
     use transducer::Transducer;
 
-    use COUNTER;
+    // use COUNTER;
 
     let acceptor = File::open("./se/acceptor.default.hfst").unwrap();
     let mut acceptor_buf = vec![];
@@ -50,5 +50,5 @@ fn test_speller() {
 
     let speller = Speller::new(mutator, lexicon);
     println!("{:?}", speller.suggest("nuvviDspeller"));
-    println!("{:?}", *COUNTER.lock().unwrap());
+    // println!("{:?}", *COUNTER.lock().unwrap());
 }

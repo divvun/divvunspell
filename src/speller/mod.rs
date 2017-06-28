@@ -8,13 +8,13 @@ use transducer::tree_node::TreeNode;
 use speller::suggestion::Suggestion;
 use types::{SymbolNumber, Weight, SpellerWorkerMode, FlagDiacriticOperator};
 
-pub fn debug_incr(key: &'static str) {
-    // debug!("{}", key);
-    use COUNTER;
-    let mut c = COUNTER.lock().unwrap();
-    let mut entry = c.entry(key).or_insert(0);
-    *entry += 1;
-}
+// pub fn debug_incr(key: &'static str) {
+//     // debug!("{}", key);
+//     use COUNTER;
+//     let mut c = COUNTER.lock().unwrap();
+//     let mut entry = c.entry(key).or_insert(0);
+//     *entry += 1;
+// }
 
 #[derive(Clone, Debug)]
 pub struct SpellerConfig {
@@ -144,7 +144,6 @@ where
                             let epsilon_transition = transition.clone_with_epsilon_symbol();
                             applied_node.update_lexicon_mut(epsilon_transition);
                             state.nodes.push(applied_node);
-                            //state.nodes.push(applied_node.update_lexicon(epsilon_transition));
                         }
                     }
                 }
