@@ -5,8 +5,7 @@ authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
 
 [lib]
 name = "hfstospell"
-#crate-type = ["staticlib", "cdylib"]
-crate-type = ["dylib"]
+crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
 libc = "0.2"
