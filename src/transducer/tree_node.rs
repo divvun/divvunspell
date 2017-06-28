@@ -29,6 +29,15 @@ impl TreeNode {
         &self.flag_state
     }
 
+    pub fn update_lexicon_mut(&mut self, transition: SymbolTransition) {
+        if let Some(value) = transition.symbol() {
+            self.string.push(value);
+        };
+
+        self.lexicon_state = transition.target().unwrap();
+        self.weight += transition.weight().unwrap();
+    }
+
     pub fn update_lexicon(&self, transition: SymbolTransition) -> TreeNode {
         let string = match transition.symbol() {
             Some(value) => {
@@ -67,7 +76,7 @@ impl TreeNode {
     ) -> TreeNode {
         let string = if output_symbol != 0 {
             let mut string = self.string.clone();
-            string.push(output_symbol); // push_back?
+            string.push(output_symbol);
             string
         } else {
             self.string.clone()

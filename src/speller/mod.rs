@@ -6,15 +6,15 @@ use std::f32;
 use transducer::Transducer;
 use transducer::tree_node::TreeNode;
 use speller::suggestion::Suggestion;
-use types::{SymbolNumber, Weight, SpellerWorkerMode};
+use types::{SymbolNumber, Weight, SpellerWorkerMode, FlagDiacriticOperator};
 
-// fn debug_incr(key: &'static str) {
-//     debug!("{}", key);
-//     use COUNTER;
-//     let mut c = COUNTER.lock().unwrap();
-//     let mut entry = c.entry(key).or_insert(0);
-//     *entry += 1;
-// }
+pub fn debug_incr(key: &'static str) {
+    // debug!("{}", key);
+    use COUNTER;
+    let mut c = COUNTER.lock().unwrap();
+    let mut entry = c.entry(key).or_insert(0);
+    *entry += 1;
+}
 
 #[derive(Clone, Debug)]
 pub struct SpellerConfig {
@@ -102,9 +102,9 @@ where
         let mut next = lexicon.next(next_node.lexicon_state, 0).unwrap();
 
         while let Some(transition) = lexicon.take_epsilons_and_flags(next) {
-            if self.is_under_weight_limit(state, next_node.weight + transition.weight().unwrap()) {
-                if let Some(sym) = lexicon.transition_table().input_symbol(next) {
-                    if sym == 0 {
+            if let Some(sym) = lexicon.transition_table().input_symbol(next) {
+                if sym == 0 {
+                    if self.is_under_weight_limit(state, next_node.weight + transition.weight().unwrap()) {
                         if let SpellerWorkerMode::Correct = self.mode {
                             let epsilon_transition = transition.clone_with_epsilon_symbol();
                             // debug_incr(
@@ -115,25 +115,36 @@ where
                             // debug_incr("lexicon_epsilons push node transition");
                             state.nodes.push(next_node.update_lexicon(transition));
                         }
-                    } else {
-                        let operation = operations.get(&sym);
+                    }
+                   
+                } else {
+                    let operation = operations.get(&sym);
 
-                        if let Some(op) = operation {
-                            let (is_success, applied_node) = next_node.apply_operation(op);
+                    if let Some(op) = operation {
+                        //println!("{:?}", op);
 
-                            // debug_incr(if is_success {
-                            //     "is_success"
-                            // } else {
-                            //     "isnt_success"
-                            // });
+                        let is_skippable = match op.operation {
+                            FlagDiacriticOperator::PositiveSet => true,
+                            FlagDiacriticOperator::NegativeSet => true,
+                            FlagDiacriticOperator::Require => true,
+                            FlagDiacriticOperator::Disallow => false,
+                            FlagDiacriticOperator::Clear => false,
+                            FlagDiacriticOperator::Unification => true
+                        };
+                        
+                        if is_skippable && !self.is_under_weight_limit(state, transition.weight().unwrap()) { //next_node.weight) {//} + transition.weight().unwrap()) {
+                            // println!("{}+{} {:?}", next_node.weight, transition.weight().unwrap(), &op);
+                            next += 1;
+                            continue;
+                        }
+                        
+                        let (is_success, mut applied_node) = next_node.apply_operation(op);
 
-                            if is_success {
-                                let epsilon_transition = transition.clone_with_epsilon_symbol();
-                                // debug_incr(
-                                //     "lexicon_epsilons push node cloned with eps target epsilon_transition",
-                                // );
-                                state.nodes.push(applied_node.update_lexicon(epsilon_transition));
-                            }
+                        if is_success {
+                            let epsilon_transition = transition.clone_with_epsilon_symbol();
+                            applied_node.update_lexicon_mut(epsilon_transition);
+                            state.nodes.push(applied_node);
+                            //state.nodes.push(applied_node.update_lexicon(epsilon_transition));
                         }
                     }
                 }
@@ -284,10 +295,21 @@ where
                     _ => sym,
                 };
 
-                if self.is_under_weight_limit(
-                    state,
-                    next_node.weight + noneps_trans.weight().unwrap() + mutator_weight,
-                ) {
+                let can_push = match self.mode {
+                    SpellerWorkerMode::Correct => {
+                        // println!("{} vs {}+{}+{} = {}", state.max_weight, next_node.weight, noneps_trans.weight().unwrap(), mutator_weight, next_node.weight + noneps_trans.weight().unwrap() + mutator_weight);
+                        self.is_under_weight_limit(
+                            state,
+                            noneps_trans.weight().unwrap() + mutator_weight
+                        )
+                    },
+                    _ => self.is_under_weight_limit(
+                        state,
+                        next_node.weight + noneps_trans.weight().unwrap() + mutator_weight,
+                    )
+                };
+
+                if can_push {
                     // debug_incr("queue_lexicon_arcs push node update");
                     state.nodes.push(next_node.update(
                         next_sym,
@@ -321,7 +343,7 @@ where
             //debug!("mut arc loop: {}", next_m);
 
             if let Some(0) = transition.symbol() {
-                if self.is_under_weight_limit(state, next_node.weight + transition.weight().unwrap()) {
+                if self.is_under_weight_limit(state, transition.weight().unwrap()) { //next_node.weight} + ) {
                     // debug_incr("queue_mutator_arcs push node update");
                     state.nodes.push(next_node.update(
                         0,
@@ -467,11 +489,13 @@ where
         self.queue_lexicon_arcs(state, &next_node, input_sym, next_node.mutator_state, 0.0, 1);
     }
 
-    fn update_weight_limit(&self, state: &mut SpellerState, best_weight: Weight) {
+    fn update_weight_limit(&self, state: &mut SpellerState, best_weight: Weight, suggestions: &Vec<Suggestion>) {
         use std::cmp::Ordering::{Less, Equal};
 
         let c = &self.config;
         let max_weight = c.max_weight.unwrap_or(f32::INFINITY);
+
+        let old_max = state.max_weight;
 
         if let Some(beam) = c.beam {
             let candidate_weight = best_weight + beam;
@@ -480,11 +504,27 @@ where
                 Less => max_weight,
                 _ => candidate_weight
             };
+
+            // if old_max != state.max_weight {
+            //     println!("Max old: {} beam new: {}", old_max, state.max_weight);
+            // }
+        }
+
+        if let Some(n) = c.n_best {
+            if suggestions.len() >= n {
+                if let Some(sugg) = suggestions.last() {
+                    state.max_weight = sugg.weight();
+
+                    // if old_max != state.max_weight {
+                    //     println!("Max old: {} n-best new: {}", old_max, state.max_weight);
+                    // }
+                }
+            }
         }
     }
 
     fn is_under_weight_limit(&self, state: &SpellerState, w: Weight) -> bool {
-        w < state.max_weight
+        w <= state.max_weight
     }
 
     fn state_size(&self) -> usize {
@@ -494,10 +534,11 @@ where
     fn suggest(&self) -> Vec<Suggestion> {
         let mut state = SpellerState::new(self.state_size() as usize, &self.config);
         let mut corrections = BTreeMap::<String, Weight>::new();
+        let mut suggestions: Vec<Suggestion> = vec![];
         let mut best_weight = self.config.max_weight.unwrap_or(f32::INFINITY);
 
         while let Some(next_node) = state.nodes.pop() {
-            self.update_weight_limit(&mut state, best_weight);
+            self.update_weight_limit(&mut state, best_weight, &suggestions);
             
             // debug_incr("Worker node loop count");
             debug!("{:?}", next_node);
@@ -510,9 +551,9 @@ where
                 next_node.lexicon_state
             );
 
-            if !self.is_under_weight_limit(&mut state, next_node.weight) {
-                continue
-            }
+            // if !self.is_under_weight_limit(&mut state, next_node.weight) {
+            //     continue
+            // }
 
             self.lexicon_epsilons(&mut state, &next_node);
             self.mutator_epsilons(&mut state, &next_node);
@@ -548,15 +589,23 @@ where
                             .final_weight(next_node.mutator_state)
                             .unwrap();
 
+                    if !self.is_under_weight_limit(&mut state, weight) {
+                        continue;
+                    }
+
                     if weight < best_weight {
                         best_weight = weight;
                     }
                     
-                    let entry = corrections.entry(string).or_insert(weight);
+                    {
+                        let entry = corrections.entry(string).or_insert(weight);
 
-                    if *entry > weight {
-                        *entry = weight;
+                        if *entry > weight {
+                            *entry = weight;
+                        }
                     }
+
+                    suggestions = self.generate_sorted_suggestions(&corrections);
                 }
             } else {
                 self.consume_input(&mut state, &next_node);
@@ -565,9 +614,13 @@ where
 
         debug!("Here we go!");
 
+        suggestions
+    }
+
+    fn generate_sorted_suggestions(&self, corrections: &BTreeMap<String, Weight>) -> Vec<Suggestion> {
         let mut c: Vec<Suggestion> = corrections
             .into_iter()
-            .map(|x| Suggestion::new(x.0, x.1))
+            .map(|x| Suggestion::new(x.0.to_string(), *x.1))
             .collect();
 
         c.sort();
