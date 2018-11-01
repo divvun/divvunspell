@@ -28,6 +28,9 @@ speller_str_free(const char* _Nonnull str);
 extern suggest_vec_t* _Nonnull
 speller_suggest(speller_t* _Nonnull handle, const char* _Nonnull word, size_t n_best, float beam);
 
+extern bool
+speller_is_correct(speller_t* _Nonnull handle, const char* _Nonnull word);
+
 extern void
 suggest_vec_free(suggest_vec_t* _Nonnull handle);
 

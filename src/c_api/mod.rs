@@ -90,6 +90,15 @@ pub extern fn speller_suggest(handle: *mut SpellerArchive, raw_word: *mut c_char
     Box::into_raw(Box::new(suggestions))
 }
 
+#[no_mangle]
+pub extern fn speller_is_correct(handle: *mut SpellerArchive, raw_word: *mut c_char) -> uint8_t {
+    let c_str = unsafe { CStr::from_ptr(raw_word) };
+    let word = c_str.to_str().unwrap();
+
+    let ar = unsafe { &mut *handle };
+    if ar.speller().is_correct(&word) { 1 } else { 0 }
+}
+
 // Vec<Suggestion>
 
 #[no_mangle]

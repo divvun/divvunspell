@@ -47,6 +47,9 @@ int main(int argc, char** argv) {
     printf("Locale: %s\n", locale);
     // speller_str_free(locale);
 
+    bool is_correct = speller_is_correct(speller, argv[2]);
+    printf("Is correct? %s\n", is_correct ? "Yes" : "No");
+
     printf("I: Generating suggestions\n");
     suggest_vec_t* suggs = speller_suggest(speller, argv[2], 10, 0);
 
