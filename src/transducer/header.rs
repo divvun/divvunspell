@@ -1,7 +1,7 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::Cursor;
 
-use types::{SymbolNumber, TransitionTableIndex, HeaderFlag};
+use crate::types::{SymbolNumber, TransitionTableIndex, HeaderFlag};
 
 #[derive(Debug)]
 pub struct TransducerHeader {

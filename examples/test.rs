@@ -23,7 +23,7 @@ fn time_suggest(speller: &Speller, line: &TestLine) {
     let len = if res.len() >= 10 { 10 } else { res.len() };
 
     let words: Vec<&str> = res[0..len].iter().map(|x| x.value()).collect();
-    let out: Vec<String> = res[0..len].iter().map(|x| format!("    {:>10.6}  {}", x.weight(), x.value())).collect();
+    let _out: Vec<String> = res[0..len].iter().map(|x| format!("    {:>10.6}  {}", x.weight(), x.value())).collect();
 
     // println!("[>] Actual time: {}.{}; Has expected: {}; Results: {}\n{}\n", 
     //         then.as_secs(), then.subsec_nanos() / 1000000, words.contains(&line.1), words.len(), &out.join("\n"));
@@ -34,7 +34,7 @@ fn time_suggest(speller: &Speller, line: &TestLine) {
 type TestLine = (&'static str, &'static str, f32, Vec<&'static str>);
 
 fn main() {
-    use hfstospell::COUNTER;
+    // use hfstospell::COUNTER;
     // use std::fs::File;
     // use std::io::BufReader;
     // use std::io::prelude::*;
@@ -105,7 +105,7 @@ fn main() {
         time_suggest(&speller, &line);
     }
 
-    println!("{:?}", *COUNTER.lock().unwrap());
+    // println!("{:?}", *COUNTER.lock().unwrap());
 
     //speller.suggest("vuovdinfállovuogiŧ");
 }

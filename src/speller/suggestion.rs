@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 use std::cmp::Ordering::Equal;
-use types::Weight;
+use crate::types::Weight;
 
 #[derive(Clone, Debug)]
 pub struct Suggestion {

@@ -6,7 +6,7 @@ pub const TARGET_TABLE: u32 = 2147483648;
 #[test]
 fn test_trans_index_size() {
     use std::mem;
-    use types::*;
+    use crate::types::*;
 
     let c = mem::size_of::<SymbolNumber>() + mem::size_of::<TransitionTableIndex>();
 
@@ -16,7 +16,7 @@ fn test_trans_index_size() {
 #[test]
 fn test_trans_size() {
     use std::mem;
-    use types::*;
+    use crate::types::*;
 
     let c = 2 * mem::size_of::<SymbolNumber>() + mem::size_of::<TransitionTableIndex>() +
         mem::size_of::<Weight>();

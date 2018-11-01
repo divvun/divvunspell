@@ -5,8 +5,8 @@ pub mod symbol_transition;
 pub mod transition_table;
 pub mod tree_node;
 
-use types::{TransitionTableIndex, Weight, SymbolNumber, HeaderFlag};
-use constants::{TRANS_INDEX_SIZE, TRANS_SIZE, TARGET_TABLE};
+use crate::types::{TransitionTableIndex, Weight, SymbolNumber, HeaderFlag};
+use crate::constants::{TRANS_INDEX_SIZE, TRANS_SIZE, TARGET_TABLE};
 use self::header::TransducerHeader;
 use self::alphabet::TransducerAlphabet;
 use self::index_table::IndexTable;

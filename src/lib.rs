@@ -32,8 +32,8 @@ fn test_speller() {
     use std::fs::File;
     use std::io::BufReader;
     use std::io::prelude::*;
-    use speller::Speller;
-    use transducer::Transducer;
+    use crate::speller::Speller;
+    use crate::transducer::Transducer;
 
     // use COUNTER;
 

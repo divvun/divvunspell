@@ -2,9 +2,9 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::Cursor;
 use std::{mem, u16, u32};
 
-use types::{TransitionTableIndex, SymbolNumber, Weight};
-use constants::TRANS_SIZE;
-use transducer::symbol_transition::SymbolTransition;
+use crate::types::{TransitionTableIndex, SymbolNumber, Weight};
+use crate::constants::TRANS_SIZE;
+use crate::transducer::symbol_transition::SymbolTransition;
 
 #[derive(Debug)]
 pub struct TransitionTable<'data> {

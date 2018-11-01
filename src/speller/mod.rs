@@ -3,10 +3,10 @@ pub mod suggestion;
 use std::collections::BTreeMap;
 use std::f32;
 
-use transducer::Transducer;
-use transducer::tree_node::TreeNode;
-use speller::suggestion::Suggestion;
-use types::{SymbolNumber, Weight, SpellerWorkerMode, FlagDiacriticOperator};
+use crate::transducer::Transducer;
+use crate::transducer::tree_node::TreeNode;
+use crate::speller::suggestion::Suggestion;
+use crate::types::{SymbolNumber, Weight, SpellerWorkerMode, FlagDiacriticOperator};
 
 // pub fn debug_incr(key: &'static str) {
 //     // debug!("{}", key);
@@ -494,7 +494,7 @@ where
         let c = &self.config;
         let max_weight = c.max_weight.unwrap_or(f32::INFINITY);
 
-        let old_max = state.max_weight;
+        let _old_max = state.max_weight;
 
         if let Some(beam) = c.beam {
             let candidate_weight = best_weight + beam;

@@ -1,4 +1,4 @@
-use types::{SymbolNumber, ValueNumber, FlagDiacriticOperator, FlagDiacriticOperation};
+use crate::types::{SymbolNumber, ValueNumber, FlagDiacriticOperator, FlagDiacriticOperation};
 use std::collections::BTreeMap;
 use super::Transducer;
 

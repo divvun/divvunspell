@@ -2,6 +2,7 @@
 name = "hfst-ospell-rs"
 version = "0.1.0"
 authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
+edition = "2018"
 
 [lib]
 name = "hfstospell"
@@ -9,14 +10,13 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
 libc = "0.2"
-memmap = "0.5"
-byteorder = "0.5"
-serde = "0.9"
-serde_derive = "0.9"
-serde-xml-rs = "0.1"
-zip = { git = "https://github.com/mvdnes/zip-rs.git", default-features = false }
-log = "0.3.7"
-env_logger = "0.4.3"
-# lazy_static = "*"
+memmap = "0.7.0"
+byteorder = "1.2.7"
+serde = "1.0.80"
+serde_derive = "1.0.80"
+serde-xml-rs = "0.2.1"
+zip = { version = "0.4", default-features = false }
+log = "0.4.6"
+env_logger = "0.5.13"
 
 [dev-dependencies]

@@ -1,9 +1,10 @@
 use libc::{c_char, size_t};
 use std::ffi::{CString, CStr};
+use std::ptr::null;
 
-use archive::SpellerArchive;
-use speller::{Speller, SpellerConfig};
-use speller::suggestion::Suggestion;
+use crate::archive::SpellerArchive;
+use crate::speller::{Speller, SpellerConfig};
+use crate::speller::suggestion::Suggestion;
 
 // SpellerArchive
 
@@ -12,8 +13,17 @@ pub extern fn speller_archive_new<'a>(raw_path: *mut c_char) -> *const SpellerAr
     let c_path = unsafe { CStr::from_ptr(raw_path) };
     let file_path = c_path.to_str().unwrap();
 
-    let archive = Box::new(SpellerArchive::new(file_path));
-    Box::into_raw(archive)
+    match SpellerArchive::new(file_path) {
+        Ok(v) => {
+            let archive = Box::new(v);
+            Box::into_raw(archive)
+        },
+        Err(_) => {
+            null()
+        }
+    }
+
+    
 }
 
 #[no_mangle]

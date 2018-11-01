@@ -2,8 +2,8 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::Cursor;
 use std::{mem, u16, u32};
 
-use types::{TransitionTableIndex, SymbolNumber, Weight};
-use constants::TRANS_INDEX_SIZE;
+use crate::types::{TransitionTableIndex, SymbolNumber, Weight};
+use crate::constants::TRANS_INDEX_SIZE;
 
 #[derive(Debug)]
 pub struct IndexTable<'data> {

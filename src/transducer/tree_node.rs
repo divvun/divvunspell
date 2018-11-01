@@ -1,4 +1,4 @@
-use types::{TransitionTableIndex, SymbolNumber, FlagDiacriticState, FlagDiacriticOperator,
+use crate::types::{TransitionTableIndex, SymbolNumber, FlagDiacriticState, FlagDiacriticOperator,
             FlagDiacriticOperation, Weight};
 
 use super::symbol_transition::SymbolTransition;
