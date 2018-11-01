@@ -1,10 +1,11 @@
-use libc::{c_char, size_t};
+use libc::{c_char, size_t, uint8_t, uint64_t};
 use std::ffi::{CString, CStr};
-use std::ptr::null;
+use std::ptr::{null, null_mut};
 
 use crate::archive::{SpellerArchive, SpellerArchiveError};
 use crate::speller::SpellerConfig;
 use crate::speller::suggestion::Suggestion;
+use crate::tokenizer::{Tokenize, Tokenizer, Token};
 
 // SpellerArchive
 
@@ -55,10 +56,8 @@ pub extern fn speller_get_error(code: u8) -> *mut c_char {
 
 #[no_mangle]
 pub extern fn speller_meta_get_locale(handle: *mut SpellerArchive) -> *mut c_char {
-    println!("R: speller_meta_get_locale");
     let ar = unsafe { &*handle };
     let locale = ar.metadata().info.locale.to_owned();
-    println!("R: {}", &locale);
     let s = CString::new(&*locale).unwrap();
     s.into_raw()
 }
@@ -116,4 +115,82 @@ pub extern fn suggest_vec_value_free(handle: *mut c_char) {
 #[no_mangle]
 pub extern fn suggest_vec_get_weight(handle: &mut Vec<Suggestion>, index: size_t) -> f32 {
     handle[index].weight()
+}
+
+// Tokenizer
+
+#[no_mangle]
+pub extern fn speller_tokenize<'a>(raw_string: *const c_char) -> *mut Tokenizer<'a> {
+    let c_str = unsafe { CStr::from_ptr(raw_string) };
+
+    let string = match c_str.to_str() {
+        Ok(v) => v,
+        Err(_) => return null_mut()
+    };
+
+    // Need it to be forgotten
+    ::std::mem::forget(string);
+
+    let tokenizer = Box::new(string.tokenize());
+    Box::into_raw(tokenizer)
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct TokenRecord {
+    pub ty: uint8_t,
+    pub start: uint64_t,
+    pub end: uint64_t,
+    pub value: *const c_char
+}
+
+impl Drop for TokenRecord {
+    fn drop(&mut self) {
+        // Drop the string
+        unsafe { CString::from_raw(self.value as *mut c_char) };
+    }
+}
+
+#[no_mangle]
+pub extern fn speller_token_next<'a>(handle: *mut Tokenizer<'a>, out: *mut *mut TokenRecord) -> u8 {
+    let tokenizer = unsafe { &mut *handle };
+
+    if !out.is_null() {
+        // Drop old ref.
+        let ptr = unsafe { *out };
+        if !ptr.is_null() {
+            unsafe { Box::from_raw(ptr); }
+        };
+    }
+
+    let token = match tokenizer.next() {
+        Some(v) => v,
+        None => {
+            unsafe { *out = null_mut() };
+            return 0;
+        }
+    };
+
+    let ty: u8 = match token {
+        Token::Word(_, _, _) => 1,
+        Token::Punctuation(_, _, _) => 2,
+        Token::Whitespace(_, _, _) => 3,
+        Token::Other(_, _, _) => 0
+    };
+ 
+    let record = TokenRecord {
+        ty,
+        start: token.start() as u64,
+        end: token.end() as u64,
+        value: CString::new(token.value()).unwrap().into_raw()
+    };
+
+    unsafe { *out = Box::into_raw(Box::new(record)) };
+    1
+}
+
+#[no_mangle]
+pub extern fn speller_tokenizer_free<'a>(handle: *mut Tokenizer<'a>) {
+    let tokenizer = unsafe { Box::from_raw(handle) };
+    drop(tokenizer.text);
 }

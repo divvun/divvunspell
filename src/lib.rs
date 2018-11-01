@@ -19,6 +19,7 @@ pub mod constants;
 pub mod transducer;
 pub mod types;
 pub mod speller;
+pub mod tokenizer;
 
 // use std::collections::HashMap;
 // use std::sync::Mutex;

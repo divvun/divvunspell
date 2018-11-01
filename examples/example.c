@@ -6,6 +6,17 @@
 //   $ cargo build --release
 //   $ clang -o example -Ltarget/release -lhfstospell examples/example.c
 int main(int argc, char** argv) {
+    tokenizer_t* iter = speller_tokenize("This is an example string.");
+
+    token_record_t* record = NULL;
+
+    printf("Record.\n");
+    while (speller_token_next(iter, &record)) {
+        printf("TOKEN %d %d %d %s\n", record->type, record->start, record->end, record->value);
+    }
+
+    speller_tokenizer_free(iter);
+
     if (argc < 3) {
         printf("Usage: ./example <path-to-zhfst> <word-to-test>\n");
         return 100;
