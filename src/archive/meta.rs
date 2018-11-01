@@ -7,10 +7,18 @@ pub struct SpellerMetadata {
     pub errmodel: SpellerMetadataErrmodel,
 }
 
+
+#[derive(Deserialize, Debug)]
+pub struct SpellerTitle {
+    pub lang: Option<String>,
+    #[serde(rename = "$value")]
+    pub value: String
+}
+
 #[derive(Deserialize, Debug)]
 pub struct SpellerMetadataInfo {
     pub locale: String,
-    pub title: String,
+    pub title: Vec<SpellerTitle>,
     pub description: String,
     pub producer: String,
 }
@@ -20,7 +28,7 @@ pub struct SpellerMetadataAcceptor {
     #[serde(rename = "type", default)]
     pub type_: String,
     pub id: String,
-    pub title: String,
+    pub title: Vec<SpellerTitle>,
     pub description: String,
 }
 
@@ -29,7 +37,7 @@ pub struct SpellerMetadataErrmodel {
     //#[serde(rename = "type", default)]
     //type_: String,
     pub id: String,
-    pub title: String,
+    pub title: Vec<SpellerTitle>,
     pub description: String,
 }
 
