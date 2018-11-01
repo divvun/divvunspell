@@ -8,13 +8,38 @@
 int main(int argc, char** argv) {
     if (argc < 3) {
         printf("Usage: ./example <path-to-zhfst> <word-to-test>\n");
+        return 100;
+    }
+
+    printf("I: Archive loading\n");
+
+    uint8_t error_code = 0;
+    speller_t* speller = speller_archive_new(argv[1], &error_code);
+
+    printf("I: error code %d\n", error_code);
+
+    if (error_code != 0) {
+        const char* msg = speller_get_error(error_code);
+        printf("Error: %s\n", msg);
+        // speller_str_free(msg);
         return 1;
     }
 
-    speller_archive_t* ar = speller_archive_new(argv[1]);
-    speller_t* speller = speller_archive_get_speller(ar);
+    if (speller == NULL) {
+        printf("Error: archive is null\n");
+        return 1;
+    }
 
+    printf("I: Archive loaded, getting locale\n");
+
+    const char* locale = speller_meta_get_locale(speller);
+    printf("Locale: %s\n", locale);
+    // speller_str_free(locale);
+
+    printf("I: Generating suggestions\n");
     suggest_vec_t* suggs = speller_suggest(speller, argv[2], 10, 0);
+
+    printf("I: Getting suggestion length\n");
     size_t len = suggest_vec_len(suggs);
     
     for (size_t i = 0; i < len; ++i) {
@@ -27,7 +52,7 @@ int main(int argc, char** argv) {
     }
 
     suggest_vec_free(suggs);
-    speller_archive_free(ar);
+    speller_archive_free(speller);
 
     return 0;
 }

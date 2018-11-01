@@ -73,7 +73,7 @@ fn main() {
         // ("hálidivččii", "háliidivččii", 6.484202, vec!["báldii", "báládii", "holdii", "hálbmii", "álisii", "hávdii", "hálkii", "hállii", "háikii", "háipii"]),
         // ("johttivuovdinbuvriid", "johttivuovdinbuvrriid", 6.46664, vec!["johttivuovdinbuvrriid", "johttiijavuovdinbuvrriid", "johttivuovdinboriid", "johttivuovdinborriid", "johttivuovdinbovrii", "johttivuovdinbuvrrit", "johttivuovdinguvrriid", "johttivuovdinsuvrriid", "johttivuovdibuvrriid", "johttivuordinbuvrriid"]),
     ];
-    let zhfst = SpellerArchive::new("./se-store.zhfst");
+    let zhfst = SpellerArchive::new("./se.zhfst").unwrap();
     let speller = zhfst.speller();
     let res = speller.suggest("nuvviDspeller");
     let ver: Vec<&str> = res.iter().filter(|x| x.weight() <= 3.0).map(|x| x.value()).collect();
@@ -101,9 +101,9 @@ fn main() {
 
     // let words = ["vuovdinfállovuogiŧ", "eanavuoigatvuohtadutkamušas", "nannesivččii", "gárvanivččii", "gáibiđivččii"];
 
-    for line in tuples.iter() {
-        time_suggest(&speller, &line);
-    }
+    // for line in tuples.iter() {
+    //     time_suggest(&speller, &line);
+    // }
 
     // println!("{:?}", *COUNTER.lock().unwrap());
 

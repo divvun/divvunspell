@@ -28,20 +28,21 @@ fn slice_by_name<'a, R: Read + Seek>(
     archive: &mut ZipArchive<R>,
     slice: &'a [u8],
     name: &str,
-) -> &'a [u8] {
+) -> Result<&'a [u8], SpellerArchiveError> {
     let index = archive.by_name(name).unwrap();
 
     if index.compressed_size() != index.size() {
         // Unzip to a tmp dir and mmap into space
-        panic!("This is a compressed archive, and is not supported.");
+        return Err(SpellerArchiveError::UnsupportedCompressed);
     }
 
-    partial_slice(&slice, index.data_start() as usize, index.size() as usize)
+    Ok(partial_slice(&slice, index.data_start() as usize, index.size() as usize))
 }
 
 #[derive(Debug)]
 pub enum SpellerArchiveError {
-    Io(::std::io::Error)
+    Io(::std::io::Error),
+    UnsupportedCompressed
 }
 
 impl<'data> SpellerArchive<'data> {
@@ -57,14 +58,14 @@ impl<'data> SpellerArchive<'data> {
         let reader = Cursor::new(&mmap);
         let mut archive = ZipArchive::new(reader).unwrap();
 
-        let data = slice_by_name(&mut archive, &slice, "index.xml");
+        let data = slice_by_name(&mut archive, &slice, "index.xml")?;
         let metadata = SpellerMetadata::from_bytes(&data).unwrap();
 
         // Load transducers
-        let acceptor_data = slice_by_name(&mut archive, &slice, &metadata.acceptor.id);
-        let errmodel_data = slice_by_name(&mut archive, &slice, &metadata.errmodel.id);
-
+        let acceptor_data = slice_by_name(&mut archive, &slice, &metadata.acceptor.id)?;
         let acceptor = Transducer::from_bytes(&acceptor_data);
+
+        let errmodel_data = slice_by_name(&mut archive, &slice, &metadata.errmodel.id)?;
         let errmodel = Transducer::from_bytes(&errmodel_data);
 
         let speller = Speller::new(errmodel, acceptor);
