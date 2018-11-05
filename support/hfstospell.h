@@ -53,8 +53,8 @@ const uint8_t TOKEN_WHITESPACE = 3;
 
 typedef struct token_record_s {
     uint8_t type;
-    uint64_t start;
-    uint64_t end;
+    uint32_t start;
+    uint32_t end;
     const char* value;
 } token_record_t;
 

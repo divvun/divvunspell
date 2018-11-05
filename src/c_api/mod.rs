@@ -1,4 +1,4 @@
-use libc::{c_char, size_t, uint8_t, uint64_t};
+use libc::{c_char, size_t, uint8_t, uint32_t};
 use std::ffi::{CString, CStr};
 use std::ptr::{null, null_mut};
 
@@ -148,8 +148,8 @@ pub extern fn speller_tokenize<'a>(raw_string: *const c_char) -> *mut Tokenizer<
 #[derive(Debug)]
 pub struct TokenRecord {
     pub ty: uint8_t,
-    pub start: uint64_t,
-    pub end: uint64_t,
+    pub start: uint32_t,
+    pub end: uint32_t,
     pub value: *const c_char
 }
 
@@ -189,8 +189,8 @@ pub extern fn speller_token_next<'a>(handle: *mut Tokenizer<'a>, out: *mut *mut 
  
     let record = TokenRecord {
         ty,
-        start: token.start() as u64,
-        end: token.end() as u64,
+        start: token.start() as u32,
+        end: token.end() as u32,
         value: CString::new(token.value()).unwrap().into_raw()
     };
 
