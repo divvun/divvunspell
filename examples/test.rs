@@ -52,31 +52,39 @@ fn main() {
 
     // let speller = Speller::new(mutator, lexicon);
 
-    let tuples: [TestLine; 3] = [
-        // ("gáibiđivččii", "gáibidivččii", 8.012096, vec!["gálbirii"]),
-        // ("gárvanivččii", "gárvánivččii", 7.510769, vec!["árranii", "gálganii", "gávvalii", "čárvagii", "šávanii", "gášanii", "gávvasii", "gákkanii", "gávažii"]),
-        // ("nannesivččii", "nannešii", 7.329407, vec!["nannemii", "nannosii", "nannámii", "naneessii", "naniásii", "nanedesii", "naneásii", "nanitesii", "naniessii", "nanidesii"]),
-        // ("eanavuoigatvuohtadutkamušas", "eanavuoigatvuođadutkamušas", 7.185912, vec!["eanavuoigatvuođadutkamušas", "eananvuoigatvuođadutkamušas", "eanavuoigatvuođadutkamuša", "eanavuoigatvuođadutkamušat", "leanavuoigatvuođadutkamušas", "eanavuoigatvuođadutkamušase", "eanavuoigatvuođadutkamušasi", "eanavuoigatvuođahutkamušas", "eanavuoigatvuođadutkamušbas", "beanavuoigatvuođadutkamušas"]),
+    let tuples: &[TestLine] = &[
+        ("gáibiđivččii", "gáibidivččii", 8.012096, vec!["gálbirii"]),
+        ("gárvanivččii", "gárvánivččii", 7.510769, vec!["árranii", "gálganii", "gávvalii", "čárvagii", "šávanii", "gášanii", "gávvasii", "gákkanii", "gávažii"]),
+        ("nannesivččii", "nannešii", 7.329407, vec!["nannemii", "nannosii", "nannámii", "naneessii", "naniásii", "nanedesii", "naneásii", "nanitesii", "naniessii", "nanidesii"]),
+        ("eanavuoigatvuohtadutkamušas", "eanavuoigatvuođadutkamušas", 7.185912, vec!["eanavuoigatvuođadutkamušas", "eananvuoigatvuođadutkamušas", "eanavuoigatvuođadutkamuša", "eanavuoigatvuođadutkamušat", "leanavuoigatvuođadutkamušas", "eanavuoigatvuođadutkamušase", "eanavuoigatvuođadutkamušasi", "eanavuoigatvuođahutkamušas", "eanavuoigatvuođadutkamušbas", "beanavuoigatvuođadutkamušas"]),
         ("vuovdinfállovuogiŧ", "vuovdinfállovuogit", 7.000394, vec!["vuovdinfállovuogi", "vuovdinfállovuogis", "vuovdinfállovuogit", "vuovdinfállovuoge", "vuovdinfállovuogigo", "vuovdinfállovuogiba", "vuovdinfállovuogibe", "vuovdinfállovuogige", "vuovdinfállovuogát", "vuovdinbállovuogi"]),
         ("guollebiebmandoalliide", "guollebiebmandolliide", 6.93927, vec!["guollebiebmandoalliiđa", "guollebiebmandoalliviđe", "guollebiebmanduvlliide", "guollebiebmandoalliáidde", "guollebiebmandolliide", "guollebiebmandoalliidea", "guollebiebmandoalláde", "guollebiebmandolliid", "guollebiebmandoalliideat", "guollebiebmandoalliideii"]),
-        // ("guolledikšunbivdimiš", "guolledikšunbivdimis", 6.935191, vec!["guolledikšunbivdimii", "guolledikšunbivdimin", "guolledikšunbivdimis", "guolledikšunbivdimuš", "guoledikšunbivdimii", "guolledikšunbivdimiid", "guolledikšunbivdimiin", "golledikšunbivdimin", "guollefikšunbivdimis", "guolbedikšunbivdimii"]),
-        // ("oaidnitálgogeasis", "oaidnit álgogeasis", 6.913222, vec!["oaidnigálgugeasis", "oaidnidálgageasis", "oaidnidállogeasis", "oaidnidávgogeasis", "oaidnidáigogeasis", "oaidnidálgaogeasis", "oaidniálgogeasis", "oaidnibálggogeasis", "oaidnidáluogeasis", "oaidnilálgogeasis"]),
-        // ("arkitektuvragilvvohallama", "arkitekturgilvvohallama", 6.898086, vec!["arkitekturgilvvuhallama", "arkitekturgilvvohállama", "arkitekturgilvvohallama", "arkitektuvra-gilvvuhallama", "arkitekturgilvvohallamat", "arkitektuvra-gilvvohállama", "arkitektuvra-gilvvohallama", "arkitekturgilvvohallaman", "arkitekturgilvvoballama", "arkitekturgilvvoheallama"]),
+        ("guolledikšunbivdimiš", "guolledikšunbivdimis", 6.935191, vec!["guolledikšunbivdimii", "guolledikšunbivdimin", "guolledikšunbivdimis", "guolledikšunbivdimuš", "guoledikšunbivdimii", "guolledikšunbivdimiid", "guolledikšunbivdimiin", "golledikšunbivdimin", "guollefikšunbivdimis", "guolbedikšunbivdimii"]),
+        ("oaidnitálgogeasis", "oaidnit álgogeasis", 6.913222, vec!["oaidnigálgugeasis", "oaidnidálgageasis", "oaidnidállogeasis", "oaidnidávgogeasis", "oaidnidáigogeasis", "oaidnidálgaogeasis", "oaidniálgogeasis", "oaidnibálggogeasis", "oaidnidáluogeasis", "oaidnilálgogeasis"]),
+        ("arkitektuvragilvvohallama", "arkitekturgilvvohallama", 6.898086, vec!["arkitekturgilvvuhallama", "arkitekturgilvvohállama", "arkitekturgilvvohallama", "arkitektuvra-gilvvuhallama", "arkitekturgilvvohallamat", "arkitektuvra-gilvvohállama", "arkitektuvra-gilvvohallama", "arkitekturgilvvohallaman", "arkitekturgilvvoballama", "arkitekturgilvvoheallama"]),
         ("borramušráhkadanlihtiiid", "borramušráhkadanlihtiid", 6.78258, vec!["borramušráhkadanlihtiid", "borramušráhkadanlihtti-id", "borramušráhkadanihtimiid", "borramušráhkadanlihtoriid", "borramušráhkadanlihtuid", "borramušráhkadanlihpiid", "borramušráhkadanlihtariid", "borramušráhkadanláhttiid", "borramušráhkadandihttiid", "borramušráhkadanfihtiid"]),
-        // ("humašivččii", "humašii", 6.762947, vec!["gumažii", "jumažii"]),
-        // ("buorranivččii", "buorránivččii", 6.731601, vec!["boaranii", "boarragii", "borramii", "borrasii", "boranii"]),
-        // ("ovdaskuvlaoahpaheaddjiide", "ovdaskuvlaoahpaheddjiide", 6.705206, vec!["ovdaskuvlaoahpaheddjiide", "ovdaskuvllaoahpaheddjiide", "ovddaskuvlaoahpaheddjiide", "ovdaskuvlaoahppaheaddjuide", "ovdaskuvlaoahpaheaddjáde", "ovdaskuvlaoahpaheddjiid", "ordaskuvlaoahpaheddjiide", "ovdoskuvlaoahpaheddjiide", "ovdaskuvlaoahpaheaddjeidea", "ovdaskuvlaoahpaheaddjige"]),
-        // ("ovdanbuktinvuogivuostedeaddun", "ovdanbuktinvuogi vuostedeaddun", 6.648509, vec!["ovdanbuktinsoagivuostedeaddun", "ovdánbuktinvuoigivuostedeaddun", "ovdánbuktinvuolgivuostedeaddun", "ovdánbuktinvuovgivuostedeaddun", "ovdanbuktinvuolgiijavuostedeaddun", "ovdanbuktinvuoigivuostedeaddun", "ovdanbuktinvuolgivuostedeaddun", "ovdanbuktinvuoigiijavuostedeaddun", "ovdanbuktinvuovgiijavuostedeaddun", "ovdanbuktinvuovgivuostedeaddun"]),
-        // ("oastinovdavuoigatvuodas", "oastinovdavuoigatvuođas", 6.636999, vec!["oastinovdavuoigatvuođas", "oastinovdavuoigatvuođa", "oastinovdavuoigatvuođat", "oastilovdavuoigatvuođas", "oastiovdavuoigatvuođas", "eastinovdavuoigatvuođas", "oastinovdovuoigatvuođas", "goastinovdavuoigatvuođas", "noastinovdavuoigatvuođas", "oastinordavuoigatvuođas"]),
-        // ("lagidivččii", "lágidivččii", 6.526697, vec!["eamidii"]),
-        // ("sámekultuvrapolitihkkalaš", "sámekulturpolitihkalaš", 6.496088, vec!["sámekulturpolitihkalaš", "sámekulturpolitihkkaraš"]),
-        // ("hálidivččii", "háliidivččii", 6.484202, vec!["báldii", "báládii", "holdii", "hálbmii", "álisii", "hávdii", "hálkii", "hállii", "háikii", "háipii"]),
-        // ("johttivuovdinbuvriid", "johttivuovdinbuvrriid", 6.46664, vec!["johttivuovdinbuvrriid", "johttiijavuovdinbuvrriid", "johttivuovdinboriid", "johttivuovdinborriid", "johttivuovdinbovrii", "johttivuovdinbuvrrit", "johttivuovdinguvrriid", "johttivuovdinsuvrriid", "johttivuovdibuvrriid", "johttivuordinbuvrriid"]),
+        ("humašivččii", "humašii", 6.762947, vec!["gumažii", "jumažii"]),
+        ("buorranivččii", "buorránivččii", 6.731601, vec!["boaranii", "boarragii", "borramii", "borrasii", "boranii"]),
+        ("ovdaskuvlaoahpaheaddjiide", "ovdaskuvlaoahpaheddjiide", 6.705206, vec!["ovdaskuvlaoahpaheddjiide", "ovdaskuvllaoahpaheddjiide", "ovddaskuvlaoahpaheddjiide", "ovdaskuvlaoahppaheaddjuide", "ovdaskuvlaoahpaheaddjáde", "ovdaskuvlaoahpaheddjiid", "ordaskuvlaoahpaheddjiide", "ovdoskuvlaoahpaheddjiide", "ovdaskuvlaoahpaheaddjeidea", "ovdaskuvlaoahpaheaddjige"]),
+        ("ovdanbuktinvuogivuostedeaddun", "ovdanbuktinvuogi vuostedeaddun", 6.648509, vec!["ovdanbuktinsoagivuostedeaddun", "ovdánbuktinvuoigivuostedeaddun", "ovdánbuktinvuolgivuostedeaddun", "ovdánbuktinvuovgivuostedeaddun", "ovdanbuktinvuolgiijavuostedeaddun", "ovdanbuktinvuoigivuostedeaddun", "ovdanbuktinvuolgivuostedeaddun", "ovdanbuktinvuoigiijavuostedeaddun", "ovdanbuktinvuovgiijavuostedeaddun", "ovdanbuktinvuovgivuostedeaddun"]),
+        ("oastinovdavuoigatvuodas", "oastinovdavuoigatvuođas", 6.636999, vec!["oastinovdavuoigatvuođas", "oastinovdavuoigatvuođa", "oastinovdavuoigatvuođat", "oastilovdavuoigatvuođas", "oastiovdavuoigatvuođas", "eastinovdavuoigatvuođas", "oastinovdovuoigatvuođas", "goastinovdavuoigatvuođas", "noastinovdavuoigatvuođas", "oastinordavuoigatvuođas"]),
+        ("lagidivččii", "lágidivččii", 6.526697, vec!["eamidii"]),
+        ("sámekultuvrapolitihkkalaš", "sámekulturpolitihkalaš", 6.496088, vec!["sámekulturpolitihkalaš", "sámekulturpolitihkkaraš"]),
+        ("hálidivččii", "háliidivččii", 6.484202, vec!["báldii", "báládii", "holdii", "hálbmii", "álisii", "hávdii", "hálkii", "hállii", "háikii", "háipii"]),
+        ("johttivuovdinbuvriid", "johttivuovdinbuvrriid", 6.46664, vec!["johttivuovdinbuvrriid", "johttiijavuovdinbuvrriid", "johttivuovdinboriid", "johttivuovdinborriid", "johttivuovdinbovrii", "johttivuovdinbuvrrit", "johttivuovdinguvrriid", "johttivuovdinsuvrriid", "johttivuovdibuvrriid", "johttivuordinbuvrriid"]),
     ];
-    let zhfst = SpellerArchive::new("./se.zhfst").unwrap();
-    let speller = zhfst.speller();
-    let res = speller.suggest("nuvviDspeller");
-    let ver: Vec<&str> = res.iter().filter(|x| x.weight() <= 3.0).map(|x| x.value()).collect();
+
+    // let now = Instant::now();
+    // let speller = unaligned.speller();
+    // let res = speller.suggest("nuvviDspeller");
+    // let ver: Vec<&str> = res.iter().filter(|x| x.weight() <= 3.0).map(|x| x.value()).collect();
+    // println!("{:?}", now.elapsed());
+
+    // let now = Instant::now();
+    // let speller = aligned.speller();
+    // let res = speller.suggest("nuvviDspeller");
+    // let ver: Vec<&str> = res.iter().filter(|x| x.weight() <= 3.0).map(|x| x.value()).collect();
+    // println!("{:?}", now.elapsed());
 
     // let human_rights = ["buot", "olbmot", "leat", "riegádan", "friddjan", "ja", 
     //     "olmmošárvvu", "ja", "olmmošvuoigatvuođaid", "dáfus", "Sii", "leat", 
@@ -97,13 +105,28 @@ fn main() {
     // println!("{:?}", res);
 
     // let res = speller.suggest("gáibiđivččii", &cfg);
-    println!("{:?}", ver);
+    // println!("{:?}", ver);
 
     // let words = ["vuovdinfállovuogiŧ", "eanavuoigatvuohtadutkamušas", "nannesivččii", "gárvanivččii", "gáibiđivččii"];
 
-    // for line in tuples.iter() {
-    //     time_suggest(&speller, &line);
-    // }
+    let unaligned = SpellerArchive::new("./unaligned-test.zhfst").unwrap();
+    let aligned = SpellerArchive::new("./aligned-test.zhfst").unwrap();
+
+    let now = Instant::now();
+    for line in tuples.iter() {
+        time_suggest(unaligned.speller(), &line);
+    }
+    let unaligned_time = now.elapsed();
+
+
+    let now = Instant::now();
+    for line in tuples.iter() {
+        time_suggest(aligned.speller(), &line);
+    }
+    let aligned_time = now.elapsed();
+
+    println!("Unaligned: {:?}", unaligned_time);
+    println!("Aligned: {:?}", aligned_time);
 
     // println!("{:?}", *COUNTER.lock().unwrap());
 

@@ -38,7 +38,7 @@ fn test_speller() {
 
     // use COUNTER;
 
-    let acceptor = File::open("./se/acceptor.default.hfst").unwrap();
+    let acceptor = File::open("./test-align.hfst").unwrap();
     let mut acceptor_buf = vec![];
     let _ = BufReader::new(acceptor).read_to_end(&mut acceptor_buf);
 
@@ -49,7 +49,12 @@ fn test_speller() {
     let lexicon = Transducer::from_bytes(&acceptor_buf);
     let mutator = Transducer::from_bytes(&errmodel_buf);
 
+    println!("{:#?}", lexicon);
+
     let speller = Speller::new(mutator, lexicon);
+
+    
     println!("{:?}", speller.suggest("nuvviDspeller"));
+
     // println!("{:?}", *COUNTER.lock().unwrap());
 }

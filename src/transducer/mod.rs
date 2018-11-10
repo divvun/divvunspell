@@ -4,16 +4,19 @@ pub mod index_table;
 pub mod symbol_transition;
 pub mod transition_table;
 pub mod tree_node;
+pub mod realign;
+
+use std::fmt;
 
 use crate::types::{TransitionTableIndex, Weight, SymbolNumber, HeaderFlag};
 use crate::constants::{TRANS_INDEX_SIZE, TRANS_SIZE, TARGET_TABLE};
+
 use self::header::TransducerHeader;
 use self::alphabet::TransducerAlphabet;
 use self::index_table::IndexTable;
 use self::transition_table::TransitionTable;
 use self::symbol_transition::SymbolTransition;
 
-#[derive(Debug)]
 pub struct Transducer<'data> {
     buf: &'data [u8],
     header: TransducerHeader,
@@ -22,23 +25,37 @@ pub struct Transducer<'data> {
     transition_table: TransitionTable<'data>,
 }
 
+impl fmt::Debug for Transducer<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "{:?}", self.header)?;
+        writeln!(f, "{:?}", self.alphabet)?;
+        writeln!(f, "{:?}", self.index_table)?;
+        writeln!(f, "{:?}", self.transition_table)?;
+        Ok(())
+    }
+}
+
 impl<'data, 'a> Transducer<'data>
 where
     'data: 'a,
 {
     pub fn from_bytes(buf: &[u8]) -> Transducer {
         let header = TransducerHeader::new(&buf);
-        let alphabet_offset = header.alphabet_offset();
+        let alphabet_offset = header.len();
         let alphabet =
             TransducerAlphabet::new(&buf[alphabet_offset..buf.len()], header.symbol_count());
 
-        let index_table_offset = alphabet_offset + alphabet.length();
+        let index_table_offset = alphabet_offset + alphabet.len();
+        println!("Index table start offset: {}", index_table_offset);
+
         let index_table_end = index_table_offset + TRANS_INDEX_SIZE * header.index_table_size();
+        println!("Index table end: {}", index_table_end);
         let index_table = IndexTable::new(
             &buf[index_table_offset..index_table_end],
             header.index_table_size() as u32,
         );
 
+        println!("Trans table start offset: {}", index_table_end);
         let trans_table_end = index_table_end + TRANS_SIZE * header.target_table_size();
         let trans_table = TransitionTable::new(
             &buf[index_table_end..trans_table_end],
@@ -52,6 +69,10 @@ where
             index_table: index_table,
             transition_table: trans_table,
         }
+    }
+
+    pub fn buffer(&self) -> &[u8] {
+        self.buf
     }
 
     pub fn index_table(&'a self) -> &'a IndexTable<'data> {
@@ -105,10 +126,10 @@ where
                 None => false,
             }
         } else if let Some(0) = self.index_table.input_symbol(i) {
-    true
-} else {
-    false
-}
+            true
+        } else {
+            false
+        }
     }
 
     pub fn has_non_epsilons_or_flags(&self, i: TransitionTableIndex) -> bool {

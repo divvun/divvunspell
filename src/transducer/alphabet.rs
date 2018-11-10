@@ -126,6 +126,12 @@ impl TransducerAlphabetParser {
         }
 
         self.flag_state_size = self.feature_bucket.len() as SymbolNumber;
+
+        // Count remaining null padding bytes
+        while buf[offset] == b'\0' {
+            offset += 1;
+        }
+
         self.length = offset;
     }
 
@@ -170,9 +176,9 @@ impl TransducerAlphabet {
         &self.string_to_symbol
     }
 
-    pub fn mut_string_to_symbol(&mut self) -> &mut BTreeMap<String, SymbolNumber> {
-        &mut self.string_to_symbol
-    }
+    // pub fn mut_string_to_symbol(&mut self) -> &mut BTreeMap<String, SymbolNumber> {
+    //     &mut self.string_to_symbol
+    // }
 
     pub fn is_flag(&self, symbol: SymbolNumber) -> bool {
         self.operations.contains_key(&symbol)
@@ -194,17 +200,18 @@ impl TransducerAlphabet {
         self.unknown_symbol
     }
 
-    // TODO: this could be far better named
-    pub fn has_string(&self, s: String) -> bool {
-        self.string_to_symbol.contains_key(&s)
-    }
+    // TODO: this could be far better named\
+    // TODO: unused
+    // pub fn has_string(&self, s: String) -> bool {
+    //     self.string_to_symbol.contains_key(&s)
+    // }
 
     // Originally get_orig_symbol_count
     pub fn initial_symbol_count(&self) -> SymbolNumber {
         self.initial_symbol_count
     }
 
-    pub fn length(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.length
     }
 

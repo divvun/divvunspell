@@ -1,14 +1,21 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::Cursor;
 use std::{mem, u16, u32};
+use std::fmt;
 
 use crate::types::{TransitionTableIndex, SymbolNumber, Weight};
 use crate::constants::TRANS_INDEX_SIZE;
 
-#[derive(Debug)]
 pub struct IndexTable<'data> {
     size: TransitionTableIndex,
     cursor: Cursor<&'data [u8]>,
+}
+
+impl fmt::Debug for IndexTable<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Index table index: {}", self.size)?;
+        Ok(())
+    }
 }
 
 impl<'data> IndexTable<'data> {
@@ -52,6 +59,14 @@ impl<'data> IndexTable<'data> {
             Some(x)
         }
     }
+
+    /* In weighted transducers, transition entries are suffixed with a 4-byte IEEE 754 float representing weight. For final transitions, this must be
+
+static_cast<float>(UINT_MAX)
+
+Final indices also have a weight in place of their target index, denoting an additional final weight for that index.
+
+*/
 
     // Final weight reads from the same position as target, but for a different tuple
     // This can probably be abstracted out more nicely

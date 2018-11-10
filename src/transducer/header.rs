@@ -13,7 +13,8 @@ pub struct TransducerHeader {
     transitions: TransitionTableIndex,
 
     properties: [bool; 9],
-    alphabet_offset: usize,
+    string_content_size: u16,
+    header_size: usize,
 }
 
 impl TransducerHeader {
@@ -25,12 +26,12 @@ impl TransducerHeader {
         // Skip HFST string
         rdr.set_position(5);
 
-        let header_len = rdr.read_u16::<LittleEndian>().unwrap() as u64;
+        let header_len = rdr.read_u16::<LittleEndian>().unwrap();
 
         rdr.set_position(8);
 
         //debug!("{:?}", header_len);
-        let pos = rdr.position() + header_len;
+        let pos = rdr.position() + header_len as u64;
         rdr.set_position(pos);
 
         let input_symbols = rdr.read_u16::<LittleEndian>().unwrap();
@@ -67,7 +68,8 @@ impl TransducerHeader {
             transitions: transitions,
             properties: props,
 
-            alphabet_offset: rdr.position() as usize,
+            string_content_size: header_len,
+            header_size: rdr.position() as usize
         }
     }
 
@@ -99,7 +101,11 @@ impl TransducerHeader {
         self.transitions
     }
 
-    pub fn alphabet_offset(&self) -> usize {
-        self.alphabet_offset
+    pub fn properties(&self) -> &[bool; 9] {
+        &self.properties
+    }
+
+    pub fn len(&self) -> usize {
+        self.header_size as usize
     }
 }

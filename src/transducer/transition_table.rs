@@ -1,15 +1,22 @@
 use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::Cursor;
 use std::{mem, u16, u32};
+use std::fmt;
 
 use crate::types::{TransitionTableIndex, SymbolNumber, Weight};
 use crate::constants::TRANS_SIZE;
 use crate::transducer::symbol_transition::SymbolTransition;
 
-#[derive(Debug)]
 pub struct TransitionTable<'data> {
     size: TransitionTableIndex,
     cursor: Cursor<&'data [u8]>,
+}
+
+impl fmt::Debug for TransitionTable<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Transition table index: {}", self.size)?;
+        Ok(())
+    }
 }
 
 impl<'data> TransitionTable<'data> {
