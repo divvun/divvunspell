@@ -13,10 +13,16 @@ pub struct TreeNode {
     pub weight: Weight,
 }
 
+// impl Drop for TreeNode {
+//     fn drop(&mut self) {
+//         println!("String size: {}", self.string.len());
+//     }
+// }
+
 impl TreeNode {
     pub fn empty(start_state: FlagDiacriticState) -> TreeNode {
         TreeNode {
-            string: Vec::with_capacity(32),
+            string: Vec::with_capacity(16),
             input_state: 0,
             mutator_state: 0,
             lexicon_state: 0,
@@ -60,9 +66,12 @@ impl TreeNode {
 
     pub fn update_mutator(&self, transition: SymbolTransition) -> TreeNode {
         TreeNode {
+            string: self.string.clone(),
+            input_state: self.input_state,
             mutator_state: transition.target().unwrap(),
-            weight: self.weight + transition.weight().unwrap(),
-            ..self.clone()
+            lexicon_state: self.lexicon_state,
+            flag_state: self.flag_state.clone(),
+            weight: self.weight + transition.weight().unwrap()
         }
     }
 
@@ -84,8 +93,10 @@ impl TreeNode {
 
         let mut node = TreeNode {
             string: string,
+            input_state: self.input_state,
             mutator_state: next_mutator,
             lexicon_state: next_lexicon,
+            flag_state: self.flag_state.clone(),
             weight: self.weight + weight,
             ..self.clone()
         };
@@ -103,8 +114,12 @@ impl TreeNode {
         vec[feature as usize] = value;
 
         TreeNode {
+            string: self.string.clone(),
+            input_state: self.input_state,
+            mutator_state: self.mutator_state,
+            lexicon_state: self.lexicon_state,
             flag_state: vec,
-            ..self.clone()
+            weight: self.weight
         }
     }
 

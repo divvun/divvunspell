@@ -9,8 +9,8 @@ use hfstospell::transducer::Transducer;
 
 fn time_suggest(speller: &Speller, line: &TestLine) {
     let cfg = SpellerConfig {
-        max_weight: None,
-        n_best: Some(10),
+        max_weight: Some(100.0),
+        n_best: Some(5),
         beam: None
     };
     
@@ -53,10 +53,10 @@ fn main() {
     // let speller = Speller::new(mutator, lexicon);
 
     let tuples: &[TestLine] = &[
-        ("gáibiđivččii", "gáibidivččii", 8.012096, vec!["gálbirii"]),
-        ("gárvanivččii", "gárvánivččii", 7.510769, vec!["árranii", "gálganii", "gávvalii", "čárvagii", "šávanii", "gášanii", "gávvasii", "gákkanii", "gávažii"]),
-        ("nannesivččii", "nannešii", 7.329407, vec!["nannemii", "nannosii", "nannámii", "naneessii", "naniásii", "nanedesii", "naneásii", "nanitesii", "naniessii", "nanidesii"]),
-        ("eanavuoigatvuohtadutkamušas", "eanavuoigatvuođadutkamušas", 7.185912, vec!["eanavuoigatvuođadutkamušas", "eananvuoigatvuođadutkamušas", "eanavuoigatvuođadutkamuša", "eanavuoigatvuođadutkamušat", "leanavuoigatvuođadutkamušas", "eanavuoigatvuođadutkamušase", "eanavuoigatvuođadutkamušasi", "eanavuoigatvuođahutkamušas", "eanavuoigatvuođadutkamušbas", "beanavuoigatvuođadutkamušas"]),
+        // ("gáibiđivččii", "gáibidivččii", 8.012096, vec!["gálbirii"]),
+        // ("gárvanivččii", "gárvánivččii", 7.510769, vec!["árranii", "gálganii", "gávvalii", "čárvagii", "šávanii", "gášanii", "gávvasii", "gákkanii", "gávažii"]),
+        // ("nannesivččii", "nannešii", 7.329407, vec!["nannemii", "nannosii", "nannámii", "naneessii", "naniásii", "nanedesii", "naneásii", "nanitesii", "naniessii", "nanidesii"]),
+        // ("eanavuoigatvuohtadutkamušas", "eanavuoigatvuođadutkamušas", 7.185912, vec!["eanavuoigatvuođadutkamušas", "eananvuoigatvuođadutkamušas", "eanavuoigatvuođadutkamuša", "eanavuoigatvuođadutkamušat", "leanavuoigatvuođadutkamušas", "eanavuoigatvuođadutkamušase", "eanavuoigatvuođadutkamušasi", "eanavuoigatvuođahutkamušas", "eanavuoigatvuođadutkamušbas", "beanavuoigatvuođadutkamušas"]),
         ("vuovdinfállovuogiŧ", "vuovdinfállovuogit", 7.000394, vec!["vuovdinfállovuogi", "vuovdinfállovuogis", "vuovdinfállovuogit", "vuovdinfállovuoge", "vuovdinfállovuogigo", "vuovdinfállovuogiba", "vuovdinfállovuogibe", "vuovdinfállovuogige", "vuovdinfállovuogát", "vuovdinbállovuogi"]),
         ("guollebiebmandoalliide", "guollebiebmandolliide", 6.93927, vec!["guollebiebmandoalliiđa", "guollebiebmandoalliviđe", "guollebiebmanduvlliide", "guollebiebmandoalliáidde", "guollebiebmandolliide", "guollebiebmandoalliidea", "guollebiebmandoalláde", "guollebiebmandolliid", "guollebiebmandoalliideat", "guollebiebmandoalliideii"]),
         ("guolledikšunbivdimiš", "guolledikšunbivdimis", 6.935191, vec!["guolledikšunbivdimii", "guolledikšunbivdimin", "guolledikšunbivdimis", "guolledikšunbivdimuš", "guoledikšunbivdimii", "guolledikšunbivdimiid", "guolledikšunbivdimiin", "golledikšunbivdimin", "guollefikšunbivdimis", "guolbedikšunbivdimii"]),
@@ -93,11 +93,11 @@ fn main() {
 
     // let correct: Vec<bool> = human_rights.iter().map(|w| speller.is_correct(w)).collect();
     
-    // let cfg = SpellerConfig {
-    //     max_weight: None, // Some(10000.0),
-    //     n_best: None,
-    //     beam: None
-    // };
+    let cfg = SpellerConfig {
+        max_weight: Some(50.0),
+        n_best: None,
+        beam: None
+    };
 
     // let res: Vec<Vec<Suggestion>> = human_rights.iter().map(|w| speller.suggest(w, &cfg)).collect();
 
@@ -109,8 +109,9 @@ fn main() {
 
     // let words = ["vuovdinfállovuogiŧ", "eanavuoigatvuohtadutkamušas", "nannesivččii", "gárvanivččii", "gáibiđivččii"];
 
-    let unaligned = SpellerArchive::new("./unaligned-test.zhfst").unwrap();
-    let aligned = SpellerArchive::new("./aligned-test.zhfst").unwrap();
+    let unaligned = SpellerArchive::new("./aligned-test.zhfst").unwrap();
+    // let res = unaligned.speller().suggest_with_config("same", &cfg);
+    // let aligned = SpellerArchive::new("./aligned-test.zhfst").unwrap();
 
     let now = Instant::now();
     for line in tuples.iter() {
@@ -119,14 +120,14 @@ fn main() {
     let unaligned_time = now.elapsed();
 
 
-    let now = Instant::now();
-    for line in tuples.iter() {
-        time_suggest(aligned.speller(), &line);
-    }
-    let aligned_time = now.elapsed();
+    // let now = Instant::now();
+    // for line in tuples.iter() {
+    //     time_suggest(aligned.speller(), &line);
+    // }
+    // let aligned_time = now.elapsed();
 
-    println!("Unaligned: {:?}", unaligned_time);
-    println!("Aligned: {:?}", aligned_time);
+    // println!("Unaligned: {:?}", unaligned_time);
+    // println!("Aligned: {:?}", aligned_time);
 
     // println!("{:?}", *COUNTER.lock().unwrap());
 

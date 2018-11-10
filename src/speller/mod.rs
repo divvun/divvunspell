@@ -89,13 +89,13 @@ where
     fn lexicon_epsilons(&self, state: &mut SpellerState, next_node: &TreeNode) {
         // debug_incr("lexicon_epsilons");
 
-        debug!("Begin lexicon epsilons");
+        // debug!("Begin lexicon epsilons");
 
         let lexicon = self.speller.lexicon();
         let operations = lexicon.alphabet().operations();
 
         if !lexicon.has_epsilons_or_flags(next_node.lexicon_state + 1) {
-            debug!("Has no epsilons or flags, returning");
+            // debug!("Has no epsilons or flags, returning");
             return;
         }
 
@@ -103,8 +103,10 @@ where
 
         while let Some(transition) = lexicon.take_epsilons_and_flags(next) {
             if let Some(sym) = lexicon.transition_table().input_symbol(next) {
+                let transition_weight = transition.weight().unwrap();
+
                 if sym == 0 {
-                    if self.is_under_weight_limit(state, next_node.weight + transition.weight().unwrap()) {
+                    if self.is_under_weight_limit(state, next_node.weight + transition_weight) {
                         if let SpellerWorkerMode::Correct = self.mode {
                             let epsilon_transition = transition.clone_with_epsilon_symbol();
                             // debug_incr(
@@ -123,16 +125,16 @@ where
                     if let Some(op) = operation {
                         //println!("{:?}", op);
 
-                        let is_skippable = match op.operation {
-                            FlagDiacriticOperator::PositiveSet => true,
-                            FlagDiacriticOperator::NegativeSet => true,
-                            FlagDiacriticOperator::Require => true,
-                            FlagDiacriticOperator::Disallow => false,
-                            FlagDiacriticOperator::Clear => false,
-                            FlagDiacriticOperator::Unification => true
-                        };
+                        // let is_skippable = match op.operation {
+                        //     FlagDiacriticOperator::PositiveSet => true,
+                        //     FlagDiacriticOperator::NegativeSet => true,
+                        //     FlagDiacriticOperator::Require => true,
+                        //     FlagDiacriticOperator::Disallow => false,
+                        //     FlagDiacriticOperator::Clear => false,
+                        //     FlagDiacriticOperator::Unification => true
+                        // };
                         
-                        if is_skippable && !self.is_under_weight_limit(state, transition.weight().unwrap()) { //next_node.weight) {//} + transition.weight().unwrap()) {
+                        if !self.is_under_weight_limit(state, transition_weight) { //next_node.weight) {//} + transition.weight().unwrap()) {
                             // println!("{}+{} {:?}", next_node.weight, transition.weight().unwrap(), &op);
                             next += 1;
                             continue;
@@ -152,10 +154,10 @@ where
             next += 1;
         }
 
-        debug!(
-            "lexicon epsilons, nodes length: {}",
-            state.nodes.len()
-        );
+        // debug!(
+        //     "lexicon epsilons, nodes length: {}",
+        //     state.nodes.len()
+        // );
     }
 
     fn mutator_epsilons(&self, state: &mut SpellerState, next_node: &TreeNode) {
@@ -167,7 +169,7 @@ where
         let alphabet_translator = self.speller.alphabet_translator();
 
         if !mutator.has_transitions(next_node.mutator_state + 1, Some(0)) {
-            debug!("Mutator has no transitions, skipping");
+            // debug!("Mutator has no transitions, skipping");
             return;
         }
 
@@ -245,10 +247,10 @@ where
             next_m += 1;
         }
 
-        debug!(
-            "mutator epsilons, nodes length: {}",
-            state.nodes.len()
-        );
+        // debug!(
+        //     "mutator epsilons, nodes length: {}",
+        //     state.nodes.len()
+        // );
 
         // debug!("End mutator epsilons");
     }
@@ -262,7 +264,7 @@ where
         mutator_weight: Weight,
         input_increment: i16,
     ) {
-        debug!("Begin queue lexicon arcs");
+        // debug!("Begin queue lexicon arcs");
 
         let lexicon = self.speller.lexicon();
         let identity = lexicon.alphabet().identity();
@@ -270,14 +272,14 @@ where
 
         while let Some(noneps_trans) = lexicon.take_non_epsilons(next, input_sym) {
             //debug!("noneps next: {:?}", &noneps_trans);
-            debug!(
-                "qla noneps input_sym:{}, next: {}, t:{} s:{} w:{}",
-                input_sym,
-                next,
-                noneps_trans.target().unwrap(),
-                noneps_trans.symbol().unwrap(),
-                noneps_trans.weight().unwrap()
-            );
+            // debug!(
+            //     "qla noneps input_sym:{}, next: {}, t:{} s:{} w:{}",
+            //     input_sym,
+            //     next,
+            //     noneps_trans.target().unwrap(),
+            //     noneps_trans.symbol().unwrap(),
+            //     noneps_trans.weight().unwrap()
+            // );
 
             if let Some(mut sym) = noneps_trans.symbol() {
                 // TODO: wtf?
@@ -321,11 +323,11 @@ where
             }
 
             next += 1;
-            debug!("qla noneps NEXT input_sym:{}, next: {}", input_sym, next);
+            // debug!("qla noneps NEXT input_sym:{}, next: {}", input_sym, next);
         }
 
-        debug!("qla, nodes length: {}", state.nodes.len());
-        debug!("--- qla noneps end ---");
+        // debug!("qla, nodes length: {}", state.nodes.len());
+        // debug!("--- qla noneps end ---");
 
         //debug!("End lexicon arcs");
     }
@@ -340,16 +342,20 @@ where
 
         while let Some(transition) = mutator.take_non_epsilons(next_m, input_sym) {
             //debug!("mut arc loop: {}", next_m);
+            let symbol = transition.symbol();
 
-            if let Some(0) = transition.symbol() {
-                if self.is_under_weight_limit(state, transition.weight().unwrap()) { //next_node.weight} + ) {
+            if let Some(0) = symbol {
+                // println!("{}, {}", next_node.weight, transition.weight().unwrap());
+                // TODO: this line causes a great speed up but also breaks accuracy _a lot_
+                let transition_weight = transition.weight().unwrap();
+                if self.is_under_weight_limit(state, next_node.weight + transition_weight) {
                     // debug_incr("queue_mutator_arcs push node update");
                     state.nodes.push(next_node.update(
                         0,
                         Some(next_node.input_state + 1),
                         transition.target().unwrap(),
                         next_node.lexicon_state,
-                        transition.weight().unwrap(),
+                        transition_weight,
                     ));
                 }
 
@@ -357,7 +363,7 @@ where
                 continue;
             }
 
-            if let Some(sym) = transition.symbol() {
+            if let Some(sym) = symbol {
                 let trans_sym = alphabet_translator[sym as usize];
 
                 if !lexicon.has_transitions(next_node.lexicon_state + 1, Some(trans_sym)) {
@@ -404,12 +410,12 @@ where
                     transition.weight().unwrap(),
                     1,
                 );
-            }
 
-            next_m += 1;
+                next_m += 1;
+            }
         }
 
-        debug!("qma, nodes length: {}", state.nodes.len());
+        // debug!("qma, nodes length: {}", state.nodes.len());
     }
 
     fn consume_input(&self, state: &mut SpellerState, next_node: &TreeNode) {
@@ -430,6 +436,8 @@ where
                 {
                     self.queue_mutator_arcs(state, &next_node, mutator.alphabet().identity().unwrap());
                 }
+
+                // Check for unknown transition
                 if mutator
                     .has_transitions(next_node.mutator_state + 1, mutator.alphabet().unknown())
                 {
@@ -440,7 +448,7 @@ where
             self.queue_mutator_arcs(state, &next_node, input_sym);
         }
 
-        debug!("finish consume input");
+        // debug!("finish consume input");
     }
 
     fn lexicon_consume(&self, state: &mut SpellerState, next_node: &TreeNode) {
@@ -460,21 +468,24 @@ where
         if !lexicon.has_transitions(next_lexicon_state, Some(input_sym)) {
             // we have no regular transitions for this
             if input_sym >= lexicon.alphabet().initial_symbol_count() {
-                if lexicon.has_transitions(next_lexicon_state, mutator.alphabet().identity()) {
+                let identity = mutator.alphabet().identity();
+                if lexicon.has_transitions(next_lexicon_state, identity) {
                     self.queue_lexicon_arcs(
                         state,
                         &next_node,
-                        lexicon.alphabet().identity().unwrap(),
+                        identity.unwrap(),
                         next_node.mutator_state,
                         0.0,
                         1,
                     );
                 }
-                if lexicon.has_transitions(next_lexicon_state, mutator.alphabet().unknown()) {
+
+                let unknown = mutator.alphabet().unknown();
+                if lexicon.has_transitions(next_lexicon_state, unknown) {
                     self.queue_lexicon_arcs(
                         state,
                         &next_node,
-                        lexicon.alphabet().unknown().unwrap(),
+                        unknown.unwrap(),
                         next_node.mutator_state,
                         0.0,
                         1,
@@ -540,30 +551,32 @@ where
             self.update_weight_limit(&mut state, best_weight, &suggestions);
             
             // debug_incr("Worker node loop count");
-            debug!("{:?}", next_node);
+            // debug!("{:?}", next_node);
 
-            debug!(
-                "sugloop next_node: is:{} w:{} ms:{} ls:{}",
-                next_node.input_state,
-                next_node.weight,
-                next_node.mutator_state,
-                next_node.lexicon_state
-            );
+            // debug!(
+            //     "sugloop next_node: is:{} w:{} ms:{} ls:{}",
+            //     next_node.input_state,
+            //     next_node.weight,
+            //     next_node.mutator_state,
+            //     next_node.lexicon_state
+            // );
 
-            // if !self.is_under_weight_limit(&mut state, next_node.weight) {
-            //     continue
-            // }
+            if !self.is_under_weight_limit(&mut state, next_node.weight) {
+                continue
+            }
 
             self.lexicon_epsilons(&mut state, &next_node);
             self.mutator_epsilons(&mut state, &next_node);
 
+            // println!("{:?}", state.nodes);
+
             if next_node.input_state as usize == self.input.len() {
-                // debug_incr("input_state eq input size");
-                debug!(
-                    "is_final ms:{} ls:{}",
-                    next_node.mutator_state,
-                    next_node.lexicon_state
-                );
+                // // debug_incr("input_state eq input size");
+                // debug!(
+                //     "is_final ms:{} ls:{}",
+                //     next_node.mutator_state,
+                //     next_node.lexicon_state
+                // );
                 if self.speller.mutator().is_final(next_node.mutator_state) &&
                     self.speller.lexicon().is_final(next_node.lexicon_state)
                 {
@@ -611,7 +624,7 @@ where
             }
         }
 
-        debug!("Here we go!");
+        // debug!("Here we go!");
 
         suggestions
     }
