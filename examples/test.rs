@@ -110,7 +110,7 @@ fn main() {
 
     // let words = ["vuovdinfállovuogiŧ", "eanavuoigatvuohtadutkamušas", "nannesivččii", "gárvanivččii", "gáibiđivččii"];
 
-    let unaligned = SpellerArchive::new("./aligned-test.zhfst").unwrap();
+    let unaligned = SpellerArchive::new("./unaligned-test.zhfst").unwrap();
     // let res = unaligned.speller().suggest_with_config("same", &cfg);
     // let aligned = SpellerArchive::new("./aligned-test.zhfst").unwrap();
 

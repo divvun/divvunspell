@@ -1,6 +1,6 @@
 pub mod suggestion;
 
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::f32;
 use std::sync::Arc;
 use parking_lot::RwLock;
@@ -586,15 +586,15 @@ impl SpellerWorker {
 
     fn suggest(self: Arc<Self>) -> Vec<Suggestion> {
         let mut max_weight = speller_max_weight(&self.config);
-        let mut nodes = Arc::new(RwLock::new(speller_start_node(self.state_size() as usize)));
-        let mut corrections = BTreeMap::<String, Weight>::new();
+        let mut nodes = speller_start_node(self.state_size() as usize);
+        let mut corrections = HashMap::<String, Weight>::new();
         let mut suggestions: Vec<Suggestion> = vec![];
         let mut best_weight = self.config.max_weight.unwrap_or(f32::INFINITY);
 
         loop {
         // while let Some(next_node) = nodes.pop() {
             let next_node = {
-                match nodes.write().pop() {
+                match nodes.pop() {
                     Some(v) => v,
                     None => break
                 }
@@ -619,8 +619,8 @@ impl SpellerWorker {
             // let next_node = Arc::new(next_node);
             // let state = Arc::new(state);
             
-            nodes.write().append(&mut self.lexicon_epsilons(max_weight, &next_node));
-            nodes.write().append(&mut self.mutator_epsilons(max_weight, &next_node));
+            nodes.append(&mut self.lexicon_epsilons(max_weight, &next_node));
+            nodes.append(&mut self.mutator_epsilons(max_weight, &next_node));
 
             // println!("{:?}", state.nodes);
 
@@ -674,7 +674,7 @@ impl SpellerWorker {
                     suggestions = self.generate_sorted_suggestions(&corrections);
                 }
             } else {
-                nodes.write().append(&mut self.consume_input(max_weight, &next_node));
+                nodes.append(&mut self.consume_input(max_weight, &next_node));
             }
         }
 
@@ -683,7 +683,7 @@ impl SpellerWorker {
         suggestions
     }
 
-    fn generate_sorted_suggestions(&self, corrections: &BTreeMap<String, Weight>) -> Vec<Suggestion> {
+    fn generate_sorted_suggestions(&self, corrections: &HashMap<String, Weight>) -> Vec<Suggestion> {
         let mut c: Vec<Suggestion> = corrections
             .into_iter()
             .map(|x| Suggestion::new(x.0.to_string(), *x.1))

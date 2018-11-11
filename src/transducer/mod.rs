@@ -46,17 +46,17 @@ impl Transducer {
             TransducerAlphabet::new(&buf[alphabet_offset..buf.len()], header.symbol_count());
 
         let index_table_offset = alphabet_offset + alphabet.len();
-        println!("Index table start offset: {}", index_table_offset);
+        // println!("Index table start offset: {}", index_table_offset);
 
         let index_table_end = index_table_offset + TRANS_INDEX_SIZE * header.index_table_size();
-        println!("Index table end: {}", index_table_end);
+        // println!("Index table end: {}", index_table_end);
         let index_table = IndexTable::new(buf.clone(),
             index_table_offset,
             index_table_end,
             header.index_table_size() as u32,
         );
 
-        println!("Trans table start offset: {}", index_table_end);
+        // println!("Trans table start offset: {}", index_table_end);
         let trans_table_end = index_table_end + TRANS_SIZE * header.target_table_size();
         let trans_table = TransitionTable::new(buf.clone(),
             index_table_end,
