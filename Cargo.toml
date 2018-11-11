@@ -20,5 +20,6 @@ log = "0.4.6"
 env_logger = "0.5.13"
 unic-ucd-category = "0.7.0"
 unic-ucd-segment = "0.7.0"
+parking_lot = "*"
 
 [dev-dependencies]

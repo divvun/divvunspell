@@ -10,7 +10,7 @@ use crate::tokenizer::{Tokenize, Tokenizer, Token};
 // SpellerArchive
 
 #[no_mangle]
-pub extern fn speller_archive_new<'a>(raw_path: *mut c_char, error: *mut u8) -> *const SpellerArchive<'a> {
+pub extern fn speller_archive_new(raw_path: *mut c_char, error: *mut u8) -> *const SpellerArchive {
     let c_path = unsafe { CStr::from_ptr(raw_path) };
     let file_path = c_path.to_str().unwrap();
 

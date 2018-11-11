@@ -2,34 +2,46 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::Cursor;
 use std::{mem, u16, u32};
 use std::fmt;
+use std::sync::Arc;
+use memmap::Mmap;
 
 use crate::types::{TransitionTableIndex, SymbolNumber, Weight};
 use crate::constants::TRANS_SIZE;
 use crate::transducer::symbol_transition::SymbolTransition;
 
-pub struct TransitionTable<'data> {
+pub struct TransitionTable {
     size: TransitionTableIndex,
-    cursor: Cursor<&'data [u8]>,
+    mmap: Arc<Mmap>,
+    offset: usize,
+    len: usize
 }
 
-impl fmt::Debug for TransitionTable<'_> {
+impl fmt::Debug for TransitionTable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Transition table index: {}", self.size)?;
         Ok(())
     }
 }
 
-impl<'data> TransitionTable<'data> {
-    pub fn new(buf: &[u8], size: u32) -> TransitionTable {
+impl TransitionTable {
+    pub fn new(mmap: Arc<Mmap>, offset: usize, len: usize, size: u32) -> TransitionTable {
         TransitionTable {
             size: size,
-            cursor: Cursor::new(buf),
+            mmap,
+            offset,
+            len
         }
     }
 
-    fn read_symbol_from_cursor(&self, index: u64) -> Option<SymbolNumber> {
-        let mut cursor = self.cursor.clone();
+    fn make_cursor(&self, index: u64) -> Cursor<&[u8]> {
+        let mut cursor = Cursor::new(&self.mmap[self.offset..self.len]);
         cursor.set_position(index);
+        cursor
+    }
+
+    fn read_symbol_from_cursor(&self, index: u64) -> Option<SymbolNumber> {
+        // let mut cursor = self.cursor.clone();
+        let mut cursor = self.make_cursor(index);
         let x = cursor.read_u16::<LittleEndian>().unwrap();
         if x == u16::MAX {
             None
@@ -64,8 +76,8 @@ impl<'data> TransitionTable<'data> {
         }
 
         let index: u64 = ((TRANS_SIZE * i as usize) + (2 * mem::size_of::<SymbolNumber>())) as u64;
-        let mut cursor = self.cursor.clone();
-        cursor.set_position(index);
+        // let mut cursor = self.cursor.clone();
+        let mut cursor = self.make_cursor(index);
         let x = cursor.read_u32::<LittleEndian>().unwrap();
         if x == u32::MAX {
             None
@@ -83,8 +95,8 @@ impl<'data> TransitionTable<'data> {
                               mem::size_of::<TransitionTableIndex>()) as
             u64;
 
-        let mut cursor = self.cursor.clone();
-        cursor.set_position(index);
+        // let mut cursor = self.cursor.clone();
+        let mut cursor = self.make_cursor(index);
         Some(cursor.read_f32::<LittleEndian>().unwrap())
     }
 

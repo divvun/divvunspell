@@ -2,7 +2,7 @@ use crate::transducer::Transducer;
 use std::fs::File;
 use std::io::{Read, Write, Seek, BufReader};
 
-fn realign(transducer: &Transducer<'_>) {
+fn realign(transducer: &Transducer) {
     let header_len = transducer.header().len() + transducer.alphabet().len();
     println!("Header length: {}", header_len);
 

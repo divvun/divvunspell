@@ -1,13 +1,14 @@
 extern crate hfstospell;
 
 use std::time::{Duration, Instant};
+use std::sync::Arc;
 
 use hfstospell::archive::SpellerArchive;
 use hfstospell::speller::{Speller, SpellerConfig};
 use hfstospell::speller::suggestion::Suggestion;
 use hfstospell::transducer::Transducer;
 
-fn time_suggest(speller: &Speller, line: &TestLine) {
+fn time_suggest(speller: Arc<Speller>, line: &TestLine) {
     let cfg = SpellerConfig {
         max_weight: Some(100.0),
         n_best: Some(5),

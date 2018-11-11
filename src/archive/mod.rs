@@ -6,29 +6,30 @@ use zip::ZipArchive;
 use std::io::prelude::*;
 use std::io::{Cursor, Seek};
 use std::slice;
+use std::sync::Arc;
 
 use self::meta::SpellerMetadata;
 use crate::transducer::Transducer;
 use crate::speller::Speller;
 
-pub struct SpellerArchive<'data> {
+pub struct SpellerArchive {
     #[allow(dead_code)]
     handle: Mmap,
     metadata: SpellerMetadata,
-    speller: Speller<'data>,
+    speller: Arc<Speller>,
 }
 
-#[inline]
-fn partial_slice(slice: &[u8], start: usize, offset: usize) -> &[u8] {
-    let end = start + offset;
-    &slice[start..end]
-}
+// #[inline]
+// fn partial_slice(slice: &[u8], start: usize, offset: usize) -> &[u8] {
+//     let end = start + offset;
+//     &slice[start..end]
+// }
 
 fn slice_by_name<'a, R: Read + Seek>(
     archive: &mut ZipArchive<R>,
     slice: &'a [u8],
     name: &str,
-) -> Result<&'a [u8], SpellerArchiveError> {
+) -> Result<(u64, usize), SpellerArchiveError> {
     let index = archive.by_name(name).unwrap();
 
     if index.compressed_size() != index.size() {
@@ -36,7 +37,9 @@ fn slice_by_name<'a, R: Read + Seek>(
         return Err(SpellerArchiveError::UnsupportedCompressed);
     }
 
-    Ok(partial_slice(&slice, index.data_start() as usize, index.size() as usize))
+    Ok((index.data_start(), index.size() as usize))
+
+    // Ok(partial_slice(&slice,))
 }
 
 #[derive(Debug)]
@@ -45,7 +48,7 @@ pub enum SpellerArchiveError {
     UnsupportedCompressed
 }
 
-impl<'data> SpellerArchive<'data> {
+impl SpellerArchive {
     pub fn new(file_path: &str) -> Result<SpellerArchive, SpellerArchiveError> {
         let file = File::open(file_path)
             .map_err(|err| SpellerArchiveError::Io(err))?;
@@ -59,14 +62,32 @@ impl<'data> SpellerArchive<'data> {
         let mut archive = ZipArchive::new(reader).unwrap();
 
         let data = slice_by_name(&mut archive, &slice, "index.xml")?;
-        let metadata = SpellerMetadata::from_bytes(&data).unwrap();
+        let metadata_mmap = unsafe {
+            MmapOptions::new()
+                .offset(data.0)
+                .len(data.1)
+                .map(&file)
+        }.map_err(|err| SpellerArchiveError::Io(err))?; 
+        let metadata = SpellerMetadata::from_bytes(&metadata_mmap).unwrap();
 
         // Load transducers
-        let acceptor_data = slice_by_name(&mut archive, &slice, &metadata.acceptor.id)?;
-        let acceptor = Transducer::from_bytes(&acceptor_data);
+        let acceptor_range = slice_by_name(&mut archive, &slice, &metadata.acceptor.id)?;
+        let acceptor_mmap = unsafe {
+            MmapOptions::new()
+                .offset(acceptor_range.0)
+                .len(acceptor_range.1)
+                .map(&file)
+        }.map_err(|err| SpellerArchiveError::Io(err))?; 
+        let acceptor = Transducer::from_mapped_memory(acceptor_mmap);
 
-        let errmodel_data = slice_by_name(&mut archive, &slice, &metadata.errmodel.id)?;
-        let errmodel = Transducer::from_bytes(&errmodel_data);
+        let errmodel_range = slice_by_name(&mut archive, &slice, &metadata.errmodel.id)?;
+        let errmodel_mmap = unsafe {
+            MmapOptions::new()
+                .offset(errmodel_range.0)
+                .len(errmodel_range.1)
+                .map(&file)
+        }.map_err(|err| SpellerArchiveError::Io(err))?; 
+        let errmodel = Transducer::from_mapped_memory(errmodel_mmap);
 
         let speller = Speller::new(errmodel, acceptor);
 
@@ -77,11 +98,8 @@ impl<'data> SpellerArchive<'data> {
         })
     }
 
-    pub fn speller<'a>(&'a self) -> &'a Speller<'data>
-    where
-        'data: 'a,
-    {
-        &self.speller
+    pub fn speller(&self) -> Arc<Speller> {
+        self.speller.clone()
     }
 
     pub fn metadata(&self) -> &SpellerMetadata {

@@ -7,6 +7,8 @@ pub mod tree_node;
 pub mod realign;
 
 use std::fmt;
+use memmap::Mmap;
+use std::sync::Arc;
 
 use crate::types::{TransitionTableIndex, Weight, SymbolNumber, HeaderFlag};
 use crate::constants::{TRANS_INDEX_SIZE, TRANS_SIZE, TARGET_TABLE};
@@ -17,15 +19,15 @@ use self::index_table::IndexTable;
 use self::transition_table::TransitionTable;
 use self::symbol_transition::SymbolTransition;
 
-pub struct Transducer<'data> {
-    buf: &'data [u8],
+pub struct Transducer {
+    buf: Arc<Mmap>,
     header: TransducerHeader,
     alphabet: TransducerAlphabet,
-    index_table: IndexTable<'data>,
-    transition_table: TransitionTable<'data>,
+    index_table: IndexTable,
+    transition_table: TransitionTable,
 }
 
-impl fmt::Debug for Transducer<'_> {
+impl fmt::Debug for Transducer {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "{:?}", self.header)?;
         writeln!(f, "{:?}", self.alphabet)?;
@@ -35,11 +37,9 @@ impl fmt::Debug for Transducer<'_> {
     }
 }
 
-impl<'data, 'a> Transducer<'data>
-where
-    'data: 'a,
-{
-    pub fn from_bytes(buf: &[u8]) -> Transducer {
+impl Transducer {
+    pub fn from_mapped_memory(buf: Mmap) -> Transducer {
+        let buf = Arc::new(buf);
         let header = TransducerHeader::new(&buf);
         let alphabet_offset = header.len();
         let alphabet =
@@ -50,15 +50,17 @@ where
 
         let index_table_end = index_table_offset + TRANS_INDEX_SIZE * header.index_table_size();
         println!("Index table end: {}", index_table_end);
-        let index_table = IndexTable::new(
-            &buf[index_table_offset..index_table_end],
+        let index_table = IndexTable::new(buf.clone(),
+            index_table_offset,
+            index_table_end,
             header.index_table_size() as u32,
         );
 
         println!("Trans table start offset: {}", index_table_end);
         let trans_table_end = index_table_end + TRANS_SIZE * header.target_table_size();
-        let trans_table = TransitionTable::new(
-            &buf[index_table_end..trans_table_end],
+        let trans_table = TransitionTable::new(buf.clone(),
+            index_table_end,
+            trans_table_end,
             header.target_table_size() as u32,
         );
 
@@ -72,14 +74,14 @@ where
     }
 
     pub fn buffer(&self) -> &[u8] {
-        self.buf
+        &self.buf
     }
 
-    pub fn index_table(&'a self) -> &'a IndexTable<'data> {
+    pub fn index_table(&self) -> &IndexTable {
         &self.index_table
     }
 
-    pub fn transition_table(&self) -> &TransitionTable<'data> {
+    pub fn transition_table(&self) -> &TransitionTable {
         &self.transition_table
     }
 
