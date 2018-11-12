@@ -2,15 +2,16 @@ use crate::types::{TransitionTableIndex, SymbolNumber, FlagDiacriticState, FlagD
             FlagDiacriticOperation, Weight};
 
 use super::symbol_transition::SymbolTransition;
+use std::borrow::Cow;
 
 #[derive(Debug, Clone)]
 pub struct TreeNode {
     pub string: Vec<SymbolNumber>,
+    pub flag_state: FlagDiacriticState,
+    pub weight: Weight,
     pub input_state: u32,
     pub mutator_state: TransitionTableIndex,
     pub lexicon_state: TransitionTableIndex,
-    pub flag_state: FlagDiacriticState,
-    pub weight: Weight,
 }
 
 // impl Drop for TreeNode {
@@ -22,7 +23,7 @@ pub struct TreeNode {
 impl TreeNode {
     pub fn empty(start_state: FlagDiacriticState) -> TreeNode {
         TreeNode {
-            string: Vec::with_capacity(16),
+            string: Vec::with_capacity(1),
             input_state: 0,
             mutator_state: 0,
             lexicon_state: 0,
@@ -47,7 +48,8 @@ impl TreeNode {
     pub fn update_lexicon(&self, transition: SymbolTransition) -> TreeNode {
         let string = match transition.symbol() {
             Some(value) => {
-                let mut string = self.string.clone();
+                let mut string = Vec::with_capacity(self.string.len() + 1);
+                string.extend(&self.string);
                 string.push(value);
                 string
             }
@@ -84,7 +86,8 @@ impl TreeNode {
         weight: Weight,
     ) -> TreeNode {
         let string = if output_symbol != 0 {
-            let mut string = self.string.clone();
+            let mut string = Vec::with_capacity(self.string.len() + 1);
+            string.extend(&self.string);
             string.push(output_symbol);
             string
         } else {

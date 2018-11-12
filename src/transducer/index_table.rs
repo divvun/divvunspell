@@ -1,9 +1,5 @@
-use byteorder::{LittleEndian, ReadBytesExt};
-use std::io::Cursor;
-use std::{mem, u16, u32};
+use std::{u16, u32};
 use std::fmt;
-use std::collections::HashMap;
-use std::mem::transmute;
 use std::ptr;
 use std::cell::RefCell;
 

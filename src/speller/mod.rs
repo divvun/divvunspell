@@ -1,10 +1,8 @@
 pub mod suggestion;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use std::f32;
 use std::sync::Arc;
-use parking_lot::RwLock;
-use std::thread;
 
 use crate::transducer::Transducer;
 use crate::transducer::tree_node::TreeNode;

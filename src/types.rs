@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap};
 
 #[derive(Debug, Clone)]
 pub enum FlagDiacriticOperator {
@@ -49,7 +49,6 @@ pub type ValueNumber = i16;
 pub type TransitionTableIndex = u32;
 pub type Weight = f32;
 pub type FlagDiacriticState = Vec<i16>;
-pub type OperationMap = HashMap<SymbolNumber, FlagDiacriticOperation>;
 
 pub enum SpellerWorkerMode {
     Correct,

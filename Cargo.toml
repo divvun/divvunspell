@@ -17,9 +17,10 @@ serde_derive = "1.0.80"
 serde-xml-rs = "0.2.1"
 zip = { version = "0.4", default-features = false }
 log = "0.4.6"
-env_logger = "0.5.13"
+env_logger = "0.6.0"
 unic-ucd-category = "0.7.0"
 unic-ucd-segment = "0.7.0"
-parking_lot = "*"
+parking_lot = "0.6.4"
+smallvec = "0.6.5"
 
 [dev-dependencies]

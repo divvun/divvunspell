@@ -1,8 +1,8 @@
 use crate::types::{SymbolNumber, ValueNumber, FlagDiacriticOperator, FlagDiacriticOperation};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use super::Transducer;
 
-type OperationsMap = HashMap<SymbolNumber, FlagDiacriticOperation>;
+type OperationsMap = BTreeMap<SymbolNumber, FlagDiacriticOperation>;
 
 #[derive(Debug)]
 pub struct TransducerAlphabet {
@@ -10,7 +10,7 @@ pub struct TransducerAlphabet {
     initial_symbol_count: SymbolNumber,
     flag_state_size: SymbolNumber,
     length: usize,
-    string_to_symbol: HashMap<String, SymbolNumber>,
+    string_to_symbol: BTreeMap<String, SymbolNumber>,
     operations: OperationsMap,
     identity_symbol: Option<SymbolNumber>,
     unknown_symbol: Option<SymbolNumber>,
@@ -20,10 +20,10 @@ struct TransducerAlphabetParser {
     key_table: Vec<String>,
     flag_state_size: SymbolNumber,
     length: usize,
-    string_to_symbol: HashMap<String, SymbolNumber>,
+    string_to_symbol: BTreeMap<String, SymbolNumber>,
     operations: OperationsMap,
-    feature_bucket: HashMap<String, SymbolNumber>,
-    value_bucket: HashMap<String, ValueNumber>,
+    feature_bucket: BTreeMap<String, SymbolNumber>,
+    value_bucket: BTreeMap<String, ValueNumber>,
     val_n: ValueNumber,
     feat_n: SymbolNumber,
     identity_symbol: Option<SymbolNumber>,
@@ -36,10 +36,10 @@ impl TransducerAlphabetParser {
             key_table: Vec::with_capacity(64),
             flag_state_size: 0,
             length: 0,
-            string_to_symbol: HashMap::new(),
-            operations: HashMap::new(),
-            feature_bucket: HashMap::new(),
-            value_bucket: HashMap::new(),
+            string_to_symbol: BTreeMap::new(),
+            operations: BTreeMap::new(),
+            feature_bucket: BTreeMap::new(),
+            value_bucket: BTreeMap::new(),
             val_n: 0i16,
             feat_n: 0u16,
             identity_symbol: None,
@@ -172,11 +172,11 @@ impl TransducerAlphabet {
         &self.operations
     }
 
-    pub fn string_to_symbol(&self) -> &HashMap<String, SymbolNumber> {
+    pub fn string_to_symbol(&self) -> &BTreeMap<String, SymbolNumber> {
         &self.string_to_symbol
     }
 
-    // pub fn mut_string_to_symbol(&mut self) -> &mut HashMap<String, SymbolNumber> {
+    // pub fn mut_string_to_symbol(&mut self) -> &mut BTreeMap<String, SymbolNumber> {
     //     &mut self.string_to_symbol
     // }
 
