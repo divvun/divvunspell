@@ -11,9 +11,9 @@ FLAGS += --release
 endif
 
 xcode:
-	$(CARGO_HOME)/bin/cargo $(FLAGS)
+	$(CARGO_HOME)/bin/cargo build $(FLAGS)
 xcodeinstall:
-	$(CARGO_HOME)/bin/cargo $(FLAGS)
+	$(CARGO_HOME)/bin/cargo build $(FLAGS)
 xcodeclean:
 	$(CARGO_HOME)/bin/cargo clean
 xcodelipo:
