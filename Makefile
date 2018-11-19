@@ -10,6 +10,12 @@ ifeq "$(CONFIGURATION)" "Release"
 FLAGS += --release
 endif
 
+xcode:
+	$(CARGO_HOME)/bin/cargo $(FLAGS)
+xcodeinstall:
+	$(CARGO_HOME)/bin/cargo $(FLAGS)
+xcodeclean:
+	$(CARGO_HOME)/bin/cargo clean
 xcodelipo:
 	$(CARGO_HOME)/bin/cargo lipo $(FLAGS)
 xcodelipoinstall:
