@@ -23,12 +23,16 @@ pub mod types;
 pub mod speller;
 pub mod tokenizer;
 
-// use std::collections::BTreeMap;
+use lazy_static::lazy_static;
+
 // use std::sync::Mutex;
 
-// lazy_static! {
-//     pub static ref COUNTER: Mutex<BTreeMap<&'static str, u32>> = Mutex::new(BTreeMap::new());
-// }
+use std::sync::Mutex;
+use std::collections::HashMap;
+
+lazy_static! {
+    pub static ref COUNTER: Mutex<HashMap<&'static str, u32>> = Mutex::new(HashMap::new());
+}
 
 #[test]
 fn test_speller() {

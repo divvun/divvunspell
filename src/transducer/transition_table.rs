@@ -1,5 +1,3 @@
-use byteorder::{LittleEndian, ReadBytesExt};
-use std::io::Cursor;
 use std::{mem, u16, u32};
 use std::fmt;
 use std::sync::Arc;

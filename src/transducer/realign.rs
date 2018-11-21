@@ -1,6 +1,7 @@
 use crate::transducer::Transducer;
 use std::fs::File;
-use std::io::{Read, Write, Seek, BufReader};
+// use std::io::{Read, Write, Seek, BufReader};
+use std::io::Write;
 
 fn realign(transducer: &Transducer) {
     let header_len = transducer.header().len() + transducer.alphabet().len();

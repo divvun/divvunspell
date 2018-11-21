@@ -1,7 +1,6 @@
 use std::{u16, u32};
 use std::fmt;
 use std::ptr;
-use std::cell::RefCell;
 
 use memmap::Mmap;
 use std::sync::Arc;

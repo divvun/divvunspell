@@ -1,5 +1,3 @@
-use std::collections::{BTreeMap};
-
 #[derive(Debug, Clone)]
 pub enum FlagDiacriticOperator {
     PositiveSet,

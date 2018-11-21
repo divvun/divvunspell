@@ -5,7 +5,6 @@ use std::fs::File;
 use zip::ZipArchive;
 use std::io::prelude::*;
 use std::io::{Cursor, Seek};
-use std::slice;
 use std::sync::Arc;
 
 use self::meta::SpellerMetadata;
@@ -19,15 +18,8 @@ pub struct SpellerArchive {
     speller: Arc<Speller>,
 }
 
-// #[inline]
-// fn partial_slice(slice: &[u8], start: usize, offset: usize) -> &[u8] {
-//     let end = start + offset;
-//     &slice[start..end]
-// }
-
 fn slice_by_name<'a, R: Read + Seek>(
     archive: &mut ZipArchive<R>,
-    slice: &'a [u8],
     name: &str,
 ) -> Result<(u64, usize), SpellerArchiveError> {
     let index = archive.by_name(name).unwrap();
@@ -56,12 +48,12 @@ impl SpellerArchive {
         let mmap = unsafe { MmapOptions::new().map(&file) }
             .map_err(|err| SpellerArchiveError::Io(err))?;
 
-        let slice = unsafe { slice::from_raw_parts(mmap.as_ptr(), mmap.len()) };
+        // let slice = unsafe { slice::from_raw_parts(mmap.as_ptr(), mmap.len()) };
 
         let reader = Cursor::new(&mmap);
         let mut archive = ZipArchive::new(reader).unwrap();
 
-        let data = slice_by_name(&mut archive, &slice, "index.xml")?;
+        let data = slice_by_name(&mut archive, "index.xml")?;
         let metadata_mmap = unsafe {
             MmapOptions::new()
                 .offset(data.0)
@@ -71,7 +63,7 @@ impl SpellerArchive {
         let metadata = SpellerMetadata::from_bytes(&metadata_mmap).unwrap();
 
         // Load transducers
-        let acceptor_range = slice_by_name(&mut archive, &slice, &metadata.acceptor.id)?;
+        let acceptor_range = slice_by_name(&mut archive, &metadata.acceptor.id)?;
         let acceptor_mmap = unsafe {
             MmapOptions::new()
                 .offset(acceptor_range.0)
@@ -80,7 +72,7 @@ impl SpellerArchive {
         }.map_err(|err| SpellerArchiveError::Io(err))?; 
         let acceptor = Transducer::from_mapped_memory(acceptor_mmap);
 
-        let errmodel_range = slice_by_name(&mut archive, &slice, &metadata.errmodel.id)?;
+        let errmodel_range = slice_by_name(&mut archive, &metadata.errmodel.id)?;
         let errmodel_mmap = unsafe {
             MmapOptions::new()
                 .offset(errmodel_range.0)

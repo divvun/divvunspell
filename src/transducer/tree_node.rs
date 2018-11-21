@@ -4,11 +4,33 @@ use crate::types::{TransitionTableIndex, SymbolNumber, FlagDiacriticState, FlagD
 use super::symbol_transition::SymbolTransition;
 use std::borrow::Cow;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
+pub struct EqWeight(Weight);
+
+impl std::cmp::PartialEq for EqWeight {
+    fn eq(&self, other: &EqWeight) -> bool {
+        self.0.is_finite() && other.0.is_finite() && self.0 == other.0
+    }
+}
+
+use std::hash::{Hash, Hasher};
+
+impl Hash for EqWeight {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let sadface = self.0 * 100000.0;
+        state.write_u32(sadface as u32);
+    }
+}
+
+
+impl std::cmp::Eq for EqWeight {}
+
+
+#[derive(PartialEq, Eq, Debug, Clone, Hash)]
 pub struct TreeNode {
     pub string: Vec<SymbolNumber>,
     pub flag_state: FlagDiacriticState,
-    pub weight: Weight,
+    pub weight: EqWeight,
     pub input_state: u32,
     pub mutator_state: TransitionTableIndex,
     pub lexicon_state: TransitionTableIndex,
@@ -28,8 +50,12 @@ impl TreeNode {
             mutator_state: 0,
             lexicon_state: 0,
             flag_state: start_state,
-            weight: 0.0,
+            weight: EqWeight(0.0),
         }
+    }
+
+    pub fn weight(&self) -> Weight {
+        self.weight.0
     }
 
     pub fn flag_state(&self) -> &FlagDiacriticState {
@@ -42,7 +68,7 @@ impl TreeNode {
         };
 
         self.lexicon_state = transition.target().unwrap();
-        self.weight += transition.weight().unwrap();
+        self.weight = EqWeight(self.weight.0 + transition.weight().unwrap());
     }
 
     pub fn update_lexicon(&self, transition: SymbolTransition) -> TreeNode {
@@ -62,7 +88,7 @@ impl TreeNode {
             mutator_state: self.mutator_state,
             lexicon_state: transition.target().unwrap(),
             flag_state: self.flag_state.clone(),
-            weight: self.weight + transition.weight().unwrap()
+            weight: EqWeight(self.weight.0 + transition.weight().unwrap())
         }
     }
 
@@ -73,7 +99,7 @@ impl TreeNode {
             mutator_state: transition.target().unwrap(),
             lexicon_state: self.lexicon_state,
             flag_state: self.flag_state.clone(),
-            weight: self.weight + transition.weight().unwrap()
+            weight: EqWeight(self.weight.0 + transition.weight().unwrap())
         }
     }
 
@@ -100,7 +126,7 @@ impl TreeNode {
             mutator_state: next_mutator,
             lexicon_state: next_lexicon,
             flag_state: self.flag_state.clone(),
-            weight: self.weight + weight,
+            weight: EqWeight(self.weight.0 + weight),
             ..self.clone()
         };
 
@@ -166,3 +192,12 @@ impl TreeNode {
         }
     }
 }
+
+// impl std::cmp::PartialEq for TreeNode {
+//     fn eq(&self, other: &TreeNode) -> bool {
+//         self.input_state == other.input_state && 
+//             self.lexicon_state == other.lexicon_state &&
+//             self.mutator_state == other.mutator_state &&
+//             self.weight == other.weight
+//     }
+// }

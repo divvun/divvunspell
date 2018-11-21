@@ -21,6 +21,11 @@ env_logger = "0.6.0"
 unic-ucd-category = "0.7.0"
 unic-ucd-segment = "0.7.0"
 parking_lot = "0.6.4"
-smallvec = "0.6.5"
+lazy_static = "1.2.0"
+fxhash = "0.2.1"
+hashbrown = "0.1"
 
 [dev-dependencies]
+
+[profile.release]
+debug = true
