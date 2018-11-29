@@ -614,8 +614,8 @@ impl SpellerWorker {
                 return true;
             }
 
-            self.lexicon_epsilons(max_weight, &next_node, &seen_nodes);
-            self.lexicon_consume(max_weight, &next_node, &seen_nodes);
+            nodes.append(&mut self.lexicon_epsilons(max_weight, &next_node, &seen_nodes));
+            nodes.append(&mut self.lexicon_consume(max_weight, &next_node, &seen_nodes));
         }
 
         false
