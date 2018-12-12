@@ -29,3 +29,6 @@ hashbrown = "0.1"
 
 [profile.release]
 debug = true
+
+[features]
+safe_read = []

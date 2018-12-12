@@ -1,18 +1,20 @@
-use std::{mem, u16, u32};
-use std::fmt;
-use std::sync::Arc;
-use std::ptr;
+use byteorder::{LittleEndian, ReadBytesExt};
 use memmap::Mmap;
+use std::fmt;
+use std::io::Cursor;
+use std::ptr;
+use std::sync::Arc;
+use std::{mem, u16, u32};
 
-use crate::types::{TransitionTableIndex, SymbolNumber, Weight};
 use crate::constants::TRANS_SIZE;
 use crate::transducer::symbol_transition::SymbolTransition;
+use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 
 pub struct TransitionTable {
     size: TransitionTableIndex,
     mmap: Arc<Mmap>,
     offset: usize,
-    len: usize
+    len: usize,
 }
 
 impl fmt::Debug for TransitionTable {
@@ -28,14 +30,23 @@ impl TransitionTable {
             size: size,
             mmap,
             offset,
-            len
+            len,
         }
+    }
+
+    fn make_cursor(&self) -> Cursor<&[u8]> {
+        Cursor::new(&self.mmap)
     }
 
     #[inline]
     fn read_symbol_from_cursor(&self, index: usize) -> Option<SymbolNumber> {
-        let x: SymbolNumber = unsafe {
-            ptr::read(self.mmap.as_ptr().offset((self.offset + index) as isize) as *const _)
+        let index = self.offset + index;
+        let x: SymbolNumber = if cfg!(feature = "safe_read") {
+            let mut cursor = self.make_cursor();
+            cursor.set_position(index as u64);
+            cursor.read_u16::<LittleEndian>().unwrap()
+        } else {
+            unsafe { ptr::read(self.mmap.as_ptr().offset(index as isize) as *const _) }
         };
         if x == u16::MAX {
             None
@@ -59,7 +70,7 @@ impl TransitionTable {
             return None;
         }
 
-        let index  = ((TRANS_SIZE * i as usize) + mem::size_of::<SymbolNumber>()) as usize;
+        let index = ((TRANS_SIZE * i as usize) + mem::size_of::<SymbolNumber>()) as usize;
         self.read_symbol_from_cursor(index)
     }
 
@@ -68,10 +79,15 @@ impl TransitionTable {
             return None;
         }
 
-        let index = self.offset + ((TRANS_SIZE * i as usize) + (2 * mem::size_of::<SymbolNumber>()));
+        let index =
+            self.offset + ((TRANS_SIZE * i as usize) + (2 * mem::size_of::<SymbolNumber>()));
 
-        let x: TransitionTableIndex = unsafe {
-            ptr::read(self.mmap.as_ptr().offset(index as isize) as *const _)
+        let x: TransitionTableIndex = if cfg!(feature = "safe_read") {
+            let mut cursor = self.make_cursor();
+            cursor.set_position(index as u64);
+            cursor.read_u32::<LittleEndian>().unwrap()
+        } else {
+            unsafe { ptr::read(self.mmap.as_ptr().offset(index as isize) as *const _) }
         };
         if x == u32::MAX {
             None
@@ -85,11 +101,17 @@ impl TransitionTable {
             return None;
         }
 
-        let index = self.offset + ((TRANS_SIZE * i as usize) + (2 * mem::size_of::<SymbolNumber>()) +
-                              mem::size_of::<TransitionTableIndex>());
+        let index = self.offset
+            + ((TRANS_SIZE * i as usize)
+                + (2 * mem::size_of::<SymbolNumber>())
+                + mem::size_of::<TransitionTableIndex>());
 
-        let x: Weight = unsafe {
-            ptr::read(self.mmap.as_ptr().offset(index as isize) as *const _)
+        let x: Weight = if cfg!(feature = "safe_read") {
+            let mut cursor = self.make_cursor();
+            cursor.set_position(index as u64);
+            cursor.read_f32::<LittleEndian>().unwrap()
+        } else {
+            unsafe { ptr::read(self.mmap.as_ptr().offset(index as isize) as *const _) }
         };
         Some(x)
     }
