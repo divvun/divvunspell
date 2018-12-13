@@ -41,7 +41,7 @@ impl TransitionTable {
     #[inline]
     fn read_symbol_from_cursor(&self, index: usize) -> Option<SymbolNumber> {
         let index = self.offset + index;
-        let x: SymbolNumber = if cfg!(feature = "safe_read") {
+        let x: SymbolNumber = if cfg!(target_arch = "arm") {
             let mut cursor = self.make_cursor();
             cursor.set_position(index as u64);
             cursor.read_u16::<LittleEndian>().unwrap()
@@ -82,7 +82,7 @@ impl TransitionTable {
         let index =
             self.offset + ((TRANS_SIZE * i as usize) + (2 * mem::size_of::<SymbolNumber>()));
 
-        let x: TransitionTableIndex = if cfg!(feature = "safe_read") {
+        let x: TransitionTableIndex = if cfg!(target_arch = "arm") {
             let mut cursor = self.make_cursor();
             cursor.set_position(index as u64);
             cursor.read_u32::<LittleEndian>().unwrap()
@@ -106,7 +106,7 @@ impl TransitionTable {
                 + (2 * mem::size_of::<SymbolNumber>())
                 + mem::size_of::<TransitionTableIndex>());
 
-        let x: Weight = if cfg!(feature = "safe_read") {
+        let x: Weight = if cfg!(target_arch = "arm") {
             let mut cursor = self.make_cursor();
             cursor.set_position(index as u64);
             cursor.read_f32::<LittleEndian>().unwrap()
