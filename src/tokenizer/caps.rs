@@ -1,4 +1,5 @@
 use hashbrown::HashSet;
+use std::iter::FromIterator;
 
 fn trim_start(alphabet: &Vec<String>, word: &str) -> String {
     word.trim_start_matches(|x: char| !alphabet.contains(&x.to_string())).to_string()
@@ -41,9 +42,7 @@ fn without_punctuation(alphabet: &Vec<String>) -> Vec<String> {
     x.collect::<Vec<_>>()
 }
 
-use std::iter::FromIterator;
-
-pub fn word_variants(alphabet: &Vec<String>, word: &str) -> HashSet<String> {
+pub fn word_variants(alphabet: &Vec<String>, word: &str) -> Vec<String> {
     let alphabet = without_punctuation(alphabet);
 
     let mut base = vec![
@@ -56,7 +55,15 @@ pub fn word_variants(alphabet: &Vec<String>, word: &str) -> HashSet<String> {
     base.append(&mut base.iter().map(|x| lower_case(x)).collect());
     base.append(&mut base.iter().map(|x| upper_first(x)).collect());
 
-    HashSet::from_iter(base)
+    let mut ret = vec![];
+
+    for b in base.into_iter() {
+        if !ret.contains(&b) {
+            ret.push(b);
+        }
+    }
+
+    ret
 }
 
 pub fn is_all_caps(word: &str) -> bool {
