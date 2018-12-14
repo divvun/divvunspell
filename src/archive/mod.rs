@@ -24,10 +24,10 @@ fn slice_by_name<'a, R: Read + Seek>(
 ) -> Result<(u64, usize), SpellerArchiveError> {
     let index = archive.by_name(name).unwrap();
 
-    if index.compressed_size() != index.size() {
-        // Unzip to a tmp dir and mmap into space
-        return Err(SpellerArchiveError::UnsupportedCompressed);
-    }
+    // if index.compressed_size() != index.size() {
+    //     // Unzip to a tmp dir and mmap into space
+    //     return Err(SpellerArchiveError::UnsupportedCompressed);
+    // }
 
     Ok((index.data_start(), index.size() as usize))
 
