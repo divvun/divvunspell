@@ -50,7 +50,7 @@ impl IndexTable {
 
         let index = self.offset + TRANS_INDEX_SIZE * i as usize;
 
-        let input_symbol: SymbolNumber = if cfg!(target_arch = "arm") {
+        let input_symbol: SymbolNumber = if cfg!(all(target_arch = "arm", target_pointer_width = "32")) {
             let mut cursor = self.make_cursor();
             cursor.set_position(index as u64);
             cursor.read_u16::<LittleEndian>().unwrap()
@@ -71,7 +71,7 @@ impl IndexTable {
         }
 
         let index = self.offset + TRANS_INDEX_SIZE * i as usize;
-        let target: TransitionTableIndex = if cfg!(target_arch = "arm") {
+        let target: TransitionTableIndex = if cfg!(all(target_arch = "arm", target_pointer_width = "32")) {
             let mut cursor = self.make_cursor();
             cursor.set_position((index + mem::size_of::<SymbolNumber>()) as u64);
             cursor.read_u32::<LittleEndian>().unwrap()
@@ -94,7 +94,7 @@ impl IndexTable {
         }
 
         let index = self.offset + TRANS_INDEX_SIZE * i as usize;
-        let weight: Weight = if cfg!(target_arch = "arm") {
+        let weight: Weight = if cfg!(all(target_arch = "arm", target_pointer_width = "32")) {
             let mut cursor = self.make_cursor();
             cursor.set_position((index + mem::size_of::<SymbolNumber>()) as u64);
             cursor.read_f32::<LittleEndian>().unwrap()
