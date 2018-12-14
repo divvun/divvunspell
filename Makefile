@@ -12,8 +12,10 @@ endif
 
 xcode:
 	$(CARGO_HOME)/bin/cargo build $(FLAGS)
+	rm -f target/$(CONFIGURATION)/libhfstospell.dylib
 xcodeinstall:
 	$(CARGO_HOME)/bin/cargo build $(FLAGS)
+	rm -f target/$(CONFIGURATION)/libhfstospell.dylib
 xcodeclean:
 	$(CARGO_HOME)/bin/cargo clean
 xcodelipo:
