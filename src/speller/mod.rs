@@ -797,14 +797,24 @@ impl Speller {
     }
 
     pub fn is_correct(self: Arc<Self>, word: &str) -> bool {
-        let worker = SpellerWorker::new(
-            self.clone(),
-            SpellerWorkerMode::Unknown,
-            self.to_input_vec(word),
-            &SpellerConfig::default()
-        );
+        use crate::tokenizer::caps::*;
 
-        worker.is_correct()
+        let words = word_variants(self.lexicon().alphabet().key_table(), word);
+
+        for word in words.into_iter() {
+            let worker = SpellerWorker::new(
+                self.clone(),
+                SpellerWorkerMode::Unknown,
+                self.to_input_vec(&word),
+                &SpellerConfig::default()
+            );
+
+            if worker.is_correct() {
+                return true;
+            }
+        }
+
+        false
     }
 
     pub fn suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
@@ -827,11 +837,11 @@ impl Speller {
 
         let words = word_variants(self.lexicon().alphabet().key_table(), word);
 
-        for word in words {
+        for word in words.into_iter() {
             let worker = SpellerWorker::new(
                 self.clone(),
                 SpellerWorkerMode::Correct,
-                self.to_input_vec(&*word),
+                self.to_input_vec(&word),
                 config
             );
 
