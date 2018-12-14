@@ -28,12 +28,7 @@ pub extern fn speller_archive_new(raw_path: *mut c_char, error: *mut u8) -> *con
                 return null();
             }
 
-            let code = match err {
-                SpellerArchiveError::Io(_) => 1,
-                SpellerArchiveError::UnsupportedCompressed => 2
-            };
-
-            unsafe { *error = code; }
+            unsafe { *error = err.to_u8(); }
 
             null()
         }
@@ -42,14 +37,7 @@ pub extern fn speller_archive_new(raw_path: *mut c_char, error: *mut u8) -> *con
 
 #[no_mangle]
 pub extern fn speller_get_error(code: u8) -> *mut c_char {
-    let s = match code {
-        0 => "An IO error occurred. Does the file exist at the specified path?",
-        1 => "The provided file is compressed and cannot be memory mapped. Rezip with no compression.",
-        _ => {
-            let m = format!("Unknown error code {}.", code);
-            return CString::new(m).unwrap().into_raw();
-        }
-    };
+    let s = SpellerArchiveError::from(code).to_string();
 
     CString::new(s).unwrap().into_raw()
 }

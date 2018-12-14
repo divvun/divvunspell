@@ -24,10 +24,10 @@ fn slice_by_name<'a, R: Read + Seek>(
 ) -> Result<(u64, usize), SpellerArchiveError> {
     let index = archive.by_name(name).unwrap();
 
-    // if index.compressed_size() != index.size() {
-    //     // Unzip to a tmp dir and mmap into space
-    //     return Err(SpellerArchiveError::UnsupportedCompressed);
-    // }
+    if index.compressed_size() != index.size() {
+        // Unzip to a tmp dir and mmap into space
+        return Err(SpellerArchiveError::UnsupportedCompressed);
+    }
 
     Ok((index.data_start(), index.size() as usize))
 
@@ -36,17 +36,60 @@ fn slice_by_name<'a, R: Read + Seek>(
 
 #[derive(Debug)]
 pub enum SpellerArchiveError {
-    Io(::std::io::Error),
-    UnsupportedCompressed
+    OpenFileFailed,
+    MmapFailed,
+    MetadataMmapFailed,
+    AcceptorMmapFailed,
+    ErrmodelMmapFailed,
+    UnsupportedCompressed,
+    Unknown(u8)
+}
+
+impl SpellerArchiveError {
+    pub fn from(code: u8) -> SpellerArchiveError {
+        match code {
+            1 => SpellerArchiveError::OpenFileFailed,
+            2 => SpellerArchiveError::MmapFailed,
+            3 => SpellerArchiveError::MetadataMmapFailed,
+            4 => SpellerArchiveError::AcceptorMmapFailed,
+            5 => SpellerArchiveError::ErrmodelMmapFailed,
+            6 => SpellerArchiveError::UnsupportedCompressed,
+            _ => SpellerArchiveError::Unknown(code)
+        }
+    }
+
+    pub fn to_u8(&self) -> u8 {
+        match self {
+            SpellerArchiveError::OpenFileFailed => 1,
+            SpellerArchiveError::MmapFailed => 2,
+            SpellerArchiveError::MetadataMmapFailed => 3,
+            SpellerArchiveError::AcceptorMmapFailed => 4,
+            SpellerArchiveError::ErrmodelMmapFailed => 5,
+            SpellerArchiveError::UnsupportedCompressed => 6,
+            _ => std::u8::MAX
+        }
+    }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            SpellerArchiveError::OpenFileFailed => "Open file failed.".into(),
+            SpellerArchiveError::MmapFailed => "Mmap failed.".into(),
+            SpellerArchiveError::MetadataMmapFailed => "Metadata mmap failed.".into(),
+            SpellerArchiveError::AcceptorMmapFailed => "Acceptor mmap failed.".into(),
+            SpellerArchiveError::ErrmodelMmapFailed => "Errmodel mmap failed.".into(),
+            SpellerArchiveError::UnsupportedCompressed => "The provided file is compressed and cannot be memory mapped. Rezip with no compression.".into(),
+            _ => format!("Unknown error code {}.", self.to_u8())
+        }
+    }
 }
 
 impl SpellerArchive {
     pub fn new(file_path: &str) -> Result<SpellerArchive, SpellerArchiveError> {
         let file = File::open(file_path)
-            .map_err(|err| SpellerArchiveError::Io(err))?;
+            .map_err(|_| SpellerArchiveError::OpenFileFailed)?;
 
         let mmap = unsafe { MmapOptions::new().map(&file) }
-            .map_err(|err| SpellerArchiveError::Io(err))?;
+            .map_err(|_| SpellerArchiveError::MmapFailed)?;
 
         // let slice = unsafe { slice::from_raw_parts(mmap.as_ptr(), mmap.len()) };
 
@@ -59,7 +102,7 @@ impl SpellerArchive {
                 .offset(data.0)
                 .len(data.1)
                 .map(&file)
-        }.map_err(|err| SpellerArchiveError::Io(err))?; 
+        }.map_err(|_| SpellerArchiveError::MetadataMmapFailed)?; 
         let metadata = SpellerMetadata::from_bytes(&metadata_mmap).unwrap();
 
         // Load transducers
@@ -69,7 +112,7 @@ impl SpellerArchive {
                 .offset(acceptor_range.0)
                 .len(acceptor_range.1)
                 .map(&file)
-        }.map_err(|err| SpellerArchiveError::Io(err))?; 
+        }.map_err(|_| SpellerArchiveError::AcceptorMmapFailed)?; 
         let acceptor = Transducer::from_mapped_memory(acceptor_mmap);
 
         let errmodel_range = slice_by_name(&mut archive, &metadata.errmodel.id)?;
@@ -78,7 +121,7 @@ impl SpellerArchive {
                 .offset(errmodel_range.0)
                 .len(errmodel_range.1)
                 .map(&file)
-        }.map_err(|err| SpellerArchiveError::Io(err))?; 
+        }.map_err(|_| SpellerArchiveError::ErrmodelMmapFailed)?; 
         let errmodel = Transducer::from_mapped_memory(errmodel_mmap);
 
         let speller = Speller::new(errmodel, acceptor);
