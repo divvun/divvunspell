@@ -3,6 +3,8 @@
 use unic_ucd_category::{GeneralCategory};
 use unic_ucd_segment::word_break::{WordBreak};
 
+pub mod caps;
+
 #[derive(Debug)]
 pub enum Token<'a> {
     Word(&'a str, usize, usize),

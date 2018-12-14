@@ -24,6 +24,7 @@ pub struct SpellerConfig {
     pub n_best: Option<usize>,
     pub max_weight: Option<Weight>,
     pub beam: Option<Weight>,
+    pub with_caps: bool
 }
 
 impl SpellerConfig {
@@ -31,7 +32,8 @@ impl SpellerConfig {
         SpellerConfig {
             n_best: None,
             max_weight: None,
-            beam: None
+            beam: None,
+            with_caps: true
         }
     }
 }
@@ -809,7 +811,7 @@ impl Speller {
         self.suggest_with_config(word, &SpellerConfig::default())
     }
 
-    pub fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
+    fn suggest_single(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
         let worker = SpellerWorker::new(
             self.clone(),
             SpellerWorkerMode::Correct,
@@ -818,5 +820,48 @@ impl Speller {
         );
 
         worker.suggest()
+    }
+
+    fn suggest_caps(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
+        use crate::tokenizer::caps::*;
+
+        let words = word_variants(self.lexicon().alphabet().key_table(), word);
+
+        for word in words {
+            let worker = SpellerWorker::new(
+                self.clone(),
+                SpellerWorkerMode::Correct,
+                self.to_input_vec(&*word),
+                config
+            );
+
+            let suggestions = worker.suggest();
+            
+            if suggestions.len() > 0 {
+                if is_all_caps(&word) {
+                    return suggestions.into_iter().map(|mut x| {
+                        x.value = upper_case(x.value());
+                        x
+                    }).collect();
+                } else if is_first_caps(&word) {
+                    return suggestions.into_iter().map(|mut x| {
+                        x.value = upper_first(x.value());
+                        x
+                    }).collect();
+                }
+
+                return suggestions;
+            }
+        }
+
+        vec![]
+    }
+
+    pub fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
+        if config.with_caps {
+            self.suggest_caps(word, config)
+        } else {
+            self.suggest_single(word, config)
+        }
     }
 }

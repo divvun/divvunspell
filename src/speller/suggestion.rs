@@ -4,8 +4,8 @@ use crate::types::Weight;
 
 #[derive(Clone, Debug)]
 pub struct Suggestion {
-    value: String,
-    weight: Weight,
+    pub value: String,
+    pub weight: Weight,
 }
 
 impl Suggestion {

@@ -72,7 +72,8 @@ pub extern fn speller_suggest(handle: *mut SpellerArchive, raw_word: *mut c_char
     let suggestions = ar.speller().suggest_with_config(&word, &SpellerConfig {
         max_weight: None,
         n_best: if n_best > 0 { Some(n_best) } else { None },
-        beam: if beam > 0.0 { Some(beam) } else { None }
+        beam: if beam > 0.0 { Some(beam) } else { None },
+        with_caps: true
     });
 
     Box::into_raw(Box::new(suggestions))
