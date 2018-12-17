@@ -63,14 +63,14 @@ pub extern fn speller_str_free(s: *mut c_char) {
 // Speller
 
 #[no_mangle]
-pub extern fn speller_suggest(handle: *mut SpellerArchive, raw_word: *mut c_char, n_best: usize, beam: f32) -> *const Vec<Suggestion> {
+pub extern fn speller_suggest(handle: *mut SpellerArchive, raw_word: *mut c_char, n_best: usize, max_weight: f32, beam: f32) -> *const Vec<Suggestion> {
     let c_str = unsafe { CStr::from_ptr(raw_word) };
     let word = c_str.to_str().unwrap();
 
     let ar = unsafe { &mut *handle };
 
     let suggestions = ar.speller().suggest_with_config(&word, &SpellerConfig {
-        max_weight: None,
+        max_weight: if max_weight > 0.0 { Some(max_weight) } else { None },
         n_best: if n_best > 0 { Some(n_best) } else { None },
         beam: if beam > 0.0 { Some(beam) } else { None },
         with_caps: true
