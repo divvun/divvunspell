@@ -1,8 +1,9 @@
 use std::cmp::Ordering;
 use std::cmp::Ordering::Equal;
 use crate::types::Weight;
+use serde_derive::{Serialize, Deserialize};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Suggestion {
     pub value: String,
     pub weight: Weight,
