@@ -10,16 +10,12 @@ use crate::tokenizer::{Tokenize, Tokenizer, Token};
 // SpellerArchive
 
 #[no_mangle]
-pub extern fn speller_archive_new(raw_path: *mut c_char, error: *mut u8) -> *const SpellerArchive {
+pub extern fn speller_archive_new(raw_path: *mut c_char, error: *mut *const c_char) -> *const SpellerArchive {
     let c_path = unsafe { CStr::from_ptr(raw_path) };
     let file_path = c_path.to_str().unwrap();
 
     match SpellerArchive::new(file_path) {
         Ok(v) => {
-            if !error.is_null() {
-                unsafe { *error = 0; }
-            }
-            
             let archive = Box::new(v);
             Box::into_raw(archive)
         },
@@ -28,19 +24,19 @@ pub extern fn speller_archive_new(raw_path: *mut c_char, error: *mut u8) -> *con
                 return null();
             }
 
-            unsafe { *error = err.to_u8(); }
+            unsafe { *error = CString::new(&*format!("{:?}", err)).unwrap().into_raw(); }
 
             null()
         }
     }
 }
 
-#[no_mangle]
-pub extern fn speller_get_error(code: u8) -> *mut c_char {
-    let s = SpellerArchiveError::from(code).to_string();
+// #[no_mangle]
+// pub extern fn speller_get_error(code: u8) -> *mut c_char {
+//     let s = SpellerArchiveError::from(code).to_string();
 
-    CString::new(s).unwrap().into_raw()
-}
+//     CString::new(s).unwrap().into_raw()
+// }
 
 #[no_mangle]
 pub extern fn speller_meta_get_locale(handle: *mut SpellerArchive) -> *mut c_char {
