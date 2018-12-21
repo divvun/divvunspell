@@ -12,8 +12,6 @@ use crate::transducer::Transducer;
 use crate::speller::Speller;
 
 pub struct SpellerArchive {
-    #[allow(dead_code)]
-    handle: Mmap,
     metadata: SpellerMetadata,
     speller: Arc<Speller>,
 }
@@ -88,12 +86,7 @@ impl SpellerArchive {
         let file = File::open(file_path)
             .map_err(|e| SpellerArchiveError::OpenFileFailed(e))?;
 
-        let mmap = unsafe { MmapOptions::new().map(&file) }
-            .map_err(|e| SpellerArchiveError::MmapFailed(e))?;
-
-        // let slice = unsafe { slice::from_raw_parts(mmap.as_ptr(), mmap.len()) };
-
-        let reader = Cursor::new(&mmap);
+        let reader = std::io::BufReader::new(&file);
         let mut archive = ZipArchive::new(reader).unwrap();
 
         let data = slice_by_name(&mut archive, "index.xml")?;
@@ -103,10 +96,13 @@ impl SpellerArchive {
                 .len(data.1)
                 .map(&file)
         }.map_err(|e| SpellerArchiveError::MetadataMmapFailed(e))?; 
+
         let metadata = SpellerMetadata::from_bytes(&metadata_mmap).unwrap();
+        let acceptor_range = slice_by_name(&mut archive, &metadata.acceptor.id)?;
+        let errmodel_range = slice_by_name(&mut archive, &metadata.errmodel.id)?;
+        drop(archive);
 
         // Load transducers
-        let acceptor_range = slice_by_name(&mut archive, &metadata.acceptor.id)?;
         let acceptor_mmap = unsafe {
             MmapOptions::new()
                 .offset(acceptor_range.0)
@@ -115,7 +111,6 @@ impl SpellerArchive {
         }.map_err(|e| SpellerArchiveError::AcceptorMmapFailed(e))?; 
         let acceptor = Transducer::from_mapped_memory(acceptor_mmap);
 
-        let errmodel_range = slice_by_name(&mut archive, &metadata.errmodel.id)?;
         let errmodel_mmap = unsafe {
             MmapOptions::new()
                 .offset(errmodel_range.0)
@@ -127,7 +122,6 @@ impl SpellerArchive {
         let speller = Speller::new(errmodel, acceptor);
 
         Ok(SpellerArchive {
-            handle: mmap,
             metadata: metadata,
             speller: speller,
         })
