@@ -7,6 +7,7 @@ extern crate libc;
 extern crate memmap;
 extern crate byteorder;
 extern crate zip;
+extern crate unic_segment;
 
 #[macro_use]
 extern crate log;
@@ -59,7 +60,7 @@ fn test_speller() {
 
     let speller = Speller::new(mutator, lexicon);
 
-    
+
     println!("{:?}", speller.suggest("nuvviDspeller"));
 
     // println!("{:?}", *COUNTER.lock().unwrap());

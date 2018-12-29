@@ -12,7 +12,8 @@ fn time_suggest(speller: Arc<Speller>, line: &TestLine) {
     let cfg = SpellerConfig {
         max_weight: Some(100.0),
         n_best: Some(5),
-        beam: None
+        beam: None,
+        with_caps: true,
     };
     
     // println!("[!] Test: {}; Expected: {}; Orig. time: {}; Orig. results:\n    {}", line.0, line.1, line.2, line.3.join(", "));
@@ -97,7 +98,8 @@ fn main() {
     let cfg = SpellerConfig {
         max_weight: Some(50.0),
         n_best: None,
-        beam: None
+        beam: None,
+        with_caps: true,
     };
 
     // let res: Vec<Vec<Suggestion>> = human_rights.iter().map(|w| speller.suggest(w, &cfg)).collect();

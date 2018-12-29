@@ -1,17 +1,6 @@
 use hashbrown::HashSet;
 use std::iter::FromIterator;
-
-fn trim_start(alphabet: &Vec<String>, word: &str) -> String {
-    word.trim_start_matches(|x: char| !alphabet.contains(&x.to_string())).to_string()
-}
-
-fn trim_end(alphabet: &Vec<String>, word: &str) -> String {
-    word.trim_end_matches(|x: char| !alphabet.contains(&x.to_string())).to_string()
-}
-
-fn trim_both(alphabet: &Vec<String>, word: &str) -> String {
-    word.trim_matches(|x: char| !alphabet.contains(&x.to_string())).to_string()
-}
+use unic_segment::GraphemeIndices;
 
 pub fn lower_case(s: &str) -> String {
     s.chars().map(|c| c.to_lowercase().collect::<String>()).collect::<String>()
@@ -30,26 +19,52 @@ pub fn upper_first(s: &str) -> String {
 }
 
 static PUNCTUATION: &'static [&'static str] = &[
-    "!", "\"", "#", "$", "%", "&", "'", "(", ")", "*", "+", 
-    ",", "-", ".", "/", ":", ";", "<", "=", ">", "?", 
+    "!", "\"", "#", "$", "%", "&", "'", "(", ")", "*", "+",
+    ",", "-", ".", "/", ":", ";", "<", "=", ">", "?",
     "@", "[", "\\", "]", "^", "_", "`", "{", "|", "}", "~"
 ];
 
-fn without_punctuation(alphabet: &Vec<String>) -> Vec<String> {
-    let x = alphabet.iter().filter(|x| {
+fn without_punctuation(alphabet: &Vec<String>) -> Vec<&String> {
+    alphabet.iter().filter(|x| {
         !PUNCTUATION.contains(&x.as_str())
-    }).map(|x| x.to_owned());
-    x.collect::<Vec<_>>()
+    }).collect()
+}
+
+struct TrimThingy<'a> {
+    start: &'a str,
+    end: &'a str,
+    both: &'a str,
+}
+
+fn trim<'word>(word: &'word str, alphabet: &[&String]) -> TrimThingy<'word> {
+    let start = GraphemeIndices::new(word)
+        .take_while(|(_, c)| alphabet.iter().any(|x: &&String| c == x))
+        .next()
+        .map(|(i, _)| i)
+        .unwrap_or(0);
+
+    let end = GraphemeIndices::new(&word[start..])
+        .take_while(|(_, c)| !alphabet.iter().any(|x: &&String| c == x))
+        .next()
+        .map(|(i, _)| start + i)
+        .unwrap_or(word.len());
+
+    TrimThingy {
+        start: &word[start..],
+        end: &word[..end],
+        both: &word[start..end],
+    }
 }
 
 pub fn word_variants(alphabet: &Vec<String>, word: &str) -> Vec<String> {
     let alphabet = without_punctuation(alphabet);
+    let trim = trim(word, &alphabet);
 
     let mut base = vec![
         word.to_string(),
-        trim_start(&alphabet, word),
-        trim_end(&alphabet, word),
-        trim_both(&alphabet, word)
+        trim.start.to_string(),
+        trim.end.to_string(),
+        trim.both.to_string(),
     ];
 
     base.append(&mut base.iter().map(|x| lower_case(x)).collect());
