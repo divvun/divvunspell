@@ -27,7 +27,6 @@ cargo install --bin divvunspell --features binaries --path .
 Usage:
 
 ```
-divvunspell -h
 divvunspell 0.2.0
 Brendan Molloy <brendan@bbqsrc.net>
 Testing frontend for the DivvunSpell library
