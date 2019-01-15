@@ -2,6 +2,8 @@
 
 An implementation of [hfst-ospell](https://github.com/hfst/hfst-ospell) in Rust, with added features like tokenization, case handling, and being thread safe.
 
+[![Build Status](https://travis-ci.org/divvun/divvunspell.svg?branch=master)](https://travis-ci.org/divvun/divvunspell)
+
 ## No rust?
 ```
 curl https://sh.rustup.rs -sSf | sh
