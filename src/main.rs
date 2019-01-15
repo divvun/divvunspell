@@ -19,7 +19,7 @@ trait OutputWriter {
 struct StdoutWriter;
 
 impl OutputWriter for StdoutWriter {
-    fn write_correction(&mut self, word: &str, is_correct: bool) { 
+    fn write_correction(&mut self, word: &str, is_correct: bool) {
         println!("Input: {}\t\t[{}]", &word, if is_correct { "CORRECT" } else { "INCORRECT" });
     }
 
@@ -53,7 +53,7 @@ impl JsonWriter {
 }
 
 impl OutputWriter for JsonWriter {
-    fn write_correction(&mut self, word: &str, is_correct: bool) { 
+    fn write_correction(&mut self, word: &str, is_correct: bool) {
         self.results.push(SuggestionRequest {
             word: word.to_owned(),
             is_correct,
@@ -111,7 +111,7 @@ fn main() {
 
     let is_suggesting = matches.is_present("suggest");
     let is_json = matches.is_present("json");
-    
+
     let n_best = matches.value_of("nbest").and_then(|v| v.parse::<usize>().ok());
     let max_weight = matches.value_of("weight").and_then(|v| v.parse::<f32>().ok());
 
