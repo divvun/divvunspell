@@ -151,7 +151,7 @@ fn main() {
         let result = archive.speller().is_correct(&word);
         writer.write_correction(&word, result);
 
-        if is_suggesting {
+        if (is_suggesting && !result) {
             let suggestions = archive.speller().suggest_with_config(&word, &suggest_cfg);
             writer.write_suggestions(&word, &suggestions);
         }
