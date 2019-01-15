@@ -18,7 +18,11 @@ To build the command line frontend for testing spellers:
 cargo build --bin divvunspell --features binaries --release
 ```
 
-The result will be in the `target/release/` directory.
+The result will be in the `target/release/` directory. To install the binary on your $PATH:
+
+```
+cargo install --bin divvunspell --features binaries --path .
+```
 
 ## License
 
