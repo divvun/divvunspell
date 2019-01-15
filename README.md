@@ -2,6 +2,14 @@
 
 An implementation of [hfst-ospell](https://github.com/hfst/hfst-ospell) in Rust, with added features like tokenization, case handling, and being thread safe.
 
+## No rust?
+```
+curl https://sh.rustup.rs -sSf | sh
+source $HOME/.cargo/env
+rustup default nightly
+cargo build --bin divvunspell --features binaries --release
+```
+
 ## Building command line frontend
 
 To build the command line frontend for testing spellers:
