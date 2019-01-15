@@ -40,6 +40,13 @@ impl<'a> Token<'a> {
             Token::Other(_, _, x) => x
         }
     }
+
+    pub fn is_word(&self) -> bool {
+        match *self {
+            Token::Word(_, _, _) => true,
+            _ => false
+        }
+    }
 }
 
 pub trait Tokenize {
