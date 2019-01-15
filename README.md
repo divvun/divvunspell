@@ -2,7 +2,17 @@
 
 An implementation of [hfst-ospell](https://github.com/hfst/hfst-ospell) in Rust, with added features like tokenization, case handling, and being thread safe.
 
-### License
+## Building command line frontend
+
+To build the command line frontend for testing spellers:
+
+```
+cargo build --bin divvunspell --features binaries --release
+```
+
+The result will be in the `target/release/` directory.
+
+## License
 
 This project is licensed under either of
 
