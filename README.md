@@ -24,6 +24,8 @@ The result will be in the `target/release/` directory. To install the binary on 
 cargo install --bin divvunspell --features binaries --path .
 ```
 
+Usage:
+
 ## License
 
 This project is licensed under either of
