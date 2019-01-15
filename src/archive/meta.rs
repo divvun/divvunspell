@@ -1,4 +1,4 @@
-use serde_xml_rs::{ParserConfig, deserialize, Error};
+use serde_xml_rs::{ParserConfig, from_reader, Error};
 
 #[derive(Deserialize, Debug)]
 pub struct SpellerMetadata {
@@ -54,7 +54,7 @@ impl SpellerMetadata {
             .create_reader(bytes)
             .into_inner();
 
-        deserialize(&mut reader)
+        from_reader(&mut reader)
     }
 }
 
