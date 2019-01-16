@@ -89,6 +89,10 @@ fn main() {
             .short("s")
             .long("suggest")
             .help("Show suggestions for given word(s)"))
+        .arg(Arg::with_name("always-suggest")
+            .short("S")
+            .long("always-suggest")
+            .help("Always show suggestions even if word is correct (implies -s)"))
         .arg(Arg::with_name("weight")
             .short("w")
             .long("weight")
@@ -109,7 +113,8 @@ fn main() {
             .help("The words to be processed"))
         .get_matches();
 
-    let is_suggesting = matches.is_present("suggest");
+    let is_always_suggesting = matches.is_present("always-suggest");
+    let is_suggesting = matches.is_present("suggest") || is_always_suggesting;
     let is_json = matches.is_present("json");
 
     let n_best = matches.value_of("nbest").and_then(|v| v.parse::<usize>().ok());
@@ -148,10 +153,10 @@ fn main() {
     };
 
     for word in words {
-        let result = archive.speller().is_correct(&word);
-        writer.write_correction(&word, result);
+        let is_correct = archive.speller().is_correct(&word);
+        writer.write_correction(&word, is_correct);
 
-        if (is_suggesting && !result) {
+        if is_suggesting && (is_always_suggesting || !is_correct) {
             let suggestions = archive.speller().suggest_with_config(&word, &suggest_cfg);
             writer.write_suggestions(&word, &suggestions);
         }
