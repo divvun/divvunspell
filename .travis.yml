@@ -11,7 +11,7 @@ matrix:
   fast_finish: true
 
 script:
-  cargo build --verbose
-  cargo test --verbose
+  cargo build --bin divvunspell --features binaries --release --verbose
+#  cargo test --verbose
 
 cache: cargo
