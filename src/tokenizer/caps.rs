@@ -52,8 +52,8 @@ pub fn word_variants(alphabet: &Vec<String>, word: &str) -> Vec<String> {
         trim_both(&alphabet, word)
     ];
 
+    base.append(&mut base.iter().filter(|x| is_all_caps(x)).map(|x| upper_first(&lower_case(x))).collect());
     base.append(&mut base.iter().map(|x| lower_case(x)).collect());
-    base.append(&mut base.iter().map(|x| upper_first(x)).collect());
 
     let mut ret = vec![];
 
@@ -79,8 +79,12 @@ mod tests {
 
     #[test]
     fn testsd() {
-        let a: Vec<String> = vec!["a".into(), "b".into(), "c".into(), "A".into(), "B".into(), "C".into()];
+        let a = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".chars()
+            .map(|c| c.to_string())
+            .collect::<Vec<String>>();
+        println!("{:?}", word_variants(&a, "FOO"));
+        println!("{:?}", word_variants(&a, "Giella"));
         println!("{:?}", word_variants(&a, "abc"));
-        println!("{:?}", word_variants(&a, "$ABC$"));
+        println!("{:?}", word_variants(&a, "$GIELLA$"));
     }
 }
