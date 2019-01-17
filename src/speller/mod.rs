@@ -626,18 +626,15 @@ impl SpellerWorker {
     fn suggest(self: Arc<Self>) -> Vec<Suggestion> {
         let mut max_weight = speller_max_weight(&self.config);
         let mut nodes = speller_start_node(self.state_size() as usize);
-        let mut corrections = HashMap::new();//fxhash::FxHashMap::<String, Weight>::default();
+        let mut corrections = HashMap::new();
         let mut suggestions: Vec<Suggestion> = vec![];
         let mut best_weight = self.config.max_weight.unwrap_or(f32::INFINITY);
 
+        use std::io::Write;
+        // let mut out = std::fs::File::create("log.txt").unwrap();
+
         let mut seen_nodes: HashSet<TreeNode> = HashSet::default();
-
-        // COUNTER.lock().unwrap().insert("c", 0);
-
         loop {
-        // while let Some(next_node) = nodes.pop() {
-            // COUNTER.lock().unwrap().entry("c").and_modify(|e| { *e += 1; });
-
             let next_node = {
                 match nodes.pop() {
                     Some(v) => v,
@@ -645,101 +642,67 @@ impl SpellerWorker {
                 }
             };
 
+            // writeln!(out, "{:?}", next_node).unwrap();
+
             seen_nodes.insert(next_node.clone());
-
-            // if all_nodes.contains(&next_node) {
-            //     // println!("DO YOU SEE");
-            //     continue;
-            // }
-
-            // let x = all_nodes.iter().filter(|&x| *x == next_node).count();
-            // if x > 5 {
-            //     println!("{}", x);
-            // }
-            // all_nodes.push(next_node.clone());
             
-
             max_weight = self.update_weight_limit(best_weight, &suggestions);
-            
-            // debug_incr("Worker node loop count");
-            // debug!("{:?}", next_node);
-
-            // debug!(
-            //     "sugloop next_node: is:{} w:{} ms:{} ls:{}",
-            //     next_node.input_state,
-            //     next_node.weight,
-            //     next_node.mutator_state,
-            //     next_node.lexicon_state
-            // );
 
             if !self.is_under_weight_limit(max_weight, next_node.weight()) {
                 continue
             }
-
-            // let next_node = Arc::new(next_node);
-            // let state = Arc::new(state);p
             
             nodes.append(&mut self.lexicon_epsilons(max_weight, &next_node, &seen_nodes));
             nodes.append(&mut self.mutator_epsilons(max_weight, &next_node, &seen_nodes));
 
-            // println!("{:?}", state.nodes);
-
-            if next_node.input_state as usize == self.input.len() {
-                // // debug_incr("input_state eq input size");
-                // debug!(
-                //     "is_final ms:{} ls:{}",
-                //     next_node.mutator_state,
-                //     next_node.lexicon_state
-                // );
-                if self.speller.mutator().is_final(next_node.mutator_state) &&
-                    self.speller.lexicon().is_final(next_node.lexicon_state)
-                {
-                    // debug_incr("is_final");
-
-                    //debug!("string: {}", string);
-
-                    let weight = next_node.weight() +
-                        self.speller
-                            .lexicon()
-                            .final_weight(next_node.lexicon_state)
-                            .unwrap() +
-                        self.speller
-                            .mutator()
-                            .final_weight(next_node.mutator_state)
-                            .unwrap();
-
-                    if !self.is_under_weight_limit(max_weight, weight) {
-                        continue;
-                    }
-
-                    let key_table = self.speller.lexicon().alphabet().key_table();
-                    let string: String = next_node
-                        .string
-                        .iter()
-                        .map(|&s| key_table[s as usize].to_string())
-                        .collect();
-
-                    if weight < best_weight {
-                        best_weight = weight;
-                    }
-                    
-                    {
-                        let entry = corrections.entry(string).or_insert(weight);
-
-                        if *entry > weight {
-                            *entry = weight;
-                        }
-                    }
-
-                    suggestions = self.generate_sorted_suggestions(&corrections);
-                }
-            } else {
+            if next_node.input_state as usize != self.input.len() {
                 nodes.append(&mut self.consume_input(max_weight, &next_node, &seen_nodes));
+                continue;
             }
-        }
 
-        // debug!("Here we go!");
-        // println!("{}", COUNTER.lock().unwrap()["c"]);
+            if !self.speller.mutator().is_final(next_node.mutator_state) ||
+                !self.speller.lexicon().is_final(next_node.lexicon_state)
+            {
+                continue;
+            }
+
+            let weight = next_node.weight() +
+                self.speller
+                    .lexicon()
+                    .final_weight(next_node.lexicon_state)
+                    .unwrap() +
+                self.speller
+                    .mutator()
+                    .final_weight(next_node.mutator_state)
+                    .unwrap();
+
+            if !self.is_under_weight_limit(max_weight, weight) {
+                continue;
+            }
+
+            let key_table = self.speller.lexicon().alphabet().key_table();
+            let string: String = next_node
+                .string
+                .iter()
+                .map(|&s| key_table[s as usize].to_string())
+                .collect();
+
+            // writeln!(out, "Selected: {}", &string).unwrap();
+
+            if weight < best_weight {
+                best_weight = weight;
+            }
+            
+            {
+                let entry = corrections.entry(string).or_insert(weight);
+
+                if *entry > weight {
+                    *entry = weight;
+                }
+            }
+
+            suggestions = self.generate_sorted_suggestions(&corrections);
+        }
 
         suggestions
     }

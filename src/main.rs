@@ -74,7 +74,6 @@ impl OutputWriter for JsonWriter {
 fn main() {
     let matches = App::new("divvunspell")
         .setting(AppSettings::ArgRequiredElseHelp)
-        // .setting(AppSettings::DeriveDisplayOrder)
         .version(env!("CARGO_PKG_VERSION"))
         .author("Brendan Molloy <brendan@bbqsrc.net>")
         .about("Testing frontend for the DivvunSpell library")
