@@ -145,7 +145,7 @@ fn main() {
         use std::path::Path;
 
         let target_dir = Path::new("./out.chfst");
-        let chunk_size: usize = 36 * 1024 * 1024;
+        let chunk_size: usize = 24 * 1024 * 1024;
 
         eprintln!("Serializing lexicon...");
         lexicon.serialize(chunk_size, &target_dir.join("lexicon")).unwrap();
