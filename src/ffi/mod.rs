@@ -1,11 +1,24 @@
 use libc::{c_char, size_t, uint8_t, uint32_t};
 use std::ffi::{CString, CStr};
 use std::ptr::{null, null_mut};
+use std::sync::Arc;
+use std::path::Path;
 
 use crate::archive::{SpellerArchive, SpellerArchiveError};
-use crate::speller::SpellerConfig;
+use crate::speller::{Speller, SpellerConfig};
 use crate::speller::suggestion::Suggestion;
 use crate::tokenizer::{Tokenize, Tokenizer, Token};
+use crate::transducer::{Transducer, chunk::{ChfstTransducer, ChfstBundle}};
+
+pub struct ChfstArchive {
+    speller: Arc<Speller<ChfstTransducer>>
+}
+
+impl ChfstArchive {
+    pub fn speller(&self) -> Arc<Speller<ChfstTransducer>> {
+        self.speller.clone()
+    }
+}
 
 // SpellerArchive
 
@@ -31,12 +44,77 @@ pub extern fn speller_archive_new(raw_path: *mut c_char, error: *mut *const c_ch
     }
 }
 
+#[no_mangle]
+pub extern fn chfst_new(raw_path: *mut c_char, error: *mut *const c_char) -> *const ChfstArchive {
+    let c_path = unsafe { CStr::from_ptr(raw_path) };
+    let file_path = c_path.to_str().unwrap();
+
+    match ChfstBundle::from_path(Path::new(file_path)) {
+        Ok(v) => {
+            Box::into_raw(Box::new(ChfstArchive { speller: v.speller() }))
+        },
+        Err(err) => {
+            if error.is_null() {
+                return null();
+            }
+
+            unsafe { *error = CString::new(&*format!("{:?}", err)).unwrap().into_raw(); }
+
+            null()
+        }
+    }
+}
+
+#[no_mangle]
+pub extern fn chfst_meta_get_locale(handle: *mut Speller<ChfstTransducer>) -> *mut c_char {
+    // let ar = unsafe { &*handle };
+    // let locale = ar.metadata().info.locale.to_owned();
+    // let s = CString::new(&*locale).unwrap();
+    // s.into_raw()
+    // TODO: wow.
+
+    let s = CString::new("se").unwrap();
+    s.into_raw()
+}
+
+
 // #[no_mangle]
 // pub extern fn speller_get_error(code: u8) -> *mut c_char {
 //     let s = SpellerArchiveError::from(code).to_string();
 
 //     CString::new(s).unwrap().into_raw()
 // }
+
+#[no_mangle]
+pub extern fn chfst_free(handle: *mut ChfstArchive) {
+    unsafe { Box::from_raw(handle) };
+}
+
+#[no_mangle]
+pub extern fn chfst_suggest(handle: *mut ChfstArchive, raw_word: *mut c_char, n_best: usize, max_weight: f32, beam: f32) -> *const Vec<Suggestion> {
+    let c_str = unsafe { CStr::from_ptr(raw_word) };
+    let word = c_str.to_str().unwrap();
+
+    let ar = unsafe { &mut *handle };
+
+    let suggestions = ar.speller().suggest_with_config(&word, &SpellerConfig {
+        max_weight: if max_weight > 0.0 { Some(max_weight) } else { None },
+        n_best: if n_best > 0 { Some(n_best) } else { None },
+        beam: if beam > 0.0 { Some(beam) } else { None },
+        with_caps: true
+    });
+
+    Box::into_raw(Box::new(suggestions))
+}
+
+#[no_mangle]
+pub extern fn chfst_is_correct(handle: *mut ChfstArchive, raw_word: *mut c_char) -> u8 {
+    let c_str = unsafe { CStr::from_ptr(raw_word) };
+    let word = c_str.to_str().unwrap();
+
+    let ar = unsafe { &mut *handle };
+    if ar.speller().is_correct(&word) { 1 } else { 0 }
+}
 
 #[no_mangle]
 pub extern fn speller_meta_get_locale(handle: *mut SpellerArchive) -> *mut c_char {
