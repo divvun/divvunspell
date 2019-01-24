@@ -4,8 +4,6 @@ endif
 
 ifdef CARGO_BIN
 FLAGS += --bin $(CARGO_BIN)
-else
-FLAGS += --lib
 endif
 
 ifeq "$(CONFIGURATION)" "Release"
