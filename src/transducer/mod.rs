@@ -5,7 +5,6 @@ pub mod symbol_transition;
 pub mod transition_table;
 pub mod tree_node;
 pub mod chunk;
-pub mod convert;
 
 use std::fmt;
 use memmap::Mmap;
