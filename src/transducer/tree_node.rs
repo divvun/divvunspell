@@ -5,7 +5,7 @@ use crate::types::{TransitionTableIndex, SymbolNumber, FlagDiacriticState, FlagD
 use super::symbol_transition::SymbolTransition;
 
 #[derive(Debug, Clone, Copy)]
-pub struct EqWeight(Weight);
+pub struct EqWeight(pub Weight);
 
 impl std::cmp::PartialEq for EqWeight {
     fn eq(&self, other: &EqWeight) -> bool {

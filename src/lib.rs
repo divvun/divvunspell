@@ -36,31 +36,31 @@ lazy_static! {
 
 #[test]
 fn test_speller() {
-    use std::fs::File;
-    use std::io::BufReader;
-    use std::io::prelude::*;
-    use crate::speller::Speller;
-    use crate::transducer::Transducer;
+    // use std::fs::File;
+    // use std::io::BufReader;
+    // use std::io::prelude::*;
+    // use crate::speller::Speller;
+    // use crate::transducer::Transducer;
 
-    // use COUNTER;
+    // // use COUNTER;
 
-    let acceptor = File::open("./test-align.hfst").unwrap();
-    let mut acceptor_buf = vec![];
-    let _ = BufReader::new(acceptor).read_to_end(&mut acceptor_buf);
+    // let acceptor = File::open("./test-align.hfst").unwrap();
+    // let mut acceptor_buf = vec![];
+    // let _ = BufReader::new(acceptor).read_to_end(&mut acceptor_buf);
 
-    let errmodel = File::open("./se/errmodel.default.hfst").unwrap();
-    let mut errmodel_buf = vec![];
-    let _ = BufReader::new(errmodel).read_to_end(&mut errmodel_buf);
+    // let errmodel = File::open("./se/errmodel.default.hfst").unwrap();
+    // let mut errmodel_buf = vec![];
+    // let _ = BufReader::new(errmodel).read_to_end(&mut errmodel_buf);
 
-    let lexicon = Transducer::from_bytes(&acceptor_buf);
-    let mutator = Transducer::from_bytes(&errmodel_buf);
+    // let lexicon = Transducer::from_bytes(&acceptor_buf);
+    // let mutator = Transducer::from_bytes(&errmodel_buf);
 
-    println!("{:#?}", lexicon);
+    // println!("{:#?}", lexicon);
 
-    let speller = Speller::new(mutator, lexicon);
+    // let speller = Speller::new(mutator, lexicon);
 
     
-    println!("{:?}", speller.suggest("nuvviDspeller"));
+    // println!("{:?}", speller.suggest("nuvviDspeller"));
 
     // println!("{:?}", *COUNTER.lock().unwrap());
 }

@@ -39,14 +39,14 @@ impl SpellerConfig {
 }
 
 #[derive(Debug)]
-pub struct Speller {
-    mutator: Transducer,
-    lexicon: Transducer,
+pub struct Speller<T: Transducer> {
+    mutator: T,
+    lexicon: T,
     alphabet_translator: Vec<SymbolNumber>,
 }
 
-struct SpellerWorker {
-    speller: Arc<Speller>,
+struct SpellerWorker<T: Transducer> {
+    speller: Arc<Speller<T>>,
     input: Vec<SymbolNumber>,
     mode: SpellerWorkerMode,
     config: SpellerConfig
@@ -68,26 +68,13 @@ fn speller_max_weight(config: &SpellerConfig) -> Weight {
     config.max_weight.unwrap_or(f32::INFINITY)
 }
 
-// impl SpellerState {
-//     pub fn new(size: usize, config: &SpellerConfig) -> SpellerState {
-//         let start_node = TreeNode::empty(vec![0; size]);
-//         let mut nodes = Vec::with_capacity(256);
-//         nodes.push(start_node);
-
-//         SpellerState {
-//             nodes: nodes,
-//             max_weight: config.max_weight.unwrap_or(f32::INFINITY)
-//         }
-//     }
-// }
-
-impl SpellerWorker {
+impl<T: Transducer> SpellerWorker<T> {
     fn new(
-        speller: Arc<Speller>,
+        speller: Arc<Speller<T>>,
         mode: SpellerWorkerMode,
         input: Vec<SymbolNumber>,
         config: &SpellerConfig
-    ) -> Arc<SpellerWorker> {
+    ) -> Arc<SpellerWorker<T>> {
         Arc::new(SpellerWorker {
             speller: speller,
             input: input,
@@ -113,7 +100,7 @@ impl SpellerWorker {
         let mut next = lexicon.next(next_node.lexicon_state, 0).unwrap();
 
         while let Some(transition) = lexicon.take_epsilons_and_flags(next) {
-            if let Some(sym) = lexicon.transition_table().input_symbol(next) {
+            if let Some(sym) = lexicon.transition_input_symbol(next) {
                 let transition_weight = transition.weight().unwrap();
 
                 if sym == 0 {
@@ -169,7 +156,7 @@ impl SpellerWorker {
 
                             if !nodes.contains(&applied_node) {
                                 output_nodes.push(applied_node);
-                            }
+                             }
                         }
                     }
                 }
@@ -203,7 +190,7 @@ impl SpellerWorker {
         let mut next_m = mutator.next(next_node.mutator_state, 0).unwrap();
 
         while let Some(transition) = mutator.take_epsilons(next_m) {
-            //debug!("trans mut next: {}", next_m);
+            // println!("trans mut next: {} {}", next_m, next_node.weight.0);
             //debug!("{}", next_node.weight);
             // debug!("Current taken epsilon: {}", next_m);
 
@@ -683,8 +670,8 @@ impl SpellerWorker {
             let key_table = self.speller.lexicon().alphabet().key_table();
             let string: String = next_node
                 .string
-                .iter()
-                .map(|&s| key_table[s as usize].to_string())
+                .into_iter()
+                .map(|s| &*key_table[s as usize])
                 .collect();
 
             // writeln!(out, "Selected: {}", &string).unwrap();
@@ -723,8 +710,8 @@ impl SpellerWorker {
     }
 }
 
-impl Speller {
-    pub fn new(mutator: Transducer, mut lexicon: Transducer) -> Arc<Speller> {
+impl<T: Transducer> Speller<T> {
+    pub fn new(mutator: T, mut lexicon: T) -> Arc<Speller<T>> {
         let alphabet_translator = lexicon.mut_alphabet().create_translator_from(&mutator);
 
         Arc::new(Speller {
@@ -734,11 +721,11 @@ impl Speller {
         })
     }
 
-    pub fn mutator(&self) -> &Transducer {
+    pub fn mutator(&self) -> &T {
         &self.mutator
     }
 
-    pub fn lexicon(&self) -> &Transducer {
+    pub fn lexicon(&self) -> &T {
         &self.lexicon
     }
 
@@ -875,6 +862,9 @@ impl Speller {
 
     pub fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
         use crate::tokenizer::caps::*;
+
+        // println!("Lex {:?}", self.lexicon().alphabet());
+        // println!("Mut {:?}", self.mutator().alphabet());
 
         if config.with_caps {
             let words = word_variants(self.lexicon().alphabet().key_table(), word);
