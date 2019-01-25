@@ -151,6 +151,9 @@ impl<T: Transducer> Speller<T> {
 
         let mut out = best.into_iter().map(|(k, v)| Suggestion { value: k, weight: v }).collect::<Vec<_>>();
         out.sort();
+        if let Some(n_best) = config.n_best {
+            out.truncate(n_best);
+        }
         out
     }
 
