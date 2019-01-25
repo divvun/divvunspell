@@ -13,10 +13,10 @@ typedef void chfst_t;
 typedef void suggest_vec_t;
 
 extern speller_t*
-speller_archive_new(const char* _Nonnull path, uint8_t* error);
+speller_archive_new(const char* _Nonnull path, char** error);
 
 extern chfst_t*
-chfst_archive_new(const char* _Nonnull path, uint8_t* error);
+chfst_new(const char* _Nonnull path, char** error);
 
 extern const char* _Nonnull
 speller_get_error(uint8_t code);
@@ -25,7 +25,7 @@ extern void
 speller_archive_free(speller_t* _Nonnull handle);
 
 extern void
-chfst_archive_free(chfst_t* _Nonnull handle);
+chfst_free(chfst_t* _Nonnull handle);
 
 extern const char* _Nonnull
 speller_meta_get_locale(speller_t* _Nonnull handle);
@@ -58,10 +58,10 @@ extern size_t
 suggest_vec_len(suggest_vec_t* _Nonnull handle);
 
 extern const char* _Nonnull
-suggest_vec_get_value(suggest_vec_t* _Nonnull handle, size_t _Nonnull index);
+suggest_vec_get_value(suggest_vec_t* _Nonnull handle, size_t index);
 
 extern float
-suggest_vec_get_weight(suggest_vec_t* _Nonnull handle, size_t _Nonnull index);
+suggest_vec_get_weight(suggest_vec_t* _Nonnull handle, size_t index);
 
 extern void
 suggest_vec_value_free(const char* _Nonnull value);
@@ -80,7 +80,7 @@ typedef struct token_record_s {
 
 typedef void tokenizer_t;
 
-extern tokenizer_t* 
+extern tokenizer_t*
 speller_tokenize(const char* _Nonnull string);
 
 extern bool
