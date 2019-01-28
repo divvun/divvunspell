@@ -6,9 +6,9 @@ ifdef CARGO_BIN
 FLAGS += --bin $(CARGO_BIN)
 endif
 
-ifeq "$(CONFIGURATION)" "Release"
-FLAGS += --release
-endif
+#ifeq "$(CONFIGURATION)" "Release"
+#FLAGS += --release
+#endif
 
 xcode:
 	$(CARGO_HOME)/bin/cargo build $(FLAGS)
