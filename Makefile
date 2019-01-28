@@ -19,8 +19,8 @@ xcodeinstall:
 xcodeclean:
 	$(CARGO_HOME)/bin/cargo clean
 xcodelipo:
-	$(CARGO_HOME)/bin/cargo lipo $(FLAGS)
+	$(CARGO_HOME)/bin/cargo lipo --xcode-integ $(FLAGS)
 xcodelipoinstall:
-	$(CARGO_HOME)/bin/cargo lipo $(FLAGS)
+	$(CARGO_HOME)/bin/cargo lipo --xcode-integ $(FLAGS)
 xcodelipoclean:
 	$(CARGO_HOME)/bin/cargo clean
