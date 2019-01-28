@@ -6,9 +6,9 @@ ifdef CARGO_BIN
 FLAGS += --bin $(CARGO_BIN)
 endif
 
-#ifeq "$(CONFIGURATION)" "Release"
-#FLAGS += --release
-#endif
+ifeq "$(CONFIGURATION)" "Release"
+FLAGS += --release
+endif
 
 xcode:
 	$(CARGO_HOME)/bin/cargo build $(FLAGS)
@@ -19,8 +19,8 @@ xcodeinstall:
 xcodeclean:
 	$(CARGO_HOME)/bin/cargo clean
 xcodelipo:
-	$(CARGO_HOME)/bin/cargo lipo --xcode-integ $(FLAGS)
+	$(CARGO_HOME)/bin/cargo lipo --targets aarch64-apple-ios,x86_64-apple-ios,armv7-apple-ios $(FLAGS)
 xcodelipoinstall:
-	$(CARGO_HOME)/bin/cargo lipo --xcode-integ $(FLAGS)
+	$(CARGO_HOME)/bin/cargo lipo --targets aarch64-apple-ios,x86_64-apple-ios,armv7-apple-ios $(FLAGS)
 xcodelipoclean:
 	$(CARGO_HOME)/bin/cargo clean
