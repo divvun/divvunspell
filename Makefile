@@ -12,15 +12,15 @@ endif
 
 xcode:
 	$(CARGO_HOME)/bin/cargo build $(FLAGS)
-	rm -f target/$(CONFIGURATION)/libhfstospell.dylib
+	rm -f target/$(CONFIGURATION)/libdivvunspell.dylib
 xcodeinstall:
 	$(CARGO_HOME)/bin/cargo build $(FLAGS)
-	rm -f target/$(CONFIGURATION)/libhfstospell.dylib
+	rm -f target/$(CONFIGURATION)/libdivvunspell.dylib
 xcodeclean:
 	$(CARGO_HOME)/bin/cargo clean
 xcodelipo:
-	$(CARGO_HOME)/bin/cargo lipo $(FLAGS)
+	$(CARGO_HOME)/bin/cargo lipo --targets aarch64-apple-ios,x86_64-apple-ios,armv7-apple-ios $(FLAGS)
 xcodelipoinstall:
-	$(CARGO_HOME)/bin/cargo lipo $(FLAGS)
+	$(CARGO_HOME)/bin/cargo lipo --targets aarch64-apple-ios,x86_64-apple-ios,armv7-apple-ios $(FLAGS)
 xcodelipoclean:
 	$(CARGO_HOME)/bin/cargo clean

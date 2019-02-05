@@ -1,19 +1,19 @@
 use crate::types::{SymbolNumber, ValueNumber, FlagDiacriticOperator, FlagDiacriticOperation};
-use std::collections::HashMap;
+use hashbrown::HashMap;
 use super::Transducer;
 
 type OperationsMap = HashMap<SymbolNumber, FlagDiacriticOperation>;
 
 #[derive(Debug)]
 pub struct TransducerAlphabet {
-    key_table: Vec<String>,
-    initial_symbol_count: SymbolNumber,
-    flag_state_size: SymbolNumber,
-    length: usize,
-    string_to_symbol: HashMap<String, SymbolNumber>,
-    operations: OperationsMap,
-    identity_symbol: Option<SymbolNumber>,
-    unknown_symbol: Option<SymbolNumber>,
+    pub(crate) key_table: Vec<String>,
+    pub(crate) initial_symbol_count: SymbolNumber,
+    pub(crate) flag_state_size: SymbolNumber,
+    pub(crate) length: usize,
+    pub(crate) string_to_symbol: HashMap<String, SymbolNumber>,
+    pub(crate) operations: OperationsMap,
+    pub(crate) identity_symbol: Option<SymbolNumber>,
+    pub(crate) unknown_symbol: Option<SymbolNumber>,
 }
 
 struct TransducerAlphabetParser {
@@ -84,7 +84,7 @@ impl TransducerAlphabetParser {
         };
 
         self.operations.insert(i, op);
-        self.key_table.push("".to_string());
+        self.key_table.push(key.to_string());
     }
 
     fn parse_inner(&mut self, buf: &[u8], symbols: SymbolNumber) {
@@ -115,6 +115,7 @@ impl TransducerAlphabetParser {
                     self.key_table.push(key);
                 } else {
                     // No idea, skip.
+                    eprintln!("Unhandled alphabet key: {}", &key);
                     self.key_table.push(String::from(""));
                 }
             } else {

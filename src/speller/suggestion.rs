@@ -49,7 +49,7 @@ impl Ord for Suggestion {
 
 impl PartialEq for Suggestion {
     fn eq(&self, other: &Self) -> bool {
-        self.weight == other.weight
+        self.value == other.value && self.weight == other.weight
     }
 }
 

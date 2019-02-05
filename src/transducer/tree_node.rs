@@ -1,11 +1,11 @@
+use std::hash::{Hash, Hasher};
+
 use crate::types::{TransitionTableIndex, SymbolNumber, FlagDiacriticState, FlagDiacriticOperator,
             FlagDiacriticOperation, Weight};
-
 use super::symbol_transition::SymbolTransition;
-use std::borrow::Cow;
 
 #[derive(Debug, Clone, Copy)]
-pub struct EqWeight(Weight);
+pub struct EqWeight(pub Weight);
 
 impl std::cmp::PartialEq for EqWeight {
     fn eq(&self, other: &EqWeight) -> bool {
@@ -13,18 +13,13 @@ impl std::cmp::PartialEq for EqWeight {
     }
 }
 
-use std::hash::{Hash, Hasher};
-
 impl Hash for EqWeight {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let sadface = self.0 * 100000.0;
-        state.write_u32(sadface as u32);
+        state.write_u32(unsafe { std::mem::transmute::<f32, u32>(self.0) });
     }
 }
 
-
 impl std::cmp::Eq for EqWeight {}
-
 
 #[derive(PartialEq, Eq, Debug, Clone, Hash)]
 pub struct TreeNode {
@@ -35,12 +30,6 @@ pub struct TreeNode {
     pub mutator_state: TransitionTableIndex,
     pub lexicon_state: TransitionTableIndex,
 }
-
-// impl Drop for TreeNode {
-//     fn drop(&mut self) {
-//         println!("String size: {}", self.string.len());
-//     }
-// }
 
 impl TreeNode {
     pub fn empty(start_state: FlagDiacriticState) -> TreeNode {
@@ -64,7 +53,9 @@ impl TreeNode {
 
     pub fn update_lexicon_mut(&mut self, transition: SymbolTransition) {
         if let Some(value) = transition.symbol() {
-            self.string.push(value);
+            if value != 0 {
+                self.string.push(value);
+            }
         };
 
         self.lexicon_state = transition.target().unwrap();
@@ -73,13 +64,13 @@ impl TreeNode {
 
     pub fn update_lexicon(&self, transition: SymbolTransition) -> TreeNode {
         let string = match transition.symbol() {
-            Some(value) => {
+            Some(value) if value != 0 => {
                 let mut string = Vec::with_capacity(self.string.len() + 1);
                 string.extend(&self.string);
                 string.push(value);
                 string
             }
-            None => self.string.clone(),
+            _ => self.string.clone(),
         };
 
         TreeNode {
@@ -192,12 +183,3 @@ impl TreeNode {
         }
     }
 }
-
-// impl std::cmp::PartialEq for TreeNode {
-//     fn eq(&self, other: &TreeNode) -> bool {
-//         self.input_state == other.input_state && 
-//             self.lexicon_state == other.lexicon_state &&
-//             self.mutator_state == other.mutator_state &&
-//             self.weight == other.weight
-//     }
-// }

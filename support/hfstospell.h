@@ -3,15 +3,20 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-#ifndef _Nonnull
+#ifndef __APPLE__
 #define _Nonnull
+#define _Nullable
 #endif
 
 typedef void speller_t;
+typedef void chfst_t;
 typedef void suggest_vec_t;
 
 extern speller_t*
-speller_archive_new(const char* _Nonnull path, uint8_t* error);
+speller_archive_new(const char* _Nonnull path, char** error);
+
+extern chfst_t*
+chfst_new(const char* _Nonnull path, char** error);
 
 extern const char* _Nonnull
 speller_get_error(uint8_t code);
@@ -19,8 +24,14 @@ speller_get_error(uint8_t code);
 extern void
 speller_archive_free(speller_t* _Nonnull handle);
 
+extern void
+chfst_free(chfst_t* _Nonnull handle);
+
 extern const char* _Nonnull
 speller_meta_get_locale(speller_t* _Nonnull handle);
+
+extern const char* _Nonnull
+chfst_meta_get_locale(speller_t* _Nonnull handle);
 
 extern void
 speller_str_free(const char* _Nonnull str);
@@ -28,11 +39,17 @@ speller_str_free(const char* _Nonnull str);
 extern suggest_vec_t* _Nonnull
 speller_suggest(speller_t* _Nonnull handle, const char* _Nonnull word, size_t n_best, float max_weight, float beam);
 
+extern suggest_vec_t* _Nonnull
+chfst_suggest(chfst_t* _Nonnull handle, const char* _Nonnull word, size_t n_best, float max_weight, float beam);
+
 extern const char* _Nonnull
 speller_suggest_json(speller_t* _Nonnull handle, const char* _Nonnull word, size_t n_best, float max_weight, float beam);
 
 extern bool
 speller_is_correct(speller_t* _Nonnull handle, const char* _Nonnull word);
+
+extern bool
+chfst_is_correct(chfst_t* _Nonnull handle, const char* _Nonnull word);
 
 extern void
 suggest_vec_free(suggest_vec_t* _Nonnull handle);
@@ -41,10 +58,10 @@ extern size_t
 suggest_vec_len(suggest_vec_t* _Nonnull handle);
 
 extern const char* _Nonnull
-suggest_vec_get_value(suggest_vec_t* _Nonnull handle, size_t _Nonnull index);
+suggest_vec_get_value(suggest_vec_t* _Nonnull handle, size_t index);
 
 extern float
-suggest_vec_get_weight(suggest_vec_t* _Nonnull handle, size_t _Nonnull index);
+suggest_vec_get_weight(suggest_vec_t* _Nonnull handle, size_t index);
 
 extern void
 suggest_vec_value_free(const char* _Nonnull value);
@@ -63,7 +80,7 @@ typedef struct token_record_s {
 
 typedef void tokenizer_t;
 
-extern tokenizer_t* 
+extern tokenizer_t*
 speller_tokenize(const char* _Nonnull string);
 
 extern bool
