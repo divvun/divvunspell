@@ -69,8 +69,7 @@ pub struct TransducerSerializeReport {
 }
 
 impl HfstTransducer {
-    pub fn from_mapped_memory(buf: Mmap) -> HfstTransducer {
-        let buf = Arc::new(buf);
+    pub fn from_mapped_memory(buf: Arc<Mmap>) -> HfstTransducer {
         let header = TransducerHeader::new(&buf);
         let alphabet_offset = header.len();
         let alphabet =

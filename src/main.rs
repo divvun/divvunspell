@@ -1,3 +1,5 @@
+#![cfg(feature = "binaries")]
+
 use std::io::{self, Read};
 
 use clap::{Arg, App, AppSettings, SubCommand};

@@ -16,20 +16,63 @@ pub struct SpellerArchive {
     speller: Arc<Speller<HfstTransducer>>,
 }
 
-fn slice_by_name<'a, R: Read + Seek>(
+pub struct TempMmap {
+    mmap: Arc<Mmap>,
+
+    // Not really dead, needed to drop when TempMmap drops
+    #[allow(dead_code)] 
+    tempdir: tempdir::TempDir
+}
+
+pub enum MmapRef {
+    Direct(Arc<Mmap>),
+    Temp(TempMmap)
+}
+
+impl MmapRef {
+    pub fn map(&self) -> Arc<Mmap> {
+        match self {
+            MmapRef::Direct(mmap) => Arc::clone(mmap),
+            MmapRef::Temp(tmmap) => Arc::clone(&tmmap.mmap)
+        }
+    }
+}
+
+fn mmap_by_name<'a, R: Read + Seek>(
+    zipfile: &mut File,
     archive: &mut ZipArchive<R>,
     name: &str,
-) -> Result<(u64, usize), SpellerArchiveError> {
-    let index = archive.by_name(name).unwrap();
+) -> Result<MmapRef, std::io::Error> {
+    let mut index = archive.by_name(name).unwrap();
 
-    if index.compressed_size() != index.size() {
-        // Unzip to a tmp dir and mmap into space
-        return Err(SpellerArchiveError::UnsupportedCompressed);
+    if index.compression() != zip::CompressionMethod::Stored {
+        let tempdir = tempdir::TempDir::new("divvunspell")?;
+        let outpath = tempdir.path().join(index.sanitized_name());
+
+        let mut outfile = File::create(&outpath)?;
+        std::io::copy(&mut index, &mut outfile)?;
+
+        let outfile = File::open(&outpath)?;
+
+        let mmap = unsafe { MmapOptions::new().map(&outfile) };
+
+        return match mmap {
+            Ok(v) => Ok(MmapRef::Temp(TempMmap { mmap: Arc::new(v), tempdir })),
+            Err(err) => panic!(err)
+        };
     }
 
-    Ok((index.data_start(), index.size() as usize))
+    let mmap = unsafe {
+        MmapOptions::new()
+            .offset(index.data_start())
+            .len(index.size() as usize)
+            .map(&zipfile)
+    };
 
-    // Ok(partial_slice(&slice,))
+    match mmap {
+        Ok(v) => Ok(MmapRef::Direct(Arc::new(v))),
+        Err(err) => panic!(err)
+    }    
 }
 
 #[derive(Debug)]
@@ -85,41 +128,25 @@ impl SpellerArchive {
     pub fn new(file_path: &str) -> Result<SpellerArchive, SpellerArchiveError> {
         let file = File::open(file_path)
             .map_err(|e| SpellerArchiveError::OpenFileFailed(e))?;
-
         let reader = std::io::BufReader::new(&file);
-        let mut archive = ZipArchive::new(reader).unwrap();
+        let mut archive = ZipArchive::new(reader).expect("zip");
 
-        let data = slice_by_name(&mut archive, "index.xml")?;
-        let metadata_mmap = unsafe {
-            MmapOptions::new()
-                .offset(data.0)
-                .len(data.1)
-                .map(&file)
-        }.map_err(|e| SpellerArchiveError::MetadataMmapFailed(e))?; 
+        // Open file a second time to get around borrow checker
+        let mut file = File::open(file_path)
+            .map_err(|e| SpellerArchiveError::OpenFileFailed(e))?;
 
-        let metadata = SpellerMetadata::from_bytes(&metadata_mmap).unwrap();
-        let acceptor_range = slice_by_name(&mut archive, &metadata.acceptor.id)?;
-        let errmodel_range = slice_by_name(&mut archive, &metadata.errmodel.id)?;
+        let metadata_mmap = mmap_by_name(&mut file, &mut archive, "index.xml")
+            .map_err(|e| SpellerArchiveError::MetadataMmapFailed(e))?;
+        let metadata = SpellerMetadata::from_bytes(&*metadata_mmap.map()).expect("meta");
+
+        let acceptor_mmap = mmap_by_name(&mut file, &mut archive, &metadata.acceptor.id)
+            .map_err(|e| SpellerArchiveError::AcceptorMmapFailed(e))?;
+        let errmodel_mmap = mmap_by_name(&mut file, &mut archive, &metadata.errmodel.id)
+            .map_err(|e| SpellerArchiveError::ErrmodelMmapFailed(e))?;
         drop(archive);
 
-        // eprintln!("Acceptor range: {:?}", acceptor_range);
-
-        // Load transducers
-        let acceptor_mmap = unsafe {
-            MmapOptions::new()
-                .offset(acceptor_range.0)
-                .len(acceptor_range.1)
-                .map(&file)
-        }.map_err(|e| SpellerArchiveError::AcceptorMmapFailed(e))?; 
-        let acceptor = HfstTransducer::from_mapped_memory(acceptor_mmap);
-
-        let errmodel_mmap = unsafe {
-            MmapOptions::new()
-                .offset(errmodel_range.0)
-                .len(errmodel_range.1)
-                .map(&file)
-        }.map_err(|e| SpellerArchiveError::ErrmodelMmapFailed(e))?; 
-        let errmodel = HfstTransducer::from_mapped_memory(errmodel_mmap);
+        let acceptor = HfstTransducer::from_mapped_memory(acceptor_mmap.map());
+        let errmodel = HfstTransducer::from_mapped_memory(errmodel_mmap.map());
 
         let speller = Speller::new(errmodel, acceptor);
 
