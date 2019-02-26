@@ -3,6 +3,12 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+#pragma once
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #ifndef __APPLE__
 #define _Nonnull
 #define _Nullable
@@ -12,11 +18,11 @@ typedef void speller_t;
 typedef void chfst_t;
 typedef void suggest_vec_t;
 
-extern speller_t*
-speller_archive_new(const char* _Nonnull path, char** error);
+extern speller_t* _Nullable
+speller_archive_new(const char* _Nonnull path, char*_Nullable *_Nonnull error);
 
-extern chfst_t*
-chfst_new(const char* _Nonnull path, char** error);
+extern chfst_t* _Nullable
+chfst_new(const char* _Nonnull path, char*_Nullable *_Nonnull error);
 
 extern const char* _Nonnull
 speller_get_error(uint8_t code);
@@ -75,16 +81,20 @@ typedef struct token_record_s {
     uint8_t type;
     uint32_t start;
     uint32_t end;
-    const char* value;
+    const char *_Nonnull value;
 } token_record_t;
 
 typedef void tokenizer_t;
 
-extern tokenizer_t*
+extern tokenizer_t* _Nonnull
 speller_tokenize(const char* _Nonnull string);
 
 extern bool
-speller_token_next(tokenizer_t* _Nonnull handle, token_record_t** record);
+speller_token_next(tokenizer_t* _Nonnull handle, token_record_t* _Nonnull *_Nonnull record);
 
 extern void
 speller_tokenizer_free(tokenizer_t* _Nonnull handle);
+
+#ifdef __cplusplus
+}
+#endif
