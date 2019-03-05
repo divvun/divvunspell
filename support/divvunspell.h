@@ -72,28 +72,41 @@ suggest_vec_get_weight(suggest_vec_t* _Nonnull handle, size_t index);
 extern void
 suggest_vec_value_free(const char* _Nonnull value);
 
-const uint8_t TOKEN_OTHER = 0;
-const uint8_t TOKEN_WORD = 1;
-const uint8_t TOKEN_PUNCTUATION = 2;
-const uint8_t TOKEN_WHITESPACE = 3;
+// const uint8_t TOKEN_OTHER = 0;
+// const uint8_t TOKEN_WORD = 1;
+// const uint8_t TOKEN_PUNCTUATION = 2;
+// const uint8_t TOKEN_WHITESPACE = 3;
 
-typedef struct token_record_s {
-    uint8_t type;
-    uint32_t start;
-    uint32_t end;
-    const char *_Nonnull value;
-} token_record_t;
+// typedef struct token_record_s {
+//     uint8_t type;
+//     uint32_t start;
+//     uint32_t end;
+//     const char *_Nonnull value;
+// } token_record_t;
 
-typedef void tokenizer_t;
+// typedef void tokenizer_t;
 
-extern tokenizer_t* _Nonnull
-speller_tokenize(const char* _Nonnull string);
+// extern tokenizer_t* _Nonnull
+// speller_tokenize(const char* _Nonnull string);
 
-extern bool
-speller_token_next(tokenizer_t* _Nonnull handle, token_record_t* _Nonnull *_Nonnull record);
+// extern bool
+// speller_token_next(tokenizer_t* _Nonnull handle, token_record_t* _Nonnull *_Nonnull record);
 
-extern void
-speller_tokenizer_free(tokenizer_t* _Nonnull handle);
+// extern void
+// speller_tokenizer_free(tokenizer_t* _Nonnull handle);
+
+typedef void word_bound_indices_t;
+
+word_bound_indices_t* _Nonnull
+word_bound_indices(const char* _Nonnull utf8_string);
+
+bool
+word_bound_indices_next(word_bound_indices_t* _Nonnull handle,
+    uint64_t* _Nonnull out_index,
+    char*_Nonnull *_Nullable out_string);
+
+void
+word_bound_indices_free(word_bound_indices_t* _Nonnull handle);
 
 #ifdef __cplusplus
 }

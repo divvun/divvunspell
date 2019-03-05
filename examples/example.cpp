@@ -26,5 +26,15 @@ int main(int argc, char** argv) {
         std::cout << it->value << "\t" << it->weight << std::endl;
     }
 
+    auto iter = word_bound_indices("this is a test string.");
+    uint64_t idx = 0;
+    char* string = nullptr;
+
+    while (word_bound_indices_next(iter, &idx, &string)) {
+        std::cout << idx << " " << string << std::endl;
+    }
+
+    word_bound_indices_free(iter);
+
     return 0;
 }
