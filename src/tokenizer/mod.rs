@@ -1,7 +1,8 @@
 // // use unic_ucd_category;
 
 // use unic_ucd_category::{GeneralCategory};
-use unic_segment::WordBoundIndices;
+use unic_segment::{WordBoundIndices, Words};
+use unic_ucd_common::is_alphanumeric;
 
 pub mod caps;
 
@@ -51,11 +52,16 @@ pub mod caps;
 
 pub trait Tokenize {
     fn word_bound_indices(&self) -> WordBoundIndices;
+    fn words(&self) -> Words;
 }
 
 impl Tokenize for str {
     fn word_bound_indices(&self) -> WordBoundIndices {
         WordBoundIndices::new(self)
+    }
+
+    fn words(&self) -> Words {
+        Words::new(self, |s| s.chars().any(|ch| ch.is_alphanumeric()))
     }
 }
 

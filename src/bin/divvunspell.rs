@@ -8,7 +8,7 @@ use hashbrown::HashMap;
 use divvunspell::archive::SpellerArchive;
 use divvunspell::speller::{Speller, SpellerConfig};
 use divvunspell::speller::suggestion::Suggestion;
-use divvunspell::tokenizer::{Tokenize, Token};
+use divvunspell::tokenizer::Tokenize;
 use divvunspell::transducer::chunk::ChfstBundle;
 
 use serde_derive::Serialize;
@@ -171,7 +171,7 @@ fn main() {
             eprintln!("Reading from stdin...");
             let mut buffer = String::new();
             io::stdin().read_to_string(&mut buffer).expect("reading stdin");
-            buffer.tokenize().filter(|x| x.is_word()).map(|x| x.value().to_string()).collect()
+            buffer.words().map(|x| x.to_string()).collect()
         }
     };
     
