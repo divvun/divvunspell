@@ -2,14 +2,16 @@ use hashbrown::{HashMap, HashSet};
 use std::f32;
 use std::sync::Arc;
 
+use lifeguard::{Pool, Recycled};
+
 use super::{SpellerConfig, Speller};
 use crate::transducer::Transducer;
 use crate::transducer::tree_node::TreeNode;
 use crate::speller::suggestion::Suggestion;
-use crate::types::{SymbolNumber, Weight, SpellerWorkerMode, FlagDiacriticOperator};
+use crate::types::{SymbolNumber, Weight, SpellerWorkerMode};
 
-fn speller_start_node(size: usize) -> Vec<TreeNode> {
-    let start_node = TreeNode::empty(vec![0; size]);
+fn speller_start_node(pool: &Pool<TreeNode>, size: usize) -> Vec<Recycled<TreeNode>> {
+    let start_node = TreeNode::empty(pool, vec![0; size]);
     let mut nodes = Vec::with_capacity(256);
     nodes.push(start_node);
     nodes
@@ -31,8 +33,8 @@ impl<T: Transducer> SpellerWorker<T> {
         speller: Arc<Speller<T>>,
         mode: SpellerWorkerMode,
         input: Vec<SymbolNumber>,
-    ) -> Arc<SpellerWorker<T>> {
         config: SpellerConfig
+    ) -> Arc<SpellerWorker<T>> {
         Arc::new(SpellerWorker {
             speller: speller,
             input: input,
@@ -41,7 +43,7 @@ impl<T: Transducer> SpellerWorker<T> {
         })
     }
 
-    fn lexicon_epsilons(&self, max_weight: Weight, next_node: &TreeNode, nodes: &HashSet<TreeNode>) -> Vec<TreeNode> {
+    fn lexicon_epsilons<'a>(&self, pool: &'a Pool<TreeNode>, max_weight: Weight, next_node: &TreeNode, nodes: &HashSet<TreeNode>) -> Vec<Recycled<'a, TreeNode>> {
         // debug_incr("lexicon_epsilons");
 
         // debug!("Begin lexicon epsilons");
@@ -69,14 +71,14 @@ impl<T: Transducer> SpellerWorker<T> {
                             //     "lexicon_epsilons push node epsilon_transition CORRECT MODE",
                             // );
 
-                            let new_node = next_node.update_lexicon(epsilon_transition);
+                            let new_node = next_node.update_lexicon(pool, epsilon_transition);
 
                             if !nodes.contains(&new_node) {
                                 output_nodes.push(new_node);
                             }
                         } else {
                             // debug_incr("lexicon_epsilons push node transition");
-                            let new_node = next_node.update_lexicon(transition);
+                            let new_node = next_node.update_lexicon(pool, transition);
 
                             if !nodes.contains(&new_node) {
                                 output_nodes.push(new_node);
@@ -106,7 +108,7 @@ impl<T: Transducer> SpellerWorker<T> {
                             continue;
                         }
                         
-                        let (is_success, mut applied_node) = next_node.apply_operation(op);
+                        let (is_success, mut applied_node) = next_node.apply_operation(pool, op);
 
                         if is_success {
                             let epsilon_transition = transition.clone_with_epsilon_symbol();
@@ -114,7 +116,7 @@ impl<T: Transducer> SpellerWorker<T> {
 
                             if !nodes.contains(&applied_node) {
                                 output_nodes.push(applied_node);
-                             }
+                            }
                         }
                     }
                 }
@@ -131,7 +133,7 @@ impl<T: Transducer> SpellerWorker<T> {
         output_nodes
     }
 
-    fn mutator_epsilons(&self, max_weight: Weight, next_node: &TreeNode, nodes: &HashSet<TreeNode>) -> Vec<TreeNode> {
+    fn mutator_epsilons<'a>(&self, pool: &'a Pool<TreeNode>, max_weight: Weight, next_node: &TreeNode, nodes: &HashSet<TreeNode>) -> Vec<Recycled<'a, TreeNode>> {
         // debug_incr("mutator_epsilons");
         // debug!("Begin mutator epsilons");
 
@@ -155,7 +157,7 @@ impl<T: Transducer> SpellerWorker<T> {
             if let Some(0) = transition.symbol() {
                 if self.is_under_weight_limit(max_weight, next_node.weight() + transition.weight().unwrap()) {
                     // debug_incr("mutator_epsilons push node update_mutator transition");
-                    let new_node = next_node.update_mutator(transition);
+                    let new_node = next_node.update_mutator(pool, transition);
                     if !nodes.contains(&new_node) {
                         output_nodes.push(new_node);
                     } 
@@ -179,6 +181,7 @@ impl<T: Transducer> SpellerWorker<T> {
                         ) {
                             // debug_incr("qla unknown mutator_eps");
                             output_nodes.append(&mut self.queue_lexicon_arcs(
+                                pool,
                                 max_weight,
                                 &next_node,
                                 nodes,
@@ -195,6 +198,7 @@ impl<T: Transducer> SpellerWorker<T> {
                         ) {
                             // debug_incr("qla identity mutator_eps");
                             output_nodes.append(&mut self.queue_lexicon_arcs(
+                                pool,
                                 max_weight,
                                 &next_node,
                                 nodes,
@@ -212,6 +216,7 @@ impl<T: Transducer> SpellerWorker<T> {
 
                 // debug_incr("qla alpha_trans mutator_eps");
                 output_nodes.append(&mut self.queue_lexicon_arcs(
+                    pool,
                     max_weight,
                     &next_node,
                     nodes,
@@ -235,8 +240,9 @@ impl<T: Transducer> SpellerWorker<T> {
         // debug!("End mutator epsilons");
     }
 
-    pub fn queue_lexicon_arcs(
+    pub fn queue_lexicon_arcs<'a>(
         &self,
+        pool: &'a Pool<TreeNode>,
         max_weight: Weight,
         next_node: &TreeNode,
         nodes: &HashSet<TreeNode>,
@@ -244,13 +250,13 @@ impl<T: Transducer> SpellerWorker<T> {
         mutator_state: u32,
         mutator_weight: Weight,
         input_increment: i16,
-    ) -> Vec<TreeNode> {
+    ) -> Vec<Recycled<'a, TreeNode>> {
         // debug!("Begin queue lexicon arcs");
 
         let lexicon = self.speller.lexicon();
         let identity = lexicon.alphabet().identity();
         let mut next = lexicon.next(next_node.lexicon_state, input_sym).unwrap();
-        let mut output_nodes = Vec::new();
+        let mut output_nodes: Vec<Recycled<'a, TreeNode>> = Vec::new();
 
         while let Some(noneps_trans) = lexicon.take_non_epsilons(next, input_sym) {
             //debug!("noneps next: {:?}", &noneps_trans);
@@ -296,6 +302,7 @@ impl<T: Transducer> SpellerWorker<T> {
                     // debug_incr("queue_lexicon_arcs push node update");
 
                     let new_node = next_node.update(
+                        pool,
                         next_sym,
                         Some(next_node.input_state + input_increment as u32),
                         mutator_state,
@@ -320,7 +327,7 @@ impl<T: Transducer> SpellerWorker<T> {
         output_nodes
     }
 
-    fn queue_mutator_arcs(&self, max_weight: Weight, next_node: &TreeNode, nodes: &HashSet<TreeNode>, input_sym: SymbolNumber) -> Vec<TreeNode> {
+    fn queue_mutator_arcs<'a>(&self, pool: &'a Pool<TreeNode>, max_weight: Weight, next_node: &TreeNode, nodes: &HashSet<TreeNode>, input_sym: SymbolNumber) -> Vec<Recycled<'a, TreeNode>> {
         //debug!("Mutator arcs");
         let mutator = self.speller.mutator();
         let lexicon = self.speller.lexicon();
@@ -340,6 +347,7 @@ impl<T: Transducer> SpellerWorker<T> {
                 if self.is_under_weight_limit(max_weight, next_node.weight() + transition_weight) {
                     // debug_incr("queue_mutator_arcs push node update");
                     let new_node = next_node.update(
+                        pool,
                         0,
                         Some(next_node.input_state + 1),
                         transition.target().unwrap(),
@@ -367,6 +375,7 @@ impl<T: Transducer> SpellerWorker<T> {
                         ) {
                             // debug_incr("qla unknown qma");
                             output_nodes.append(&mut self.queue_lexicon_arcs(
+                                pool,
                                 max_weight,
                                 &next_node,
                                 nodes,
@@ -382,6 +391,7 @@ impl<T: Transducer> SpellerWorker<T> {
                         ) {
                             // debug_incr("qla identity qma");
                             output_nodes.append(&mut self.queue_lexicon_arcs(
+                                pool,
                                 max_weight,
                                 &next_node,
                                 nodes,
@@ -398,6 +408,7 @@ impl<T: Transducer> SpellerWorker<T> {
 
                 // debug_incr("qla alpha_trans qma");
                 output_nodes.append(&mut self.queue_lexicon_arcs(
+                    pool,
                     max_weight,
                     &next_node,
                     nodes,
@@ -416,7 +427,7 @@ impl<T: Transducer> SpellerWorker<T> {
         // debug!("qma, nodes length: {}", state.nodes.len());
     }
 
-    fn consume_input(&self, max_weight: Weight, next_node: &TreeNode, nodes: &HashSet<TreeNode>) -> Vec<TreeNode> {
+    fn consume_input<'a>(&self, pool: &'a Pool<TreeNode>, max_weight: Weight, next_node: &TreeNode, nodes: &HashSet<TreeNode>) -> Vec<Recycled<'a, TreeNode>> {
         let mutator = self.speller.mutator();
         let input_state = next_node.input_state as usize;
         let mut output_nodes = Vec::new();
@@ -433,25 +444,25 @@ impl<T: Transducer> SpellerWorker<T> {
                 if mutator
                     .has_transitions(next_node.mutator_state + 1, mutator.alphabet().identity())
                 {
-                    output_nodes.append(&mut self.queue_mutator_arcs(max_weight, &next_node, nodes, mutator.alphabet().identity().unwrap()));
+                    output_nodes.append(&mut self.queue_mutator_arcs(pool, max_weight, &next_node, nodes, mutator.alphabet().identity().unwrap()));
                 }
 
                 // Check for unknown transition
                 if mutator
                     .has_transitions(next_node.mutator_state + 1, mutator.alphabet().unknown())
                 {
-                    output_nodes.append(&mut self.queue_mutator_arcs(max_weight, &next_node, nodes, mutator.alphabet().unknown().unwrap()));
+                    output_nodes.append(&mut self.queue_mutator_arcs(pool, max_weight, &next_node, nodes, mutator.alphabet().unknown().unwrap()));
                 }
             }
         } else {
-            output_nodes.append(&mut self.queue_mutator_arcs(max_weight, &next_node, nodes, input_sym));
+            output_nodes.append(&mut self.queue_mutator_arcs(pool, max_weight, &next_node, nodes, input_sym));
         }
 
         // debug!("finish consume input");
         output_nodes
     }
 
-    fn lexicon_consume(&self, max_weight: Weight, next_node: &TreeNode, nodes: &HashSet<TreeNode>) -> Vec<TreeNode> {
+    fn lexicon_consume<'a>(&self, pool: &'a Pool<TreeNode>, max_weight: Weight, next_node: &TreeNode, nodes: &HashSet<TreeNode>) -> Vec<Recycled<'a, TreeNode>> {
         let mutator = self.speller.mutator();
         let lexicon = self.speller.lexicon();
         let alphabet_translator = self.speller.alphabet_translator();
@@ -472,6 +483,7 @@ impl<T: Transducer> SpellerWorker<T> {
                 let identity = mutator.alphabet().identity();
                 if lexicon.has_transitions(next_lexicon_state, identity) {
                     output_nodes.append(&mut self.queue_lexicon_arcs(
+                        pool,
                         max_weight,
                         &next_node,
                         nodes,
@@ -485,6 +497,7 @@ impl<T: Transducer> SpellerWorker<T> {
                 let unknown = mutator.alphabet().unknown();
                 if lexicon.has_transitions(next_lexicon_state, unknown) {
                     output_nodes.append(&mut self.queue_lexicon_arcs(
+                        pool,
                         max_weight,
                         &next_node,
                         nodes,
@@ -499,7 +512,7 @@ impl<T: Transducer> SpellerWorker<T> {
             return output_nodes;
         }
 
-        output_nodes.append(&mut self.queue_lexicon_arcs(max_weight, &next_node, nodes, input_sym, next_node.mutator_state, 0.0, 1));
+        output_nodes.append(&mut self.queue_lexicon_arcs(pool, max_weight, &next_node, nodes, input_sym, next_node.mutator_state, 0.0, 1));
         output_nodes
     }
 
@@ -548,12 +561,13 @@ impl<T: Transducer> SpellerWorker<T> {
 
     pub fn is_correct(&self) -> bool {
         let mut max_weight = speller_max_weight(&self.config);
-        let mut nodes = speller_start_node(self.state_size() as usize);
+        let pool = Pool::with_size(128);
+        let mut nodes = speller_start_node(&pool, self.state_size() as usize);
 
         let mut seen_nodes: HashSet<TreeNode> = HashSet::default();
 
         while let Some(next_node) = nodes.pop() {
-            seen_nodes.insert(next_node.clone());
+            seen_nodes.insert((*next_node).clone());
             
             if next_node.input_state as usize == self.input.len() &&
                 self.speller.lexicon().is_final(next_node.lexicon_state)
@@ -561,8 +575,8 @@ impl<T: Transducer> SpellerWorker<T> {
                 return true;
             }
 
-            nodes.append(&mut self.lexicon_epsilons(max_weight, &next_node, &seen_nodes));
-            nodes.append(&mut self.lexicon_consume(max_weight, &next_node, &seen_nodes));
+            nodes.append(&mut self.lexicon_epsilons(&pool, max_weight, &next_node, &seen_nodes));
+            nodes.append(&mut self.lexicon_consume(&pool, max_weight, &next_node, &seen_nodes));
         }
 
         false
@@ -570,7 +584,8 @@ impl<T: Transducer> SpellerWorker<T> {
 
     pub fn suggest(self: Arc<Self>) -> Vec<Suggestion> {
         let mut max_weight = speller_max_weight(&self.config);
-        let mut nodes = speller_start_node(self.state_size() as usize);
+        let pool = Pool::with_size(1024);
+        let mut nodes = speller_start_node(&pool, self.state_size() as usize);
         let mut corrections = HashMap::new();
         let mut suggestions: Vec<Suggestion> = vec![];
         let mut best_weight = self.config.max_weight.unwrap_or(f32::INFINITY);
@@ -589,7 +604,7 @@ impl<T: Transducer> SpellerWorker<T> {
 
             // writeln!(out, "{:?}", next_node).unwrap();
 
-            seen_nodes.insert(next_node.clone());
+            seen_nodes.insert((*next_node).clone());
             
             max_weight = self.update_weight_limit(best_weight, &suggestions);
 
@@ -597,11 +612,11 @@ impl<T: Transducer> SpellerWorker<T> {
                 continue
             }
             
-            nodes.append(&mut self.lexicon_epsilons(max_weight, &next_node, &seen_nodes));
-            nodes.append(&mut self.mutator_epsilons(max_weight, &next_node, &seen_nodes));
+            nodes.append(&mut self.lexicon_epsilons(&pool, max_weight, &next_node, &seen_nodes));
+            nodes.append(&mut self.mutator_epsilons(&pool, max_weight, &next_node, &seen_nodes));
 
             if next_node.input_state as usize != self.input.len() {
-                nodes.append(&mut self.consume_input(max_weight, &next_node, &seen_nodes));
+                nodes.append(&mut self.consume_input(&pool, max_weight, &next_node, &seen_nodes));
                 continue;
             }
 
@@ -628,8 +643,8 @@ impl<T: Transducer> SpellerWorker<T> {
             let key_table = self.speller.lexicon().alphabet().key_table();
             let string: String = next_node
                 .string
-                .into_iter()
-                .map(|s| &*key_table[s as usize])
+                .iter()
+                .map(|s| &*key_table[*s as usize])
                 .collect();
 
             // writeln!(out, "Selected: {}", &string).unwrap();

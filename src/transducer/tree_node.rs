@@ -1,4 +1,5 @@
 use std::hash::{Hash, Hasher};
+use lifeguard::{Recycled, Pool};
 
 use crate::types::{TransitionTableIndex, SymbolNumber, FlagDiacriticState, FlagDiacriticOperator,
             FlagDiacriticOperation, Weight};
@@ -31,16 +32,51 @@ pub struct TreeNode {
     pub lexicon_state: TransitionTableIndex,
 }
 
-impl TreeNode {
-    pub fn empty(start_state: FlagDiacriticState) -> TreeNode {
+impl lifeguard::Recycleable for TreeNode {
+    fn new() -> Self {
         TreeNode {
             string: Vec::with_capacity(1),
             input_state: 0,
             mutator_state: 0,
             lexicon_state: 0,
-            flag_state: start_state,
+            flag_state: vec![],
             weight: EqWeight(0.0),
         }
+    }
+    
+    fn reset(&mut self) {
+        self.string.truncate(0);
+        self.input_state = 0;
+        self.mutator_state = 0;
+        self.lexicon_state = 0;
+        self.flag_state.truncate(0);
+        self.weight = EqWeight(0.0);
+    }
+}
+
+
+impl lifeguard::InitializeWith<&TreeNode> for TreeNode {
+    fn initialize_with(&mut self, source: &TreeNode) {
+        self.string = source.string.clone();
+        self.input_state = source.input_state;
+        self.mutator_state = source.mutator_state;
+        self.lexicon_state = source.lexicon_state;
+        self.flag_state = source.flag_state.clone();
+        self.weight = source.weight;
+    }
+}
+
+// impl Drop for TreeNode {
+//     fn drop(&mut self) {
+//         println!("DROP");
+//     }
+// }
+
+impl TreeNode {
+    pub fn empty<'a>(pool: &'a Pool<TreeNode>, start_state: FlagDiacriticState) -> Recycled<'a, TreeNode> {
+        let mut node = pool.new();
+        node.flag_state = start_state;
+        node
     }
 
     pub fn weight(&self) -> Weight {
@@ -62,7 +98,7 @@ impl TreeNode {
         self.weight = EqWeight(self.weight.0 + transition.weight().unwrap());
     }
 
-    pub fn update_lexicon(&self, transition: SymbolTransition) -> TreeNode {
+    pub fn update_lexicon<'a>(&self, pool: &'a Pool<TreeNode>, transition: SymbolTransition) -> Recycled<'a, TreeNode> {
         let string = match transition.symbol() {
             Some(value) if value != 0 => {
                 let mut string = Vec::with_capacity(self.string.len() + 1);
@@ -73,35 +109,37 @@ impl TreeNode {
             _ => self.string.clone(),
         };
 
-        TreeNode {
-            string: string,
-            input_state: self.input_state,
-            mutator_state: self.mutator_state,
-            lexicon_state: transition.target().unwrap(),
-            flag_state: self.flag_state.clone(),
-            weight: EqWeight(self.weight.0 + transition.weight().unwrap())
-        }
+        let mut node = pool.new();
+        node.string = string;
+        node.input_state = self.input_state;
+        node.mutator_state = self.mutator_state;
+        node.lexicon_state = transition.target().unwrap();
+        node.flag_state = self.flag_state.clone();
+        node.weight = EqWeight(self.weight.0 + transition.weight().unwrap());
+
+        node
     }
 
-    pub fn update_mutator(&self, transition: SymbolTransition) -> TreeNode {
-        TreeNode {
-            string: self.string.clone(),
-            input_state: self.input_state,
-            mutator_state: transition.target().unwrap(),
-            lexicon_state: self.lexicon_state,
-            flag_state: self.flag_state.clone(),
-            weight: EqWeight(self.weight.0 + transition.weight().unwrap())
-        }
+    pub fn update_mutator<'a>(&self, pool: &'a Pool<TreeNode>, transition: SymbolTransition) -> Recycled<'a, TreeNode> {
+        let mut node = pool.new();
+        node.string = self.string.clone();
+        node.input_state = self.input_state;
+        node.mutator_state = transition.target().unwrap();
+        node.lexicon_state = self.lexicon_state;
+        node.flag_state = self.flag_state.clone();
+        node.weight = EqWeight(self.weight.0 + transition.weight().unwrap());
+        node
     }
 
-    pub fn update(
+    pub fn update<'a>(
         &self,
+        pool: &'a Pool<TreeNode>,
         output_symbol: SymbolNumber,
         next_input: Option<u32>,
         next_mutator: TransitionTableIndex,
         next_lexicon: TransitionTableIndex,
         weight: Weight,
-    ) -> TreeNode {
+    ) -> Recycled<'a, TreeNode> {
         let string = if output_symbol != 0 {
             let mut string = Vec::with_capacity(self.string.len() + 1);
             string.extend(&self.string);
@@ -111,44 +149,44 @@ impl TreeNode {
             self.string.clone()
         };
 
-        let mut node = TreeNode {
-            string: string,
-            input_state: self.input_state,
-            mutator_state: next_mutator,
-            lexicon_state: next_lexicon,
-            flag_state: self.flag_state.clone(),
-            weight: EqWeight(self.weight.0 + weight),
-            ..self.clone()
-        };
+        let mut node = pool.new();
+        node.string = string;
+        node.mutator_state = next_mutator;
+        node.lexicon_state = next_lexicon;
+        node.flag_state = self.flag_state.clone();
+        node.weight = EqWeight(self.weight.0 + weight);
 
         if let Some(input) = next_input {
             node.input_state = input;
+        } else {
+            node.input_state = self.input_state;
         }
 
         node
     }
 
-    fn update_flag(&self, feature: SymbolNumber, value: i16) -> TreeNode {
+    fn update_flag<'a>(&self, pool: &'a Pool<TreeNode>, feature: SymbolNumber, value: i16) -> Recycled<'a, TreeNode> {
         let mut vec = self.flag_state.clone();
 
         vec[feature as usize] = value;
 
-        TreeNode {
-            string: self.string.clone(),
-            input_state: self.input_state,
-            mutator_state: self.mutator_state,
-            lexicon_state: self.lexicon_state,
-            flag_state: vec,
-            weight: self.weight
-        }
+        let mut node = pool.new();
+        node.string = self.string.clone();
+        node.input_state = self.input_state;
+        node.mutator_state = self.mutator_state;
+        node.lexicon_state = self.lexicon_state;
+        node.flag_state = vec;
+        node.weight = self.weight;
+
+        node
     }
 
-    pub fn apply_operation(&self, op: &FlagDiacriticOperation) -> (bool, TreeNode) {
+    pub fn apply_operation<'a>(&self, pool: &'a Pool<TreeNode>, op: &FlagDiacriticOperation) -> (bool, Recycled<'a, TreeNode>) {
         match op.operation {
-            FlagDiacriticOperator::PositiveSet => (true, self.update_flag(op.feature, op.value)),
+            FlagDiacriticOperator::PositiveSet => (true, self.update_flag(pool, op.feature, op.value)),
             FlagDiacriticOperator::NegativeSet => (
                 true,
-                self.update_flag(op.feature, -1 * op.value),
+                self.update_flag(pool, op.feature, -1 * op.value),
             ),
             FlagDiacriticOperator::Require => {
                 let res = if op.value == 0 {
@@ -157,7 +195,7 @@ impl TreeNode {
                     self.flag_state[op.feature as usize] == op.value
                 };
 
-                (res, self.clone())
+                (res, pool.new_from(self))
             }
             FlagDiacriticOperator::Disallow => {
                 let res = if op.value == 0 {
@@ -166,18 +204,18 @@ impl TreeNode {
                     self.flag_state[op.feature as usize] != op.value
                 };
 
-                (res, self.clone())
+                (res, pool.new_from(self))
             }
-            FlagDiacriticOperator::Clear => (true, self.update_flag(op.feature, 0)),
+            FlagDiacriticOperator::Clear => (true, self.update_flag(pool, op.feature, 0)),
             FlagDiacriticOperator::Unification => {
                 // if the feature is unset OR the feature is to this value already OR
                 // the feature is negatively set to something else than this value
                 let f = self.flag_state[op.feature as usize];
 
                 if f == 0 || f == op.value || (f < 0 && f * -1 != op.value) {
-                    (true, self.update_flag(op.feature, op.value))
+                    (true, self.update_flag(pool, op.feature, op.value))
                 } else {
-                    (false, self.clone())
+                    (false, pool.new_from(self))
                 }
             }
         }
