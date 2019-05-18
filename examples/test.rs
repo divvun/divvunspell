@@ -1,18 +1,19 @@
-extern crate hfstospell;
+extern crate divvunspell;
 
 use std::time::{Duration, Instant};
 use std::sync::Arc;
 
-use hfstospell::archive::SpellerArchive;
-use hfstospell::speller::{Speller, SpellerConfig};
-use hfstospell::speller::suggestion::Suggestion;
-use hfstospell::transducer::Transducer;
+use divvunspell::archive::SpellerArchive;
+use divvunspell::speller::{Speller, SpellerConfig};
+use divvunspell::speller::suggestion::Suggestion;
+use divvunspell::transducer::{HfstTransducer};
 
-fn time_suggest(speller: Arc<Speller>, line: &TestLine) {
+fn time_suggest(speller: Arc<Speller<HfstTransducer>>, line: &TestLine) {
     let cfg = SpellerConfig {
         max_weight: Some(100.0),
         n_best: Some(5),
-        beam: None
+        beam: None,
+        with_caps: true
     };
     
     // println!("[!] Test: {}; Expected: {}; Orig. time: {}; Orig. results:\n    {}", line.0, line.1, line.2, line.3.join(", "));
@@ -35,7 +36,7 @@ fn time_suggest(speller: Arc<Speller>, line: &TestLine) {
 type TestLine = (&'static str, &'static str, f32, Vec<&'static str>);
 
 fn main() {
-    // use hfstospell::COUNTER;
+    // use divvunspell::COUNTER;
     // use std::fs::File;
     // use std::io::BufReader;
     // use std::io::prelude::*;
@@ -97,7 +98,8 @@ fn main() {
     let cfg = SpellerConfig {
         max_weight: Some(50.0),
         n_best: None,
-        beam: None
+        beam: None,
+        with_caps: true
     };
 
     // let res: Vec<Vec<Suggestion>> = human_rights.iter().map(|w| speller.suggest(w, &cfg)).collect();
