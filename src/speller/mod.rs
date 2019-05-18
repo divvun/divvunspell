@@ -83,7 +83,7 @@ impl<T: Transducer> Speller<T> {
                 self.clone(),
                 SpellerWorkerMode::Unknown,
                 self.to_input_vec(&word),
-                &SpellerConfig::default()
+                SpellerConfig::default()
             );
 
             if worker.is_correct() {
@@ -103,7 +103,7 @@ impl<T: Transducer> Speller<T> {
             self.clone(),
             SpellerWorkerMode::Correct,
             self.to_input_vec(word),
-            config
+            config.clone()
         );
 
         worker.suggest()
@@ -119,7 +119,7 @@ impl<T: Transducer> Speller<T> {
                 self.clone(),
                 SpellerWorkerMode::Correct,
                 self.to_input_vec(&word),
-                config
+                config.clone()
             );
 
             let suggestions = worker.suggest();
@@ -165,7 +165,7 @@ impl<T: Transducer> Speller<T> {
                 self.clone(),
                 SpellerWorkerMode::Correct,
                 self.to_input_vec(&word),
-                config
+                config.clone()
             );
 
             let suggestions = worker.suggest();

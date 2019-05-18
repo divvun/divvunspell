@@ -31,13 +31,13 @@ impl<T: Transducer> SpellerWorker<T> {
         speller: Arc<Speller<T>>,
         mode: SpellerWorkerMode,
         input: Vec<SymbolNumber>,
-        config: &SpellerConfig
     ) -> Arc<SpellerWorker<T>> {
+        config: SpellerConfig
         Arc::new(SpellerWorker {
             speller: speller,
             input: input,
             mode: mode,
-            config: config.clone()
+            config: config,
         })
     }
 
