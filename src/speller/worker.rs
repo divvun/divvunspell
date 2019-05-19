@@ -116,6 +116,8 @@ impl<T: Transducer> SpellerWorker<T> {
 
                             if !nodes.contains(&applied_node) {
                                 output_nodes.push(applied_node);
+                            } else {
+                                // println!("DUPE");
                             }
                         }
                     }
@@ -561,7 +563,7 @@ impl<T: Transducer> SpellerWorker<T> {
 
     pub fn is_correct(&self) -> bool {
         let mut max_weight = speller_max_weight(&self.config);
-        let pool = Pool::with_size(128);
+        let pool = Pool::with_size_and_max(0, 0);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
 
         let mut seen_nodes: HashSet<TreeNode> = HashSet::default();
@@ -584,7 +586,7 @@ impl<T: Transducer> SpellerWorker<T> {
 
     pub fn suggest(self: Arc<Self>) -> Vec<Suggestion> {
         let mut max_weight = speller_max_weight(&self.config);
-        let pool = Pool::with_size(1024);
+        let pool = Pool::with_size_and_max(self.config.pool_start, self.config.pool_max);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
         let mut corrections = HashMap::new();
         let mut suggestions: Vec<Suggestion> = vec![];
@@ -594,6 +596,7 @@ impl<T: Transducer> SpellerWorker<T> {
         // let mut out = std::fs::File::create("log.txt").unwrap();
 
         let mut seen_nodes: HashSet<TreeNode> = HashSet::default();
+        let mut rando = self.config.seen_node_sample_rate;
         loop {
             let next_node = {
                 match nodes.pop() {
@@ -604,7 +607,13 @@ impl<T: Transducer> SpellerWorker<T> {
 
             // writeln!(out, "{:?}", next_node).unwrap();
 
-            seen_nodes.insert((*next_node).clone());
+            // Every X iterations, store one seen node.
+            if rando == self.config.seen_node_sample_rate {
+                seen_nodes.insert((*next_node).clone());
+                rando = 0;
+            } else {
+                rando += 1;
+            }
             
             max_weight = self.update_weight_limit(best_weight, &suggestions);
 

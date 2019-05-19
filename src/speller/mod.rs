@@ -16,7 +16,10 @@ pub struct SpellerConfig {
     pub n_best: Option<usize>,
     pub max_weight: Option<Weight>,
     pub beam: Option<Weight>,
-    pub with_caps: bool
+    pub with_caps: bool,
+    pub pool_start: usize,
+    pub pool_max: usize,
+    pub seen_node_sample_rate: u8
 }
 
 impl SpellerConfig {
@@ -25,7 +28,10 @@ impl SpellerConfig {
             n_best: None,
             max_weight: None,
             beam: None,
-            with_caps: true
+            with_caps: true,
+            pool_start: 128,
+            pool_max: 128,
+            seen_node_sample_rate: 20
         }
     }
 }

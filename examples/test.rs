@@ -8,13 +8,7 @@ use divvunspell::speller::{Speller, SpellerConfig};
 use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::transducer::{HfstTransducer};
 
-fn time_suggest(speller: Arc<Speller<HfstTransducer>>, line: &TestLine) {
-    let cfg = SpellerConfig {
-        max_weight: Some(100.0),
-        n_best: Some(5),
-        beam: None,
-        with_caps: true
-    };
+fn time_suggest(speller: Arc<Speller<HfstTransducer>>, line: &TestLine, cfg: SpellerConfig) -> String {
     
     // println!("[!] Test: {}; Expected: {}; Orig. time: {}; Orig. results:\n    {}", line.0, line.1, line.2, line.3.join(", "));
 
@@ -30,7 +24,7 @@ fn time_suggest(speller: Arc<Speller<HfstTransducer>>, line: &TestLine) {
     // println!("[>] Actual time: {}.{}; Has expected: {}; Results: {}\n{}\n", 
     //         then.as_secs(), then.subsec_nanos() / 1000000, words.contains(&line.1), words.len(), &out.join("\n"));
 
-    println!("{} -> {}:\n[>] {}, {} -> {}.{}", line.0, line.1, words.contains(&line.1), line.2, then.as_secs(), then.subsec_nanos() / 1000);
+    format!("{} -> {}:\n[>] {}, {} -> {}.{}", line.0, line.1, words.contains(&line.1), line.2, then.as_secs(), then.subsec_nanos() / 1000)
 }
 
 type TestLine = (&'static str, &'static str, f32, Vec<&'static str>);
@@ -94,11 +88,13 @@ fn main() {
     //     "leat", "dego", "vieljačagat"];
 
     // let correct: Vec<bool> = human_rights.iter().map(|w| speller.is_correct(w)).collect();
-    
     let cfg = SpellerConfig {
-        max_weight: Some(50.0),
-        n_best: None,
+        max_weight: Some(100.0),
+        n_best: Some(5),
         beam: None,
+        pool_max: 128,
+        pool_start: 128,
+        seen_node_sample_rate: 20,
         with_caps: true
     };
 
@@ -117,10 +113,17 @@ fn main() {
     // let aligned = SpellerArchive::new("./aligned-test.zhfst").unwrap();
 
     let now = Instant::now();
-    for line in tuples.iter() {
-        time_suggest(unaligned.speller(), &line);
+    for i in 0..50 {
+        let now = Instant::now();
+        for line in tuples.iter() {
+            let mut ncfg = cfg.clone();
+            ncfg.seen_node_sample_rate = i;
+            time_suggest(unaligned.speller(), &line, ncfg);
+        }
+        let then = now.elapsed();
+        println!("{}: {}.{}", i, then.as_secs(), then.subsec_nanos() / 1000);
     }
-    let unaligned_time = now.elapsed();
+    // let unaligned_time = now.elapsed();
 
 
     // let now = Instant::now();

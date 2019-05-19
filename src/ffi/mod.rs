@@ -101,6 +101,9 @@ pub extern fn chfst_suggest(handle: *mut ChfstArchive, raw_word: *mut c_char, n_
         max_weight: if max_weight > 0.0 { Some(max_weight) } else { None },
         n_best: if n_best > 0 { Some(n_best) } else { None },
         beam: if beam > 0.0 { Some(beam) } else { None },
+        pool_max: 128,
+        pool_start: 128,
+        seen_node_sample_rate: 20,
         with_caps: true
     });
 
@@ -147,6 +150,9 @@ pub extern fn speller_suggest(handle: *mut SpellerArchive, raw_word: *mut c_char
         max_weight: if max_weight > 0.0 { Some(max_weight) } else { None },
         n_best: if n_best > 0 { Some(n_best) } else { None },
         beam: if beam > 0.0 { Some(beam) } else { None },
+        pool_max: 128,
+        pool_start: 128,
+        seen_node_sample_rate: 20,
         with_caps: true
     });
 
@@ -164,6 +170,9 @@ pub extern fn speller_suggest_json(handle: *mut SpellerArchive, raw_word: *mut c
         max_weight: if max_weight > 0.0 { Some(max_weight) } else { None },
         n_best: if n_best > 0 { Some(n_best) } else { None },
         beam: if beam > 0.0 { Some(beam) } else { None },
+        pool_max: 128,
+        pool_start: 128,
+        seen_node_sample_rate: 20,
         with_caps: true
     });
 
