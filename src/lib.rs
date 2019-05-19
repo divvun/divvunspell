@@ -1,15 +1,15 @@
 #[macro_use]
 extern crate serde_derive;
-extern crate serde_xml_rs;
+extern crate byteorder;
 extern crate libc;
 extern crate memmap;
-extern crate byteorder;
+extern crate serde_xml_rs;
 extern crate zip;
 
 pub mod archive;
-pub mod ffi;
 pub mod constants;
-pub mod transducer;
-pub mod types;
+pub mod ffi;
 pub mod speller;
 pub mod tokenizer;
+pub mod transducer;
+pub mod types;

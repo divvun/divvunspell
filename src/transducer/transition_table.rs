@@ -4,7 +4,7 @@ use std::fmt;
 use std::io::Cursor;
 use std::ptr;
 use std::sync::Arc;
-use std::{mem, u16, u32, cmp};
+use std::{cmp, mem, u16, u32};
 
 use crate::constants::TRANS_TABLE_SIZE;
 use crate::transducer::symbol_transition::SymbolTransition;
@@ -32,10 +32,13 @@ impl TransitionTable {
             offset,
             len,
         }
-    }    
-    
+    }
+
     pub fn serialize(&self, chunk_size: usize, target_dir: &std::path::Path) -> Result<usize, ()> {
-        eprintln!("size: {}, len: {}, offset: {}", self.size, self.len, self.offset);
+        eprintln!(
+            "size: {}, len: {}, offset: {}",
+            self.size, self.len, self.offset
+        );
 
         if chunk_size % 12 != 0 {
             panic!("Chunk size must be divisible by 12");
@@ -50,15 +53,18 @@ impl TransitionTable {
         // Divide the chunks
         let has_excess = total_bytes % chunk_size != 0;
         let chunk_count = total_bytes / chunk_size + (if has_excess { 1 } else { 0 });
-        eprintln!("Chunk count: {} max index per iter: {} total bytes: {}", chunk_count, max_index_per_iter, total_bytes);
+        eprintln!(
+            "Chunk count: {} max index per iter: {} total bytes: {}",
+            chunk_count, max_index_per_iter, total_bytes
+        );
 
         for i in 1usize..=chunk_count {
             eprintln!("Writing chunk: {}", i);
 
             let filename = format!("transition-{:02}", i - 1);
             let mut file = std::fs::File::create(target_dir.join(filename)).unwrap();
-            
-            let begin = (max_index_per_iter * (i-1usize)) as u32;
+
+            let begin = (max_index_per_iter * (i - 1usize)) as u32;
             let end = cmp::min(max_index_per_iter * i, self.size as usize) as u32;
 
             eprintln!("Chunk {}: {}..{}", i, begin, end);
@@ -72,7 +78,8 @@ impl TransitionTable {
                 file.write_u16::<LittleEndian>(input_symbol).unwrap();
                 file.write_u16::<LittleEndian>(output_symbol).unwrap();
                 file.write_u32::<LittleEndian>(target).unwrap();
-                file.write_u32::<LittleEndian>(unsafe { std::mem::transmute::<f32, u32>(weight) }).unwrap();
+                file.write_u32::<LittleEndian>(unsafe { std::mem::transmute::<f32, u32>(weight) })
+                    .unwrap();
             }
         }
 
@@ -129,7 +136,8 @@ impl TransitionTable {
         let index =
             self.offset + ((TRANS_TABLE_SIZE * i as usize) + (2 * mem::size_of::<SymbolNumber>()));
 
-        let x: TransitionTableIndex = if cfg!(all(target_arch = "arm", target_pointer_width = "32")) {
+        let x: TransitionTableIndex = if cfg!(all(target_arch = "arm", target_pointer_width = "32"))
+        {
             let mut cursor = self.make_cursor();
             cursor.set_position(index as u64);
             cursor.read_u32::<LittleEndian>().unwrap()
@@ -149,7 +157,9 @@ impl TransitionTable {
         }
 
         let index = self.offset
-            + ((TRANS_TABLE_SIZE * i as usize) + (2 * mem::size_of::<SymbolNumber>()) + mem::size_of::<TransitionTableIndex>());
+            + ((TRANS_TABLE_SIZE * i as usize)
+                + (2 * mem::size_of::<SymbolNumber>())
+                + mem::size_of::<TransitionTableIndex>());
 
         let x: Weight = if cfg!(all(target_arch = "arm", target_pointer_width = "32")) {
             let mut cursor = self.make_cursor();

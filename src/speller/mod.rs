@@ -5,10 +5,10 @@ use hashbrown::HashMap;
 use std::f32;
 use std::sync::Arc;
 
-use crate::transducer::Transducer;
-use crate::speller::suggestion::Suggestion;
-use crate::types::{SymbolNumber, Weight, SpellerWorkerMode};
 use self::worker::SpellerWorker;
+use crate::speller::suggestion::Suggestion;
+use crate::transducer::Transducer;
+use crate::types::{SpellerWorkerMode, SymbolNumber, Weight};
 
 #[derive(Clone, Debug)]
 pub struct SpellerConfig {
@@ -18,7 +18,7 @@ pub struct SpellerConfig {
     pub with_caps: bool,
     pub pool_start: usize,
     pub pool_max: usize,
-    pub seen_node_sample_rate: u8
+    pub seen_node_sample_rate: u8,
 }
 
 impl SpellerConfig {
@@ -30,7 +30,7 @@ impl SpellerConfig {
             with_caps: true,
             pool_start: 128,
             pool_max: 128,
-            seen_node_sample_rate: 20
+            seen_node_sample_rate: 20,
         }
     }
 }
@@ -64,7 +64,7 @@ impl<T: Transducer> Speller<T> {
     fn alphabet_translator(&self) -> &Vec<SymbolNumber> {
         &self.alphabet_translator
     }
-    
+
     fn to_input_vec(&self, word: &str) -> Vec<SymbolNumber> {
         let key_table = self.mutator().alphabet().key_table();
 
@@ -87,7 +87,7 @@ impl<T: Transducer> Speller<T> {
                 self.clone(),
                 SpellerWorkerMode::Unknown,
                 self.to_input_vec(&word),
-                SpellerConfig::default()
+                SpellerConfig::default(),
             );
 
             if worker.is_correct() {
@@ -107,13 +107,18 @@ impl<T: Transducer> Speller<T> {
             self.clone(),
             SpellerWorkerMode::Correct,
             self.to_input_vec(word),
-            config.clone()
+            config.clone(),
         );
 
         worker.suggest()
     }
 
-    fn suggest_caps_merging(self: Arc<Self>, ref_word: &str, words: Vec<String>, config: &SpellerConfig) -> Vec<Suggestion> {
+    fn suggest_caps_merging(
+        self: Arc<Self>,
+        ref_word: &str,
+        words: Vec<String>,
+        config: &SpellerConfig,
+    ) -> Vec<Suggestion> {
         use crate::tokenizer::caps::*;
 
         let mut best: HashMap<String, f32> = HashMap::new();
@@ -123,37 +128,51 @@ impl<T: Transducer> Speller<T> {
                 self.clone(),
                 SpellerWorkerMode::Correct,
                 self.to_input_vec(&word),
-                config.clone()
+                config.clone(),
             );
 
             let suggestions = worker.suggest();
-            
+
             if suggestions.len() > 0 {
                 let r = if is_all_caps(ref_word) {
-                    suggestions.into_iter().map(|mut x| {
-                        x.value = upper_case(x.value());
-                        x
-                    }).collect()
+                    suggestions
+                        .into_iter()
+                        .map(|mut x| {
+                            x.value = upper_case(x.value());
+                            x
+                        })
+                        .collect()
                 } else if is_first_caps(ref_word) {
-                    suggestions.into_iter().map(|mut x| {
-                        x.value = upper_first(x.value());
-                        x
-                    }).collect()
+                    suggestions
+                        .into_iter()
+                        .map(|mut x| {
+                            x.value = upper_first(x.value());
+                            x
+                        })
+                        .collect()
                 } else {
                     suggestions
                 };
 
                 for sugg in r.into_iter() {
-                    best.entry(sugg.value.to_string()).and_modify(|entry| {
-                        if entry as &_ > &sugg.weight {
-                            *entry = sugg.weight
-                        }
-                    }).or_insert(sugg.weight);
+                    best.entry(sugg.value.to_string())
+                        .and_modify(|entry| {
+                            if entry as &_ > &sugg.weight {
+                                *entry = sugg.weight
+                            }
+                        })
+                        .or_insert(sugg.weight);
                 }
             }
         }
 
-        let mut out = best.into_iter().map(|(k, v)| Suggestion { value: k, weight: v }).collect::<Vec<_>>();
+        let mut out = best
+            .into_iter()
+            .map(|(k, v)| Suggestion {
+                value: k,
+                weight: v,
+            })
+            .collect::<Vec<_>>();
         out.sort();
         if let Some(n_best) = config.n_best {
             out.truncate(n_best);
@@ -161,7 +180,12 @@ impl<T: Transducer> Speller<T> {
         out
     }
 
-    fn suggest_caps(self: Arc<Self>, ref_word: &str, words: Vec<String>, config: &SpellerConfig) -> Vec<Suggestion> {
+    fn suggest_caps(
+        self: Arc<Self>,
+        ref_word: &str,
+        words: Vec<String>,
+        config: &SpellerConfig,
+    ) -> Vec<Suggestion> {
         use crate::tokenizer::caps::*;
 
         for word in words.into_iter() {
@@ -169,22 +193,28 @@ impl<T: Transducer> Speller<T> {
                 self.clone(),
                 SpellerWorkerMode::Correct,
                 self.to_input_vec(&word),
-                config.clone()
+                config.clone(),
             );
 
             let suggestions = worker.suggest();
-            
+
             if suggestions.len() > 0 {
                 if is_all_caps(ref_word) {
-                    return suggestions.into_iter().map(|mut x| {
-                        x.value = upper_case(x.value());
-                        x
-                    }).collect();
+                    return suggestions
+                        .into_iter()
+                        .map(|mut x| {
+                            x.value = upper_case(x.value());
+                            x
+                        })
+                        .collect();
                 } else if is_first_caps(ref_word) {
-                    return suggestions.into_iter().map(|mut x| {
-                        x.value = upper_first(x.value());
-                        x
-                    }).collect();
+                    return suggestions
+                        .into_iter()
+                        .map(|mut x| {
+                            x.value = upper_first(x.value());
+                            x
+                        })
+                        .collect();
                 }
 
                 return suggestions;
@@ -194,7 +224,11 @@ impl<T: Transducer> Speller<T> {
         vec![]
     }
 
-    pub fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
+    pub fn suggest_with_config(
+        self: Arc<Self>,
+        word: &str,
+        config: &SpellerConfig,
+    ) -> Vec<Suggestion> {
         use crate::tokenizer::caps::*;
 
         if config.with_caps {

@@ -1,38 +1,39 @@
+use std::fs::File;
 use std::mem;
 use std::ptr;
-use std::fs::File;
 use std::{u16, u32};
 
-use crate::constants::{TARGET_TABLE};
-use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
+use crate::constants::TARGET_TABLE;
 use crate::transducer::symbol_transition::SymbolTransition;
+use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use memmap::Mmap;
-use serde_derive::{Serialize, Deserialize};
+use serde_derive::{Deserialize, Serialize};
 
 mod alphabet;
 
-use crate::transducer::Transducer;
 use self::alphabet::TransducerAlphabetParser;
 use super::TransducerAlphabet;
+use crate::transducer::Transducer;
 
 #[repr(C)]
 pub union WeightOrTarget {
     target: u32,
-    weight: f32
+    weight: f32,
 }
 
 #[repr(C)]
 pub struct IndexTableRecord {
     input_symbol: u16,
-    #[doc(hidden)] __padding: u16,
-    weight_or_target: WeightOrTarget
+    #[doc(hidden)]
+    __padding: u16,
+    weight_or_target: WeightOrTarget,
 }
 
 #[repr(C)]
 pub struct TransitionTableRecord {
     input_symbol: u16,
     output_symbol: u16,
-    weight_or_target: WeightOrTarget
+    weight_or_target: WeightOrTarget,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -40,13 +41,13 @@ pub struct MetaRecord {
     pub index_table_count: usize,
     pub transition_table_count: usize,
     pub chunk_size: usize,
-    pub raw_alphabet: Vec<String>
+    pub raw_alphabet: Vec<String>,
 }
 
 impl MetaRecord {
     pub fn serialize(&self, target_dir: &std::path::Path) {
         use std::io::Write;
-        
+
         let s = serde_json::to_string_pretty(self).unwrap();
         let mut f = std::fs::File::create(target_dir.join("meta")).unwrap();
         writeln!(f, "{}", s).unwrap();
@@ -55,7 +56,7 @@ impl MetaRecord {
 
 struct IndexTable {
     buf: Mmap,
-    size: u32
+    size: u32,
 }
 
 const INDEX_TABLE_SIZE: usize = 8;
@@ -75,9 +76,8 @@ impl IndexTable {
 
         let index = INDEX_TABLE_SIZE * i as usize;
 
-        let input_symbol: SymbolNumber = unsafe {
-            ptr::read(self.buf.as_ptr().offset(index as isize) as *const _)
-        };
+        let input_symbol: SymbolNumber =
+            unsafe { ptr::read(self.buf.as_ptr().offset(index as isize) as *const _) };
 
         if input_symbol == u16::MAX {
             None
@@ -92,9 +92,8 @@ impl IndexTable {
         }
 
         let index = (INDEX_TABLE_SIZE * i as usize) + 4;
-        let target: TransitionTableIndex = unsafe {
-            ptr::read(self.buf.as_ptr().offset(index as isize) as *const _)
-        };
+        let target: TransitionTableIndex =
+            unsafe { ptr::read(self.buf.as_ptr().offset(index as isize) as *const _) };
 
         if target == u32::MAX {
             None
@@ -111,9 +110,8 @@ impl IndexTable {
         }
 
         let index = (INDEX_TABLE_SIZE * i as usize) + 4;
-        let weight: Weight = unsafe {
-            ptr::read(self.buf.as_ptr().offset(index as isize) as *const _)
-        };
+        let weight: Weight =
+            unsafe { ptr::read(self.buf.as_ptr().offset(index as isize) as *const _) };
 
         Some(weight)
     }
@@ -125,7 +123,7 @@ impl IndexTable {
 
 struct TransitionTable {
     buf: Mmap,
-    size: u32
+    size: u32,
 }
 
 const TRANS_TABLE_SIZE: usize = 12;
@@ -174,9 +172,8 @@ impl TransitionTable {
 
         let index = (TRANS_TABLE_SIZE * i as usize) + (2 * mem::size_of::<SymbolNumber>());
 
-        let x: TransitionTableIndex = unsafe {
-            ptr::read(self.buf.as_ptr().offset(index as isize) as *const _)
-        };
+        let x: TransitionTableIndex =
+            unsafe { ptr::read(self.buf.as_ptr().offset(index as isize) as *const _) };
         if x == u32::MAX {
             None
         } else {
@@ -191,9 +188,7 @@ impl TransitionTable {
 
         let index = (TRANS_TABLE_SIZE * i as usize) + 8;
 
-        let x: Weight = unsafe { 
-            ptr::read(self.buf.as_ptr().offset(index as isize) as *const _)
-        };
+        let x: Weight = unsafe { ptr::read(self.buf.as_ptr().offset(index as isize) as *const _) };
 
         Some(x)
     }
@@ -213,23 +208,29 @@ pub struct ChfstTransducer {
     indexes_per_chunk: u32,
     transition_tables: Vec<TransitionTable>,
     transitions_per_chunk: u32,
-    alphabet: TransducerAlphabet
+    alphabet: TransducerAlphabet,
 }
 
 impl ChfstTransducer {
     pub fn from_path(path: &std::path::Path) -> Result<Self, std::io::Error> {
         // Load meta
         let meta_file = File::open(path.join("meta")).map_err(|_| {
-            std::io::Error::new(std::io::ErrorKind::NotFound, "meta not found in transducer path")
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "meta not found in transducer path",
+            )
         })?;
         let meta: MetaRecord = serde_json::from_reader(meta_file)?;
-        
+
         let mut index_tables = vec![];
         for i in 0..meta.index_table_count {
             let filename = format!("index-{:02}", i);
             let fpath = path.join(&filename);
             let index_table = IndexTable::from_path(&fpath).map_err(|_| {
-                std::io::Error::new(std::io::ErrorKind::NotFound, &*format!("{} not found in transducer path", &filename))
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    &*format!("{} not found in transducer path", &filename),
+                )
             })?;
             index_tables.push(index_table);
         }
@@ -241,7 +242,10 @@ impl ChfstTransducer {
             let filename = format!("transition-{:02}", i);
             let fpath = path.join(&filename);
             let transition_table = TransitionTable::from_path(&fpath).map_err(|_| {
-                std::io::Error::new(std::io::ErrorKind::NotFound, &*format!("{} not found in transducer path", &filename))
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    &*format!("{} not found in transducer path", &filename),
+                )
             })?;
             transition_tables.push(transition_table);
         }
@@ -256,7 +260,7 @@ impl ChfstTransducer {
             indexes_per_chunk,
             transition_tables,
             transitions_per_chunk,
-            alphabet
+            alphabet,
         })
     }
 
@@ -312,9 +316,9 @@ impl Transducer for ChfstTransducer {
     fn has_transitions(&self, i: TransitionTableIndex, s: Option<SymbolNumber>) -> bool {
         let sym = match s {
             Some(v) => v,
-            None => return false
+            None => return false,
         };
-        
+
         if i >= TARGET_TABLE {
             let (page, index) = self.transition_rel_index(i - TARGET_TABLE);
             match self.transition_tables[page].input_symbol(index) {
@@ -349,7 +353,7 @@ impl Transducer for ChfstTransducer {
 
     fn take_epsilons(&self, i: TransitionTableIndex) -> Option<SymbolTransition> {
         let (page, index) = self.transition_rel_index(i);
-        
+
         if let Some(0) = self.transition_tables[page].input_symbol(index) {
             Some(self.transition_tables[page].symbol_transition(index))
         } else {
@@ -388,16 +392,12 @@ impl Transducer for ChfstTransducer {
         }
     }
 
-    fn next(
-        &self,
-        i: TransitionTableIndex,
-        symbol: SymbolNumber,
-    ) -> Option<TransitionTableIndex> {
+    fn next(&self, i: TransitionTableIndex, symbol: SymbolNumber) -> Option<TransitionTableIndex> {
         if i >= TARGET_TABLE {
             Some(i - TARGET_TABLE + 1)
         } else {
             let (page, index) = self.index_rel_index(i + 1 + symbol as u32);
-            
+
             if let Some(v) = self.index_tables[page].target(index) {
                 Some(v - TARGET_TABLE)
             } else {
@@ -412,7 +412,7 @@ use std::sync::Arc;
 
 pub struct ChfstBundle {
     pub lexicon: ChfstTransducer,
-    pub mutator: ChfstTransducer
+    pub mutator: ChfstTransducer,
 }
 
 impl ChfstBundle {

@@ -1,21 +1,28 @@
 fn trim_start(alphabet: &Vec<String>, word: &str) -> String {
-    word.trim_start_matches(|x: char| !alphabet.contains(&x.to_string())).to_string()
+    word.trim_start_matches(|x: char| !alphabet.contains(&x.to_string()))
+        .to_string()
 }
 
 fn trim_end(alphabet: &Vec<String>, word: &str) -> String {
-    word.trim_end_matches(|x: char| !alphabet.contains(&x.to_string())).to_string()
+    word.trim_end_matches(|x: char| !alphabet.contains(&x.to_string()))
+        .to_string()
 }
 
 fn trim_both(alphabet: &Vec<String>, word: &str) -> String {
-    word.trim_matches(|x: char| !alphabet.contains(&x.to_string())).to_string()
+    word.trim_matches(|x: char| !alphabet.contains(&x.to_string()))
+        .to_string()
 }
 
 pub fn lower_case(s: &str) -> String {
-    s.chars().map(|c| c.to_lowercase().collect::<String>()).collect::<String>()
+    s.chars()
+        .map(|c| c.to_lowercase().collect::<String>())
+        .collect::<String>()
 }
 
 pub fn upper_case(s: &str) -> String {
-    s.chars().map(|c| c.to_uppercase().collect::<String>()).collect::<String>()
+    s.chars()
+        .map(|c| c.to_uppercase().collect::<String>())
+        .collect::<String>()
 }
 
 pub fn upper_first(s: &str) -> String {
@@ -27,15 +34,15 @@ pub fn upper_first(s: &str) -> String {
 }
 
 static PUNCTUATION: &'static [&'static str] = &[
-    "!", "\"", "#", "$", "%", "&", "'", "(", ")", "*", "+", 
-    ",", "-", ".", "/", ":", ";", "<", "=", ">", "?", 
-    "@", "[", "\\", "]", "^", "_", "`", "{", "|", "}", "~"
+    "!", "\"", "#", "$", "%", "&", "'", "(", ")", "*", "+", ",", "-", ".", "/", ":", ";", "<", "=",
+    ">", "?", "@", "[", "\\", "]", "^", "_", "`", "{", "|", "}", "~",
 ];
 
 fn without_punctuation(alphabet: &Vec<String>) -> Vec<String> {
-    let x = alphabet.iter().filter(|x| {
-        !PUNCTUATION.contains(&x.as_str())
-    }).map(|x| x.to_owned());
+    let x = alphabet
+        .iter()
+        .filter(|x| !PUNCTUATION.contains(&x.as_str()))
+        .map(|x| x.to_owned());
     x.collect::<Vec<_>>()
 }
 
@@ -46,10 +53,16 @@ pub fn word_variants(alphabet: &Vec<String>, word: &str) -> Vec<String> {
         word.to_string(),
         trim_start(&alphabet, word),
         trim_end(&alphabet, word),
-        trim_both(&alphabet, word)
+        trim_both(&alphabet, word),
     ];
 
-    base.append(&mut base.iter().filter(|x| is_all_caps(x)).map(|x| upper_first(&lower_case(x))).collect());
+    base.append(
+        &mut base
+            .iter()
+            .filter(|x| is_all_caps(x))
+            .map(|x| upper_first(&lower_case(x)))
+            .collect(),
+    );
     base.append(&mut base.iter().map(|x| lower_case(x)).collect());
 
     let mut ret = vec![];
@@ -77,7 +90,8 @@ mod tests {
 
     #[test]
     fn testsd() {
-        let a = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ".chars()
+        let a = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            .chars()
             .map(|c| c.to_string())
             .collect::<Vec<String>>();
         println!("{:?}", word_variants(&a, "FOO"));

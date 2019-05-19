@@ -2,12 +2,12 @@
 
 use std::io::{self, Read};
 
-use clap::{Arg, App, AppSettings, SubCommand};
+use clap::{App, AppSettings, Arg, SubCommand};
 use hashbrown::HashMap;
 
 use divvunspell::archive::SpellerArchive;
-use divvunspell::speller::{Speller, SpellerConfig};
 use divvunspell::speller::suggestion::Suggestion;
+use divvunspell::speller::{Speller, SpellerConfig};
 use divvunspell::tokenizer::Tokenize;
 use divvunspell::transducer::chunk::ChfstBundle;
 
@@ -23,7 +23,11 @@ struct StdoutWriter;
 
 impl OutputWriter for StdoutWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool) {
-        println!("Input: {}\t\t[{}]", &word, if is_correct { "CORRECT" } else { "INCORRECT" });
+        println!(
+            "Input: {}\t\t[{}]",
+            &word,
+            if is_correct { "CORRECT" } else { "INCORRECT" }
+        );
     }
 
     fn write_suggestions(&mut self, word: &str, suggestions: &[Suggestion]) {
@@ -40,13 +44,13 @@ impl OutputWriter for StdoutWriter {
 struct SuggestionRequest {
     word: String,
     is_correct: bool,
-    suggestions: Vec<Suggestion>
+    suggestions: Vec<Suggestion>,
 }
 
 #[derive(Serialize)]
-#[serde(rename_all="camelCase")]
+#[serde(rename_all = "camelCase")]
 struct JsonWriter {
-    results: Vec<SuggestionRequest>
+    results: Vec<SuggestionRequest>,
 }
 
 impl JsonWriter {
@@ -60,7 +64,7 @@ impl OutputWriter for JsonWriter {
         self.results.push(SuggestionRequest {
             word: word.to_owned(),
             is_correct,
-            suggestions: vec![]
+            suggestions: vec![],
         });
     }
 
@@ -80,53 +84,72 @@ fn main() {
         .version(env!("CARGO_PKG_VERSION"))
         .author("Brendan Molloy <brendan@bbqsrc.net>")
         .about("Testing frontend for the DivvunSpell library")
-        .arg(Arg::with_name("zhfst")
-            .short("z")
-            .long("zhfst")
-            .value_name("ZHFST")
-            // .required(true)
-            .help("Use the given ZHFST file")
-            .takes_value(true))
-        .arg(Arg::with_name("chfst")
-            .short("c")
-            .long("chfst")
-            .value_name("CHFST")
-            .help("Use the given CHFST bundle")
-            .takes_value(true))
-        .arg(Arg::with_name("suggest")
-            .short("s")
-            .long("suggest")
-            .help("Show suggestions for given word(s)"))
-        .arg(Arg::with_name("always-suggest")
-            .short("S")
-            .long("always-suggest")
-            .help("Always show suggestions even if word is correct (implies -s)"))
-        .arg(Arg::with_name("weight")
-            .short("w")
-            .long("weight")
-            .requires("suggest")
-            .takes_value(true)
-            .help("Maximum weight limit for suggestions"))
-        .arg(Arg::with_name("nbest")
-            .short("n")
-            .long("nbest")
-            .requires("suggest")
-            .takes_value(true)
-            .help("Maximum number of results for suggestions"))
-        .arg(Arg::with_name("json")
-            .long("json")
-            .help("Output results in JSON"))
-        .arg(Arg::with_name("WORDS")
-            .multiple(true)
-            .help("The words to be processed"))
-        .subcommand(SubCommand::with_name("chunk")
-            .arg(Arg::with_name("zhfst")
-            .short("z")
-            .long("zhfst")
-            .value_name("ZHFST")
-            .required(true)
-            .help("Use the given ZHFST file")
-            .takes_value(true)))
+        .arg(
+            Arg::with_name("zhfst")
+                .short("z")
+                .long("zhfst")
+                .value_name("ZHFST")
+                // .required(true)
+                .help("Use the given ZHFST file")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("chfst")
+                .short("c")
+                .long("chfst")
+                .value_name("CHFST")
+                .help("Use the given CHFST bundle")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("suggest")
+                .short("s")
+                .long("suggest")
+                .help("Show suggestions for given word(s)"),
+        )
+        .arg(
+            Arg::with_name("always-suggest")
+                .short("S")
+                .long("always-suggest")
+                .help("Always show suggestions even if word is correct (implies -s)"),
+        )
+        .arg(
+            Arg::with_name("weight")
+                .short("w")
+                .long("weight")
+                .requires("suggest")
+                .takes_value(true)
+                .help("Maximum weight limit for suggestions"),
+        )
+        .arg(
+            Arg::with_name("nbest")
+                .short("n")
+                .long("nbest")
+                .requires("suggest")
+                .takes_value(true)
+                .help("Maximum number of results for suggestions"),
+        )
+        .arg(
+            Arg::with_name("json")
+                .long("json")
+                .help("Output results in JSON"),
+        )
+        .arg(
+            Arg::with_name("WORDS")
+                .multiple(true)
+                .help("The words to be processed"),
+        )
+        .subcommand(
+            SubCommand::with_name("chunk").arg(
+                Arg::with_name("zhfst")
+                    .short("z")
+                    .long("zhfst")
+                    .value_name("ZHFST")
+                    .required(true)
+                    .help("Use the given ZHFST file")
+                    .takes_value(true),
+            ),
+        )
         .get_matches();
 
     if let Some(ref matches) = matches.subcommand_matches("chunk") {
@@ -150,10 +173,14 @@ fn main() {
         let chunk_size: usize = 24 * 1024 * 1024;
 
         eprintln!("Serializing lexicon...");
-        lexicon.serialize(chunk_size, &target_dir.join("lexicon")).unwrap();
+        lexicon
+            .serialize(chunk_size, &target_dir.join("lexicon"))
+            .unwrap();
 
         eprintln!("Serializing mutator...");
-        mutator.serialize(chunk_size, &target_dir.join("mutator")).unwrap();
+        mutator
+            .serialize(chunk_size, &target_dir.join("mutator"))
+            .unwrap();
 
         return;
     }
@@ -162,19 +189,25 @@ fn main() {
     let is_suggesting = matches.is_present("suggest") || is_always_suggesting;
     let is_json = matches.is_present("json");
 
-    let n_best = matches.value_of("nbest").and_then(|v| v.parse::<usize>().ok());
-    let max_weight = matches.value_of("weight").and_then(|v| v.parse::<f32>().ok());
+    let n_best = matches
+        .value_of("nbest")
+        .and_then(|v| v.parse::<usize>().ok());
+    let max_weight = matches
+        .value_of("weight")
+        .and_then(|v| v.parse::<f32>().ok());
 
     let words: Vec<String> = match matches.values_of("WORDS") {
         Some(v) => v.map(|x| x.to_string()).collect(),
         None => {
             eprintln!("Reading from stdin...");
             let mut buffer = String::new();
-            io::stdin().read_to_string(&mut buffer).expect("reading stdin");
+            io::stdin()
+                .read_to_string(&mut buffer)
+                .expect("reading stdin");
             buffer.words().map(|x| x.to_string()).collect()
         }
     };
-    
+
     let mut writer: Box<OutputWriter> = if is_json {
         Box::new(JsonWriter::new())
     } else {
@@ -185,7 +218,7 @@ fn main() {
         max_weight,
         n_best,
         beam: None,
-        with_caps: true
+        with_caps: true,
     };
 
     if let Some(zhfst_file) = matches.value_of("zhfst") {
@@ -218,7 +251,7 @@ fn main() {
         };
 
         let speller = bundle.speller();
-        
+
         for word in words {
             let is_correct = speller.clone().is_correct(&word);
             writer.write_correction(&word, is_correct);

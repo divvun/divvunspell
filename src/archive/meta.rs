@@ -1,4 +1,4 @@
-use serde_xml_rs::{ParserConfig, from_reader, Error};
+use serde_xml_rs::{from_reader, Error, ParserConfig};
 
 #[derive(Deserialize, Debug)]
 pub struct SpellerMetadata {
@@ -7,12 +7,11 @@ pub struct SpellerMetadata {
     pub errmodel: SpellerMetadataErrmodel,
 }
 
-
 #[derive(Deserialize, Debug)]
 pub struct SpellerTitle {
     pub lang: Option<String>,
     #[serde(rename = "$value")]
-    pub value: String
+    pub value: String,
 }
 
 #[derive(Deserialize, Debug)]

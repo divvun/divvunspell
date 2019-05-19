@@ -1,4 +1,4 @@
-use crate::types::{TransitionTableIndex, SymbolNumber, Weight};
+use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 
 #[derive(Debug, Clone)]
 pub struct SymbolTransition {

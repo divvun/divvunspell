@@ -24,7 +24,7 @@ mod tests {
     #[test]
     fn basic() {
         let msg = "this is an ordinary sentence! \"This was quoted,\", an emoji: (😄), and\t a tab was there and a new line.\n Some extreme unicode; bismala: (﷽), in long form: بِسْمِ اللهِ الرَّحْمٰنِ الرَّحِيْمِ.";
-        msg.word_bound_indices().for_each(|t| { println!("{:?}", t) });
+        msg.word_bound_indices().for_each(|t| println!("{:?}", t));
         println!("{}", &msg);
     }
 }

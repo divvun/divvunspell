@@ -1,7 +1,7 @@
+use crate::types::Weight;
+use serde_derive::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::cmp::Ordering::Equal;
-use crate::types::Weight;
-use serde_derive::{Serialize, Deserialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Suggestion {
@@ -34,13 +34,10 @@ impl PartialOrd for Suggestion {
 
 impl Ord for Suggestion {
     fn cmp(&self, other: &Self) -> Ordering {
-        let x = self
-            .weight
-            .partial_cmp(&other.weight)
-            .unwrap_or(Equal);
+        let x = self.weight.partial_cmp(&other.weight).unwrap_or(Equal);
 
         if let Equal = x {
-            return self.value.cmp(&other.value)
+            return self.value.cmp(&other.value);
         }
 
         x

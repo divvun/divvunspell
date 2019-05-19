@@ -1,6 +1,6 @@
-use crate::types::{SymbolNumber, ValueNumber, FlagDiacriticOperator, FlagDiacriticOperation};
-use hashbrown::HashMap;
 use super::TransducerAlphabet;
+use crate::types::{FlagDiacriticOperation, FlagDiacriticOperator, SymbolNumber, ValueNumber};
+use hashbrown::HashMap;
 
 type OperationsMap = HashMap<SymbolNumber, FlagDiacriticOperation>;
 

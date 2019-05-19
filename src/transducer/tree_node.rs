@@ -1,9 +1,11 @@
+use lifeguard::{Pool, Recycled};
 use std::hash::{Hash, Hasher};
-use lifeguard::{Recycled, Pool};
 
-use crate::types::{TransitionTableIndex, SymbolNumber, FlagDiacriticState, FlagDiacriticOperator,
-            FlagDiacriticOperation, Weight};
 use super::symbol_transition::SymbolTransition;
+use crate::types::{
+    FlagDiacriticOperation, FlagDiacriticOperator, FlagDiacriticState, SymbolNumber,
+    TransitionTableIndex, Weight,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct EqWeight(pub Weight);
@@ -37,10 +39,10 @@ impl std::cmp::PartialEq for TreeNode {
     // The idea is that the seen_nodes hashset has to do a lot less work, and even if we miss a bunch,
     // memory pressure is significantly lowers
     fn eq(&self, other: &TreeNode) -> bool {
-        self.lexicon_state == other.lexicon_state &&
-            self.mutator_state == other.mutator_state &&
-            self.input_state == other.input_state &&
-            self.string == other.string
+        self.lexicon_state == other.lexicon_state
+            && self.mutator_state == other.mutator_state
+            && self.input_state == other.input_state
+            && self.string == other.string
     }
 }
 
@@ -64,13 +66,12 @@ impl lifeguard::Recycleable for TreeNode {
             weight: EqWeight(0.0),
         }
     }
-    
+
     fn reset(&mut self) {
         // There is nothing done to reset it.
         // Implementers must reset any fields where used!
     }
 }
-
 
 impl lifeguard::InitializeWith<&TreeNode> for TreeNode {
     fn initialize_with(&mut self, source: &TreeNode) {
@@ -86,14 +87,17 @@ impl lifeguard::InitializeWith<&TreeNode> for TreeNode {
 }
 
 impl TreeNode {
-    pub fn empty<'a>(pool: &'a Pool<TreeNode>, start_state: FlagDiacriticState) -> Recycled<'a, TreeNode> {
+    pub fn empty<'a>(
+        pool: &'a Pool<TreeNode>,
+        start_state: FlagDiacriticState,
+    ) -> Recycled<'a, TreeNode> {
         pool.attach(TreeNode {
             string: vec![],
             input_state: 0,
             mutator_state: 0,
             lexicon_state: 0,
             flag_state: start_state,
-            weight: EqWeight(0.0)
+            weight: EqWeight(0.0),
         })
     }
 
@@ -116,7 +120,11 @@ impl TreeNode {
         self.weight = EqWeight(self.weight.0 + transition.weight().unwrap());
     }
 
-    pub fn update_lexicon<'a>(&self, pool: &'a Pool<TreeNode>, transition: SymbolTransition) -> Recycled<'a, TreeNode> {
+    pub fn update_lexicon<'a>(
+        &self,
+        pool: &'a Pool<TreeNode>,
+        transition: SymbolTransition,
+    ) -> Recycled<'a, TreeNode> {
         let mut node = pool.new();
         node.string.truncate(0);
         node.string.extend(&self.string);
@@ -125,7 +133,7 @@ impl TreeNode {
             Some(value) if value != 0 => {
                 node.string.push(value);
             }
-            _ => {},
+            _ => {}
         }
 
         node.input_state = self.input_state;
@@ -138,7 +146,11 @@ impl TreeNode {
         node
     }
 
-    pub fn update_mutator<'a>(&self, pool: &'a Pool<TreeNode>, transition: SymbolTransition) -> Recycled<'a, TreeNode> {
+    pub fn update_mutator<'a>(
+        &self,
+        pool: &'a Pool<TreeNode>,
+        transition: SymbolTransition,
+    ) -> Recycled<'a, TreeNode> {
         let mut node = pool.new();
         node.string.truncate(0);
         node.string.extend(&self.string);
@@ -183,7 +195,12 @@ impl TreeNode {
         node
     }
 
-    fn update_flag<'a>(&self, pool: &'a Pool<TreeNode>, feature: SymbolNumber, value: i16) -> Recycled<'a, TreeNode> {
+    fn update_flag<'a>(
+        &self,
+        pool: &'a Pool<TreeNode>,
+        feature: SymbolNumber,
+        value: i16,
+    ) -> Recycled<'a, TreeNode> {
         let mut node = pool.new();
         node.string.truncate(0);
         node.string.extend(&self.string);
@@ -200,13 +217,18 @@ impl TreeNode {
         node
     }
 
-    pub fn apply_operation<'a>(&self, pool: &'a Pool<TreeNode>, op: &FlagDiacriticOperation) -> (bool, Recycled<'a, TreeNode>) {
+    pub fn apply_operation<'a>(
+        &self,
+        pool: &'a Pool<TreeNode>,
+        op: &FlagDiacriticOperation,
+    ) -> (bool, Recycled<'a, TreeNode>) {
         match op.operation {
-            FlagDiacriticOperator::PositiveSet => (true, self.update_flag(pool, op.feature, op.value)),
-            FlagDiacriticOperator::NegativeSet => (
-                true,
-                self.update_flag(pool, op.feature, -1 * op.value),
-            ),
+            FlagDiacriticOperator::PositiveSet => {
+                (true, self.update_flag(pool, op.feature, op.value))
+            }
+            FlagDiacriticOperator::NegativeSet => {
+                (true, self.update_flag(pool, op.feature, -1 * op.value))
+            }
             FlagDiacriticOperator::Require => {
                 let res = if op.value == 0 {
                     self.flag_state[op.feature as usize] != 0
