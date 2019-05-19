@@ -1,6 +1,3 @@
-use hashbrown::HashSet;
-use std::iter::FromIterator;
-
 fn trim_start(alphabet: &Vec<String>, word: &str) -> String {
     word.trim_start_matches(|x: char| !alphabet.contains(&x.to_string())).to_string()
 }
@@ -74,6 +71,7 @@ pub fn is_first_caps(word: &str) -> bool {
     upper_first(word) == word
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 

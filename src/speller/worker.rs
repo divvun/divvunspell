@@ -562,7 +562,7 @@ impl<T: Transducer> SpellerWorker<T> {
     }
 
     pub fn is_correct(&self) -> bool {
-        let mut max_weight = speller_max_weight(&self.config);
+        let max_weight = speller_max_weight(&self.config);
         let pool = Pool::with_size_and_max(0, 0);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
 
@@ -585,14 +585,14 @@ impl<T: Transducer> SpellerWorker<T> {
     }
 
     pub fn suggest(self: Arc<Self>) -> Vec<Suggestion> {
-        let mut max_weight = speller_max_weight(&self.config);
+        // let max_weight = speller_max_weight(&self.config);
         let pool = Pool::with_size_and_max(self.config.pool_start, self.config.pool_max);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
         let mut corrections = HashMap::new();
         let mut suggestions: Vec<Suggestion> = vec![];
         let mut best_weight = self.config.max_weight.unwrap_or(f32::INFINITY);
 
-        use std::io::Write;
+        // use std::io::Write;
         // let mut out = std::fs::File::create("log.txt").unwrap();
 
         let mut seen_nodes: HashSet<TreeNode> = HashSet::default();
@@ -615,7 +615,7 @@ impl<T: Transducer> SpellerWorker<T> {
                 rando += 1;
             }
             
-            max_weight = self.update_weight_limit(best_weight, &suggestions);
+            let max_weight = self.update_weight_limit(best_weight, &suggestions);
 
             if !self.is_under_weight_limit(max_weight, next_node.weight()) {
                 continue

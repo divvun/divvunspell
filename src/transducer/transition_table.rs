@@ -1,7 +1,7 @@
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use memmap::Mmap;
 use std::fmt;
-use std::io::{Cursor, Write};
+use std::io::Cursor;
 use std::ptr;
 use std::sync::Arc;
 use std::{mem, u16, u32, cmp};

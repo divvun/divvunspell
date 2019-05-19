@@ -1,14 +1,14 @@
-use libc::{c_char, size_t, uint8_t, uint32_t};
+use libc::{c_char, size_t, uint8_t};
 use std::ffi::{CString, CStr};
-use std::ptr::{null, null_mut};
+use std::ptr::null;
 use std::sync::Arc;
 use std::path::Path;
 
-use crate::archive::{SpellerArchive, SpellerArchiveError};
+use crate::archive::SpellerArchive;
 use crate::speller::{Speller, SpellerConfig};
 use crate::speller::suggestion::Suggestion;
 // use crate::tokenizer::{Tokenize, Tokenizer, Token};
-use crate::transducer::{Transducer, chunk::{ChfstTransducer, ChfstBundle}};
+use crate::transducer::chunk::{ChfstTransducer, ChfstBundle};
 
 pub struct ChfstArchive {
     speller: Arc<Speller<ChfstTransducer>>
@@ -66,7 +66,7 @@ pub extern fn chfst_new(raw_path: *mut c_char, error: *mut *const c_char) -> *co
 }
 
 #[no_mangle]
-pub extern fn chfst_meta_get_locale(handle: *mut Speller<ChfstTransducer>) -> *mut c_char {
+pub extern fn chfst_meta_get_locale(_handle: *mut Speller<ChfstTransducer>) -> *mut c_char {
     // let ar = unsafe { &*handle };
     // let locale = ar.metadata().info.locale.to_owned();
     // let s = CString::new(&*locale).unwrap();

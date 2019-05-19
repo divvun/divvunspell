@@ -2,7 +2,6 @@
 
 // use unic_ucd_category::{GeneralCategory};
 use unic_segment::{WordBoundIndices, Words};
-use unic_ucd_common::is_alphanumeric;
 
 pub mod caps;
 

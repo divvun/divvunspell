@@ -4,11 +4,11 @@ use memmap::{Mmap, MmapOptions};
 use std::fs::File;
 use zip::ZipArchive;
 use std::io::prelude::*;
-use std::io::{Cursor, Seek};
+use std::io::Seek;
 use std::sync::Arc;
 
 use self::meta::SpellerMetadata;
-use crate::transducer::{Transducer, HfstTransducer};
+use crate::transducer::HfstTransducer;
 use crate::speller::Speller;
 
 pub struct SpellerArchive {

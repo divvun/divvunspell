@@ -1,14 +1,13 @@
 pub mod suggestion;
 pub mod worker;
 
-use hashbrown::{HashMap, HashSet};
+use hashbrown::HashMap;
 use std::f32;
 use std::sync::Arc;
 
 use crate::transducer::Transducer;
-use crate::transducer::tree_node::TreeNode;
 use crate::speller::suggestion::Suggestion;
-use crate::types::{SymbolNumber, Weight, SpellerWorkerMode, FlagDiacriticOperator};
+use crate::types::{SymbolNumber, Weight, SpellerWorkerMode};
 use self::worker::SpellerWorker;
 
 #[derive(Clone, Debug)]
