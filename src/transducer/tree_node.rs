@@ -85,12 +85,6 @@ impl lifeguard::InitializeWith<&TreeNode> for TreeNode {
     }
 }
 
-// impl Drop for TreeNode {
-//     fn drop(&mut self) {
-//         println!("DROP");
-//     }
-// }
-
 impl TreeNode {
     pub fn empty<'a>(pool: &'a Pool<TreeNode>, start_state: FlagDiacriticState) -> Recycled<'a, TreeNode> {
         pool.attach(TreeNode {

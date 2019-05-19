@@ -34,8 +34,6 @@ pub struct SpellerMetadataAcceptor {
 
 #[derive(Deserialize, Debug)]
 pub struct SpellerMetadataErrmodel {
-    //#[serde(rename = "type", default)]
-    //type_: String,
     pub id: String,
     pub title: Vec<SpellerTitle>,
     pub description: String,
@@ -92,5 +90,4 @@ fn test_xml_parse() {
     "##;
 
     let _ = SpellerMetadata::from_str(&xml_data).unwrap();
-    //debug!("{:#?}", metadata);
 }

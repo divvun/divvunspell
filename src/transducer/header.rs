@@ -21,8 +21,6 @@ impl TransducerHeader {
     pub fn new(buf: &[u8]) -> TransducerHeader {
         let mut rdr = Cursor::new(buf);
 
-        debug!("Loading transducer");
-
         // Skip HFST string
         rdr.set_position(5);
 
@@ -30,7 +28,6 @@ impl TransducerHeader {
 
         rdr.set_position(8);
 
-        //debug!("{:?}", header_len);
         let pos = rdr.position() + header_len as u64;
         rdr.set_position(pos);
 
@@ -47,17 +44,6 @@ impl TransducerHeader {
             let v = rdr.read_u32::<LittleEndian>().unwrap();
             props[i] = v != 0
         }
-
-        debug!(
-            "{:?} {:?} {:?} {:?} {:?} {:?} {:?}",
-            input_symbols,
-            symbols,
-            trans_index_table,
-            trans_target_table,
-            states,
-            transitions,
-            props
-        );
 
         TransducerHeader {
             symbols: symbols,

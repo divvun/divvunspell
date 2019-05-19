@@ -76,17 +76,14 @@ impl HfstTransducer {
             TransducerAlphabet::new(&buf[alphabet_offset..buf.len()], header.symbol_count());
 
         let index_table_offset = alphabet_offset + alphabet.len();
-        // println!("Index table start offset: {}", index_table_offset);
 
         let index_table_end = index_table_offset + INDEX_TABLE_SIZE * header.index_table_size();
-        // println!("Index table end: {}", index_table_end);
         let index_table = IndexTable::new(buf.clone(),
             index_table_offset,
             index_table_end,
             header.index_table_size() as u32,
         );
 
-        // println!("Trans table start offset: {}", index_table_end);
         let trans_table_end = index_table_end + TRANS_TABLE_SIZE * header.target_table_size();
         let trans_table = TransitionTable::new(buf.clone(),
             index_table_end,
@@ -205,31 +202,6 @@ impl Transducer for HfstTransducer {
             false
         }
     }
-
-    // pub fn has_non_epsilons_or_flags(&self, i: TransitionTableIndex) -> bool {
-    //     if i >= TARGET_TABLE {
-    //         match self.transition_table.input_symbol(i - TARGET_TABLE) {
-    //             Some(res) => res != 0 && !self.alphabet().is_flag(res),
-    //             None => false,
-    //         }
-    //     } else {
-    //         let total = self.alphabet.key_table().len() as u16;
-
-    //         for j in 1..total {
-    //             let res = self.index_table.input_symbol(i + j as u32);
-
-    //             if res.is_none() {
-    //                 continue;
-    //             }
-
-    //             if res.unwrap() == j {
-    //                 return true;
-    //             }
-    //         }
-
-    //         false
-    //     }
-    // }
 
     fn take_epsilons(&self, i: TransitionTableIndex) -> Option<SymbolTransition> {
         if let Some(0) = self.transition_table.input_symbol(i) {

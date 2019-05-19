@@ -66,7 +66,6 @@ impl<T: Transducer> Speller<T> {
     }
     
     fn to_input_vec(&self, word: &str) -> Vec<SymbolNumber> {
-        // TODO: refactor for when mutator is optional
         let key_table = self.mutator().alphabet().key_table();
 
         word.chars()
@@ -197,9 +196,6 @@ impl<T: Transducer> Speller<T> {
 
     pub fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
         use crate::tokenizer::caps::*;
-
-        // println!("Lex {:?}", self.lexicon().alphabet());
-        // println!("Mut {:?}", self.mutator().alphabet());
 
         if config.with_caps {
             let words = word_variants(self.lexicon().alphabet().key_table(), word);

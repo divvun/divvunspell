@@ -49,7 +49,6 @@ impl TransducerAlphabetParser {
 
     fn handle_special_symbol(&mut self, i: SymbolNumber, key: &str) {
         let mut chunks = key.split('.');
-        //debug!("chunks: {:?}", chunks);
 
         let fdo = FlagDiacriticOperator::from_str(&chunks.next().unwrap()[1..]).unwrap();
         let feature: String = chunks
@@ -98,7 +97,6 @@ impl TransducerAlphabetParser {
             }
 
             let key = String::from_utf8_lossy(&buf[offset..offset + end]).into_owned();
-            //debug!("{}", key);
 
             if key.starts_with('@') && key.ends_with('@') {
                 if key.chars().nth(2).unwrap() == '.' {
@@ -158,17 +156,14 @@ impl TransducerAlphabet {
         TransducerAlphabetParser::parse(buf, symbols)
     }
 
-    // originally get_key_table
     pub fn key_table(&self) -> &Vec<String> {
         &self.key_table
     }
 
-    // Originally get_state_size
     pub fn state_size(&self) -> SymbolNumber {
         self.flag_state_size
     }
 
-    // Originally get_operation_map
     pub fn operations(&self) -> &OperationsMap {
         &self.operations
     }
@@ -176,10 +171,6 @@ impl TransducerAlphabet {
     pub fn string_to_symbol(&self) -> &HashMap<String, SymbolNumber> {
         &self.string_to_symbol
     }
-
-    // pub fn mut_string_to_symbol(&mut self) -> &mut HashMap<String, SymbolNumber> {
-    //     &mut self.string_to_symbol
-    // }
 
     pub fn is_flag(&self, symbol: SymbolNumber) -> bool {
         self.operations.contains_key(&symbol)
@@ -191,23 +182,14 @@ impl TransducerAlphabet {
         self.key_table.push(string.to_string());
     }
 
-    // Originally get_identity
     pub fn identity(&self) -> Option<SymbolNumber> {
         self.identity_symbol
     }
 
-    // Origially get_unknown
     pub fn unknown(&self) -> Option<SymbolNumber> {
         self.unknown_symbol
     }
 
-    // TODO: this could be far better named\
-    // TODO: unused
-    // pub fn has_string(&self, s: String) -> bool {
-    //     self.string_to_symbol.contains_key(&s)
-    // }
-
-    // Originally get_orig_symbol_count
     pub fn initial_symbol_count(&self) -> SymbolNumber {
         self.initial_symbol_count
     }

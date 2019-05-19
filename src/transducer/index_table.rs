@@ -75,7 +75,6 @@ impl IndexTable {
             let filename = format!("index-{:02}", i - 1);
             let mut file = std::fs::File::create(target_dir.join(filename)).unwrap();
             
-            // TODO: Check these aren't off by one
             let begin = (max_index_per_iter * (i-1usize)) as u32;
             let end = cmp::min(max_index_per_iter * i, self.size as usize) as u32;
 
@@ -90,27 +89,6 @@ impl IndexTable {
                 file.write_u32::<LittleEndian>(targetish).unwrap();
             }
         }
-        // // Divide the chunks
-        // let chunk_count = self.len / chunk_size + if self.len % chunk_size == 0 { 0 } else { 1 };
-        // eprintln!("Chunk count: {}", chunk_count);
-        // let real_offset = self.offset + INDEX_TABLE_SIZE;
-
-        // for i in 0..chunk_count {
-        //     eprintln!("Writing chunk: {}", i);
-        //     // TODO check these overlap properly
-        //     let start_index = real_offset + (i * chunk_size);
-        //     let end_index = cmp::min(real_offset + self.len, start_index + chunk_size);
-
-        //     let filename = format!("index-{:02}", i);
-        //     let mut file = std::fs::File::create(target_dir.join(filename)).unwrap();
-
-        //     let mut cur = start_index as isize;
-        //     eprintln!("End index: {}", end_index);
-        //     while cur < end_index as isize {
-        //         // eprintln!("Writing index {}", cur);
-
-        //     };
-        // }
 
         Ok(chunk_count)
     }

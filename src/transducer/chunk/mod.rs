@@ -331,17 +331,14 @@ impl Transducer for ChfstTransducer {
     }
 
     fn has_epsilons_or_flags(&self, i: TransitionTableIndex) -> bool {
-        // println!("{}", i);
         if i >= TARGET_TABLE {
             let (page, index) = self.transition_rel_index(i - TARGET_TABLE);
-            // println!("T: ({}, {})", page, index);
             match self.transition_tables[page].input_symbol(index) {
                 Some(sym) => sym == 0 || self.alphabet.is_flag(sym),
                 None => false,
             }
         } else {
             let (page, index) = self.index_rel_index(i);
-            // println!("I: ({}, {})", page, index);
             if let Some(0) = self.index_tables[page].input_symbol(index) {
                 true
             } else {
@@ -351,7 +348,6 @@ impl Transducer for ChfstTransducer {
     }
 
     fn take_epsilons(&self, i: TransitionTableIndex) -> Option<SymbolTransition> {
-        // TODO: why doesn't this function in the orig impl care if >= TARGET_TABLE?
         let (page, index) = self.transition_rel_index(i);
         
         if let Some(0) = self.transition_tables[page].input_symbol(index) {
@@ -362,7 +358,6 @@ impl Transducer for ChfstTransducer {
     }
 
     fn take_epsilons_and_flags(&self, i: TransitionTableIndex) -> Option<SymbolTransition> {
-        // TODO: why doesn't this function in the orig impl care if >= TARGET_TABLE?
         let (page, index) = self.transition_rel_index(i);
 
         if let Some(sym) = self.transition_tables[page].input_symbol(index) {
@@ -381,8 +376,6 @@ impl Transducer for ChfstTransducer {
         i: TransitionTableIndex,
         symbol: SymbolNumber,
     ) -> Option<SymbolTransition> {
-        // TODO: why doesn't this function in the orig impl care if >= TARGET_TABLE?
-        
         let (page, index) = self.transition_rel_index(i);
         if let Some(input_sym) = self.transition_tables[page].input_symbol(index) {
             if input_sym != symbol {
@@ -424,9 +417,7 @@ pub struct ChfstBundle {
 
 impl ChfstBundle {
     pub fn from_path(path: &std::path::Path) -> Result<Self, std::io::Error> {
-        // println!("Load lexicon");
         let lexicon = ChfstTransducer::from_path(&path.join("lexicon"))?;
-        // println!("Load mutator");
         let mutator = ChfstTransducer::from_path(&path.join("mutator"))?;
 
         Ok(ChfstBundle { lexicon, mutator })

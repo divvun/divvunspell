@@ -58,7 +58,6 @@ impl TransitionTable {
             let filename = format!("transition-{:02}", i - 1);
             let mut file = std::fs::File::create(target_dir.join(filename)).unwrap();
             
-            // TODO: Check these aren't off by one
             let begin = (max_index_per_iter * (i-1usize)) as u32;
             let end = cmp::min(max_index_per_iter * i, self.size as usize) as u32;
 
