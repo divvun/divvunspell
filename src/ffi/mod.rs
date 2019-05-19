@@ -160,27 +160,6 @@ pub extern fn speller_suggest(handle: *mut SpellerArchive, raw_word: *mut c_char
 }
 
 #[no_mangle]
-pub extern fn speller_suggest_json(handle: *mut SpellerArchive, raw_word: *mut c_char, n_best: usize, max_weight: f32, beam: f32) -> *const c_char {
-    let c_str = unsafe { CStr::from_ptr(raw_word) };
-    let word = c_str.to_str().unwrap();
-
-    let ar = unsafe { &mut *handle };
-
-    let suggestions = ar.speller().suggest_with_config(&word, &SpellerConfig {
-        max_weight: if max_weight > 0.0 { Some(max_weight) } else { None },
-        n_best: if n_best > 0 { Some(n_best) } else { None },
-        beam: if beam > 0.0 { Some(beam) } else { None },
-        pool_max: 128,
-        pool_start: 128,
-        seen_node_sample_rate: 20,
-        with_caps: true
-    });
-
-    let s = serde_json::to_string(&suggestions).unwrap();
-    CString::new(&*s).unwrap().into_raw()
-}
-
-#[no_mangle]
 pub extern fn speller_is_correct(handle: *mut SpellerArchive, raw_word: *mut c_char) -> uint8_t {
     let c_str = unsafe { CStr::from_ptr(raw_word) };
     let word = c_str.to_str().unwrap();

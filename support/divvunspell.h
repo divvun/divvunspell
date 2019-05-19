@@ -48,9 +48,6 @@ speller_suggest(speller_t* _Nonnull handle, const char* _Nonnull word, size_t n_
 extern suggest_vec_t* _Nonnull
 chfst_suggest(chfst_t* _Nonnull handle, const char* _Nonnull word, size_t n_best, float max_weight, float beam);
 
-extern const char* _Nonnull
-speller_suggest_json(speller_t* _Nonnull handle, const char* _Nonnull word, size_t n_best, float max_weight, float beam);
-
 extern bool
 speller_is_correct(speller_t* _Nonnull handle, const char* _Nonnull word);
 
