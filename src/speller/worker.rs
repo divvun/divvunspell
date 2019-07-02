@@ -31,8 +31,8 @@ impl<T: Transducer> SpellerWorker<T> {
         speller: Arc<Speller<T>>,
         mode: SpellerWorkerMode,
         input: Vec<SymbolNumber>,
-    ) -> Arc<SpellerWorker<T>> {
         config: SpellerConfig
+    ) -> Arc<SpellerWorker<T>> {
         Arc::new(SpellerWorker {
             speller: speller,
             input: input,
