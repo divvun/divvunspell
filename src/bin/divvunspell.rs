@@ -218,6 +218,9 @@ fn main() {
         max_weight,
         n_best,
         beam: None,
+        pool_max: 128,
+        pool_start: 128,
+        seen_node_sample_rate: 20,
         with_caps: true,
     };
 
