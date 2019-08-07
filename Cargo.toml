@@ -27,6 +27,8 @@ parking_lot = "0.8.0"
 hashbrown = "0.3"
 tempdir = "0.3.7"
 lifeguard = "0.6"
+ahash = "0.2"
+supercow = "*"
 
 clap = { version = "2.33.0", optional = true }
 

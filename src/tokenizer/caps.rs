@@ -1,14 +1,14 @@
-fn trim_start(alphabet: &Vec<String>, word: &str) -> String {
+fn trim_start(alphabet: &[String], word: &str) -> String {
     word.trim_start_matches(|x: char| !alphabet.contains(&x.to_string()))
         .to_string()
 }
 
-fn trim_end(alphabet: &Vec<String>, word: &str) -> String {
+fn trim_end(alphabet: &[String], word: &str) -> String {
     word.trim_end_matches(|x: char| !alphabet.contains(&x.to_string()))
         .to_string()
 }
 
-fn trim_both(alphabet: &Vec<String>, word: &str) -> String {
+fn trim_both(alphabet: &[String], word: &str) -> String {
     word.trim_matches(|x: char| !alphabet.contains(&x.to_string()))
         .to_string()
 }
@@ -38,7 +38,7 @@ static PUNCTUATION: &'static [&'static str] = &[
     ">", "?", "@", "[", "\\", "]", "^", "_", "`", "{", "|", "}", "~",
 ];
 
-fn without_punctuation(alphabet: &Vec<String>) -> Vec<String> {
+fn without_punctuation(alphabet: &[String]) -> Vec<String> {
     let x = alphabet
         .iter()
         .filter(|x| !PUNCTUATION.contains(&x.as_str()))
@@ -46,7 +46,7 @@ fn without_punctuation(alphabet: &Vec<String>) -> Vec<String> {
     x.collect::<Vec<_>>()
 }
 
-pub fn word_variants(alphabet: &Vec<String>, word: &str) -> Vec<String> {
+pub fn word_variants(alphabet: &[String], word: &str) -> Vec<String> {
     let alphabet = without_punctuation(alphabet);
 
     let mut base = vec![
@@ -93,7 +93,7 @@ mod tests {
         let a = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
             .chars()
             .map(|c| c.to_string())
-            .collect::<Vec<String>>();
+            .collect::<[String]>();
         println!("{:?}", word_variants(&a, "FOO"));
         println!("{:?}", word_variants(&a, "Giella"));
         println!("{:?}", word_variants(&a, "abc"));

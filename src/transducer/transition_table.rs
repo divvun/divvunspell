@@ -166,7 +166,7 @@ impl TransitionTable {
             cursor.set_position(index as u64);
             cursor.read_f32::<LittleEndian>().unwrap()
         } else {
-            unsafe { ptr::read(self.mmap.as_ptr().offset(index as isize) as *const _) }
+            unsafe { ptr::read(self.mmap.as_ptr().add(index) as *const _) }
         };
         Some(x)
     }

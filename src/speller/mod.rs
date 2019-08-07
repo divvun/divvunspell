@@ -133,7 +133,7 @@ impl<T: Transducer> Speller<T> {
 
             let suggestions = worker.suggest();
 
-            if suggestions.len() > 0 {
+            if !suggestions.is_empty() {
                 let r = if is_all_caps(ref_word) {
                     suggestions
                         .into_iter()
@@ -198,7 +198,7 @@ impl<T: Transducer> Speller<T> {
 
             let suggestions = worker.suggest();
 
-            if suggestions.len() > 0 {
+            if !suggestions.is_empty() {
                 if is_all_caps(ref_word) {
                     return suggestions
                         .into_iter()

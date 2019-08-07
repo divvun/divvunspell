@@ -77,7 +77,7 @@ impl IndexTable {
         let index = INDEX_TABLE_SIZE * i as usize;
 
         let input_symbol: SymbolNumber =
-            unsafe { ptr::read(self.buf.as_ptr().offset(index as isize) as *const _) };
+            unsafe { ptr::read(self.buf.as_ptr().add(index) as *const _) };
 
         if input_symbol == u16::MAX {
             None
@@ -93,7 +93,7 @@ impl IndexTable {
 
         let index = (INDEX_TABLE_SIZE * i as usize) + 4;
         let target: TransitionTableIndex =
-            unsafe { ptr::read(self.buf.as_ptr().offset(index as isize) as *const _) };
+            unsafe { ptr::read(self.buf.as_ptr().add(index) as *const _) };
 
         if target == u32::MAX {
             None
@@ -111,7 +111,7 @@ impl IndexTable {
 
         let index = (INDEX_TABLE_SIZE * i as usize) + 4;
         let weight: Weight =
-            unsafe { ptr::read(self.buf.as_ptr().offset(index as isize) as *const _) };
+            unsafe { ptr::read(self.buf.as_ptr().add(index) as *const _) };
 
         Some(weight)
     }
@@ -138,7 +138,7 @@ impl TransitionTable {
 
     #[inline]
     fn read_symbol_from_cursor(&self, index: usize) -> Option<SymbolNumber> {
-        let x = unsafe { ptr::read(self.buf.as_ptr().offset(index as isize) as *const _) };
+        let x = unsafe { ptr::read(self.buf.as_ptr().add(index) as *const _) };
         if x == u16::MAX {
             None
         } else {
@@ -173,7 +173,7 @@ impl TransitionTable {
         let index = (TRANS_TABLE_SIZE * i as usize) + (2 * mem::size_of::<SymbolNumber>());
 
         let x: TransitionTableIndex =
-            unsafe { ptr::read(self.buf.as_ptr().offset(index as isize) as *const _) };
+            unsafe { ptr::read(self.buf.as_ptr().add(index) as *const _) };
         if x == u32::MAX {
             None
         } else {
@@ -188,7 +188,7 @@ impl TransitionTable {
 
         let index = (TRANS_TABLE_SIZE * i as usize) + 8;
 
-        let x: Weight = unsafe { ptr::read(self.buf.as_ptr().offset(index as isize) as *const _) };
+        let x: Weight = unsafe { ptr::read(self.buf.as_ptr().add(index) as *const _) };
 
         Some(x)
     }

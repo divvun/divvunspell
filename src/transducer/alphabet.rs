@@ -198,6 +198,10 @@ impl TransducerAlphabet {
         self.length
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.length == 0
+    }
+
     pub fn create_translator_from(&mut self, mutator: &Transducer) -> Vec<SymbolNumber> {
         let from = mutator.alphabet();
         let from_keys = from.key_table();
@@ -205,9 +209,7 @@ impl TransducerAlphabet {
         let mut translator = Vec::with_capacity(64);
         translator.push(0);
 
-        for i in 1..from_keys.len() {
-            let from_sym = &from_keys[i];
-
+        for from_sym in from_keys.iter().skip(1) {
             if let Some(&sym) = self.string_to_symbol.get(from_sym) {
                 translator.push(sym);
             } else {

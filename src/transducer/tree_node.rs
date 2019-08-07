@@ -1,5 +1,7 @@
 use lifeguard::{Pool, Recycled};
 use std::hash::{Hash, Hasher};
+use std::mem;
+use std::borrow::Cow;
 
 use super::symbol_transition::SymbolTransition;
 use crate::types::{
@@ -12,7 +14,7 @@ pub struct EqWeight(pub Weight);
 
 impl std::cmp::PartialEq for EqWeight {
     fn eq(&self, other: &EqWeight) -> bool {
-        self.0.is_finite() && other.0.is_finite() && self.0 == other.0
+        self.0 == other.0
     }
 }
 
@@ -34,10 +36,17 @@ pub struct TreeNode {
     pub lexicon_state: TransitionTableIndex,
 }
 
+impl TreeNode {
+    #[inline(always)]
+    pub fn key(&self) -> TreeNode {
+        self.clone()
+    }
+}
+
 impl std::cmp::PartialEq for TreeNode {
     // This equality implementation is purposely not entirely correct. It is much faster this way.
     // The idea is that the seen_nodes hashset has to do a lot less work, and even if we miss a bunch,
-    // memory pressure is significantly lowers
+    // memory pressure is significantly lowered
     fn eq(&self, other: &TreeNode) -> bool {
         self.lexicon_state == other.lexicon_state
             && self.mutator_state == other.mutator_state
@@ -51,7 +60,7 @@ impl Hash for TreeNode {
         state.write_u32(self.input_state);
         state.write_u32(self.mutator_state);
         state.write_u32(self.lexicon_state);
-        self.string.hash(state);
+        // self.string.hash(state);
     }
 }
 
@@ -75,13 +84,20 @@ impl lifeguard::Recycleable for TreeNode {
 
 impl lifeguard::InitializeWith<&TreeNode> for TreeNode {
     fn initialize_with(&mut self, source: &TreeNode) {
-        self.string.truncate(0);
-        self.flag_state.truncate(0);
-        self.string.extend(&source.string);
+        if self.string != source.string {
+            self.string.truncate(0);
+            self.string.extend(&source.string);
+        }
+
         self.input_state = source.input_state;
         self.mutator_state = source.mutator_state;
         self.lexicon_state = source.lexicon_state;
-        self.flag_state.extend(&source.flag_state);
+
+        if self.flag_state != source.flag_state {
+            self.flag_state.truncate(0);
+            self.flag_state.extend(&source.flag_state);
+        }
+
         self.weight = source.weight;
     }
 }
@@ -109,38 +125,33 @@ impl TreeNode {
         &self.flag_state
     }
 
-    pub fn update_lexicon_mut(&mut self, transition: SymbolTransition) {
-        if let Some(value) = transition.symbol() {
-            if value != 0 {
-                self.string.push(value);
-            }
-        };
-
-        self.lexicon_state = transition.target().unwrap();
-        self.weight = EqWeight(self.weight.0 + transition.weight().unwrap());
-    }
-
     pub fn update_lexicon<'a>(
         &self,
         pool: &'a Pool<TreeNode>,
         transition: SymbolTransition,
     ) -> Recycled<'a, TreeNode> {
         let mut node = pool.new();
-        node.string.truncate(0);
-        node.string.extend(&self.string);
 
-        match transition.symbol() {
-            Some(value) if value != 0 => {
+        if node.string != self.string {
+            node.string.truncate(0);
+            node.string.extend(&self.string);
+        }
+
+        if let Some(value) = transition.symbol() {
+            if value != 0 {
                 node.string.push(value);
             }
-            _ => {}
         }
 
         node.input_state = self.input_state;
         node.mutator_state = self.mutator_state;
         node.lexicon_state = transition.target().unwrap();
-        node.flag_state.truncate(0);
-        node.flag_state.extend(&self.flag_state);
+
+        if node.flag_state != self.flag_state {
+            node.flag_state.truncate(0);
+            node.flag_state.extend(&self.flag_state);
+        }
+        
         node.weight = EqWeight(self.weight.0 + transition.weight().unwrap());
 
         node
@@ -152,13 +163,19 @@ impl TreeNode {
         transition: SymbolTransition,
     ) -> Recycled<'a, TreeNode> {
         let mut node = pool.new();
-        node.string.truncate(0);
-        node.string.extend(&self.string);
+        if node.string != self.string {
+            node.string.truncate(0);
+            node.string.extend(&self.string);
+        }
         node.input_state = self.input_state;
         node.mutator_state = transition.target().unwrap();
         node.lexicon_state = self.lexicon_state;
-        node.flag_state.truncate(0);
-        node.flag_state.extend(&self.flag_state);
+
+        if node.flag_state != self.flag_state {
+            node.flag_state.truncate(0);
+            node.flag_state.extend(&self.flag_state);
+        }
+        
         node.weight = EqWeight(self.weight.0 + transition.weight().unwrap());
         node
     }
@@ -173,8 +190,11 @@ impl TreeNode {
         weight: Weight,
     ) -> Recycled<'a, TreeNode> {
         let mut node = pool.new();
-        node.string.truncate(0);
-        node.string.extend(&self.string);
+        
+        if node.string != self.string {
+            node.string.truncate(0);
+            node.string.extend(&self.string);
+        }
 
         if output_symbol != 0 {
             node.string.push(output_symbol);
@@ -182,8 +202,12 @@ impl TreeNode {
 
         node.mutator_state = next_mutator;
         node.lexicon_state = next_lexicon;
-        node.flag_state.truncate(0);
-        node.flag_state.extend(&self.flag_state);
+
+        if node.flag_state != self.flag_state {
+            node.flag_state.truncate(0);
+            node.flag_state.extend(&self.flag_state);
+        }
+
         node.weight = EqWeight(self.weight.0 + weight);
 
         if let Some(input) = next_input {
@@ -200,20 +224,53 @@ impl TreeNode {
         pool: &'a Pool<TreeNode>,
         feature: SymbolNumber,
         value: i16,
+        transition: &SymbolTransition,
     ) -> Recycled<'a, TreeNode> {
-        let mut node = pool.new();
-        node.string.truncate(0);
-        node.string.extend(&self.string);
-        node.input_state = self.input_state;
-        node.mutator_state = self.mutator_state;
-        node.lexicon_state = self.lexicon_state;
+        let mut node = self.apply_transition(pool, transition); //pool.new();
 
-        node.flag_state.truncate(0);
-        node.flag_state.extend(&self.flag_state);
+        // if node.string != self.string {
+        //     node.string.truncate(0);
+        //     node.string.extend(&self.string);
+        // }
+
+        // node.input_state = self.input_state;
+        // node.mutator_state = self.mutator_state;
+        // node.lexicon_state = transition.target().unwrap();
+
+        // if node.flag_state != self.flag_state {
+        //     node.flag_state.truncate(0);
+        //     node.flag_state.extend(&self.flag_state);
+        // }
+
         node.flag_state[feature as usize] = value;
 
-        node.weight = self.weight;
+        // node.weight = EqWeight(self.weight.0 + transition.weight().unwrap());
 
+        node
+    }
+
+    pub fn apply_transition<'a>(
+        &self, 
+        pool: &'a Pool<TreeNode>,
+        transition: &SymbolTransition
+    ) -> Recycled<'a, TreeNode> {
+        let mut node = pool.new();
+
+        if node.string != self.string {
+            node.string.truncate(0);
+            node.string.extend(&self.string);
+        }
+
+        node.input_state = self.input_state;
+        node.mutator_state = self.mutator_state;
+        node.lexicon_state = transition.target().unwrap();
+
+        if node.flag_state != self.flag_state {
+            node.flag_state.truncate(0);
+            node.flag_state.extend(&self.flag_state);
+        }
+
+        node.weight = EqWeight(self.weight.0 + transition.weight().unwrap());
         node
     }
 
@@ -221,13 +278,14 @@ impl TreeNode {
         &self,
         pool: &'a Pool<TreeNode>,
         op: &FlagDiacriticOperation,
-    ) -> (bool, Recycled<'a, TreeNode>) {
+        transition: &SymbolTransition,
+    ) -> Option<Recycled<'a, TreeNode>> {
         match op.operation {
             FlagDiacriticOperator::PositiveSet => {
-                (true, self.update_flag(pool, op.feature, op.value))
+                Some(self.update_flag(pool, op.feature, op.value, transition))
             }
             FlagDiacriticOperator::NegativeSet => {
-                (true, self.update_flag(pool, op.feature, -1 * op.value))
+                Some(self.update_flag(pool, op.feature, -1 * op.value, transition))
             }
             FlagDiacriticOperator::Require => {
                 let res = if op.value == 0 {
@@ -236,7 +294,11 @@ impl TreeNode {
                     self.flag_state[op.feature as usize] == op.value
                 };
 
-                (res, pool.new_from(self))
+                if res {
+                    Some(self.apply_transition(pool, transition))
+                } else {
+                    None
+                }
             }
             FlagDiacriticOperator::Disallow => {
                 let res = if op.value == 0 {
@@ -245,18 +307,22 @@ impl TreeNode {
                     self.flag_state[op.feature as usize] != op.value
                 };
 
-                (res, pool.new_from(self))
+                if res {
+                    Some(self.apply_transition(pool, transition))
+                } else {
+                    None
+                }
             }
-            FlagDiacriticOperator::Clear => (true, self.update_flag(pool, op.feature, 0)),
+            FlagDiacriticOperator::Clear => Some(self.update_flag(pool, op.feature, 0, transition)),
             FlagDiacriticOperator::Unification => {
                 // if the feature is unset OR the feature is to this value already OR
                 // the feature is negatively set to something else than this value
                 let f = self.flag_state[op.feature as usize];
 
                 if f == 0 || f == op.value || (f < 0 && f * -1 != op.value) {
-                    (true, self.update_flag(pool, op.feature, op.value))
+                    Some(self.update_flag(pool, op.feature, op.value, transition))
                 } else {
-                    (false, pool.new_from(self))
+                    None
                 }
             }
         }

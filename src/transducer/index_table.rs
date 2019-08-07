@@ -75,7 +75,7 @@ impl IndexTable {
             chunk_count, max_index_per_iter, total_bytes
         );
 
-        for i in 1usize..chunk_count + 1 {
+        for i in 1usize..=chunk_count {
             eprintln!("Writing chunk: {}", i);
 
             let filename = format!("index-{:02}", i - 1);
@@ -112,7 +112,7 @@ impl IndexTable {
                 cursor.set_position(index as u64);
                 cursor.read_u16::<LittleEndian>().unwrap()
             } else {
-                unsafe { ptr::read(self.mmap.as_ptr().offset(index as isize) as *const _) }
+                unsafe { ptr::read(self.mmap.as_ptr().add(index) as *const _) }
             };
 
         if input_symbol == u16::MAX {
@@ -134,7 +134,7 @@ impl IndexTable {
                 cursor.set_position((index + mem::size_of::<SymbolNumber>()) as u64);
                 cursor.read_u32::<LittleEndian>().unwrap()
             } else {
-                unsafe { ptr::read(self.mmap.as_ptr().offset((index + 2) as isize) as *const _) }
+                unsafe { ptr::read(self.mmap.as_ptr().add(index + 2) as *const _) }
             };
 
         if target == u32::MAX {
@@ -157,7 +157,7 @@ impl IndexTable {
             cursor.set_position((index + mem::size_of::<SymbolNumber>()) as u64);
             cursor.read_f32::<LittleEndian>().unwrap()
         } else {
-            unsafe { ptr::read(self.mmap.as_ptr().offset((index + 2) as isize) as *const _) }
+            unsafe { ptr::read(self.mmap.as_ptr().add(index + 2) as *const _) }
         };
 
         Some(weight)

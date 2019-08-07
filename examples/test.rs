@@ -6,10 +6,11 @@ use std::time::{Duration, Instant};
 use divvunspell::archive::SpellerArchive;
 use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::{Speller, SpellerConfig};
+use divvunspell::transducer::chunk::{ChfstBundle, ChfstTransducer};
 use divvunspell::transducer::HfstTransducer;
 
 fn time_suggest(
-    speller: Arc<Speller<HfstTransducer>>,
+    speller: Arc<Speller<ChfstTransducer>>,
     line: &TestLine,
     cfg: SpellerConfig,
 ) -> String {
@@ -313,21 +314,27 @@ fn main() {
 
     // let words = ["vuovdinfállovuogiŧ", "eanavuoigatvuohtadutkamušas", "nannesivččii", "gárvanivččii", "gáibiđivččii"];
 
-    let unaligned = SpellerArchive::new("./unaligned-test.zhfst").unwrap();
+    // let unaligned = SpellerArchive::new("./unaligned-test.zhfst").unwrap();
+    let unaligned = ChfstBundle::from_path(&std::path::Path::new("./out.chfst")).unwrap();
     // let res = unaligned.speller().suggest_with_config("same", &cfg);
     // let aligned = SpellerArchive::new("./aligned-test.zhfst").unwrap();
+    let speller = unaligned.speller();
 
     let now = Instant::now();
-    for i in 0..2 {
+    for i in 14..20 {//14..=20 {
         let now = Instant::now();
         for line in tuples.iter() {
             let mut ncfg = cfg.clone();
             ncfg.seen_node_sample_rate = i;
-            println!("{}", time_suggest(unaligned.speller(), &line, ncfg));
+            // println!("{}", 
+            time_suggest(Arc::clone(&speller), &line, ncfg);
+            // );
         }
         let then = now.elapsed();
-        println!("{}: {}.{}", i, then.as_secs(), then.subsec_nanos() / 1000);
+        println!("{}: {}.{}", 2u64.pow(i.into()), then.as_secs(), then.subsec_nanos() / 1000);
     }
+
+    // std::thread::sleep(std::time::Duration::from_millis(10000));
     // let unaligned_time = now.elapsed();
 
     // let now = Instant::now();
