@@ -27,7 +27,7 @@ impl fmt::Debug for TransitionTable {
 impl TransitionTable {
     pub fn new(mmap: Arc<Mmap>, offset: usize, len: usize, size: u32) -> TransitionTable {
         TransitionTable {
-            size: size,
+            size,
             mmap,
             offset,
             len,
@@ -100,7 +100,7 @@ impl TransitionTable {
             cursor.set_position(index as u64);
             cursor.read_u16::<LittleEndian>().unwrap()
         } else {
-            unsafe { ptr::read(self.mmap.as_ptr().offset(index as isize) as *const _) }
+            unsafe { ptr::read(self.mmap.as_ptr().add(index) as *const _) }
         };
         if x == u16::MAX {
             None
@@ -142,7 +142,7 @@ impl TransitionTable {
             cursor.set_position(index as u64);
             cursor.read_u32::<LittleEndian>().unwrap()
         } else {
-            unsafe { ptr::read(self.mmap.as_ptr().offset(index as isize) as *const _) }
+            unsafe { ptr::read(self.mmap.as_ptr().add(index) as *const _) }
         };
         if x == u32::MAX {
             None

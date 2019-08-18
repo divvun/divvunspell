@@ -90,10 +90,10 @@ impl HfstTransducer {
         );
 
         HfstTransducer {
-            buf: buf,
-            header: header,
-            alphabet: alphabet,
-            index_table: index_table,
+            buf,
+            header,
+            alphabet,
+            index_table,
             transition_table: trans_table,
         }
     }
@@ -194,7 +194,7 @@ impl Transducer for HfstTransducer {
                 None => false,
             }
         } else {
-            match self.index_table.input_symbol(i + sym as u32) {
+            match self.index_table.input_symbol(i + u32::from(sym)) {
                 Some(res) => sym == res,
                 None => false,
             }
@@ -225,12 +225,12 @@ impl Transducer for HfstTransducer {
     fn take_epsilons_and_flags(&self, i: TransitionTableIndex) -> Option<SymbolTransition> {
         if let Some(sym) = self.transition_table.input_symbol(i) {
             if sym != 0 && !self.alphabet.is_flag(sym) {
-                return None;
+                None
             } else {
-                return Some(self.transition_table.symbol_transition(i));
+                Some(self.transition_table.symbol_transition(i))
             }
         } else {
-            return None;
+            None
         }
     }
 
@@ -253,7 +253,7 @@ impl Transducer for HfstTransducer {
     fn next(&self, i: TransitionTableIndex, symbol: SymbolNumber) -> Option<TransitionTableIndex> {
         if i >= TARGET_TABLE {
             Some(i - TARGET_TABLE + 1)
-        } else if let Some(v) = self.index_table.target(i + 1 + symbol as u32) {
+        } else if let Some(v) = self.index_table.target(i + 1 + u32::from(symbol)) {
             Some(v - TARGET_TABLE)
         } else {
             None

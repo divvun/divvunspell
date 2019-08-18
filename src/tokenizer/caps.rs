@@ -33,7 +33,7 @@ pub fn upper_first(s: &str) -> String {
     }
 }
 
-static PUNCTUATION: &'static [&'static str] = &[
+static PUNCTUATION: &[&str] = &[
     "!", "\"", "#", "$", "%", "&", "'", "(", ")", "*", "+", ",", "-", ".", "/", ":", ";", "<", "=",
     ">", "?", "@", "[", "\\", "]", "^", "_", "`", "{", "|", "}", "~",
 ];
@@ -93,7 +93,7 @@ mod tests {
         let a = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
             .chars()
             .map(|c| c.to_string())
-            .collect::<[String]>();
+            .collect::<Vec<String>>();
         println!("{:?}", word_variants(&a, "FOO"));
         println!("{:?}", word_variants(&a, "Giella"));
         println!("{:?}", word_variants(&a, "abc"));

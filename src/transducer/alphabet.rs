@@ -78,8 +78,8 @@ impl TransducerAlphabetParser {
 
         let op = FlagDiacriticOperation {
             operation: fdo,
-            feature: *&self.feature_bucket[&feature],
-            value: *&self.value_bucket[&value],
+            feature: self.feature_bucket[&feature],
+            value: self.value_bucket[&value],
         };
 
         self.operations.insert(i, op);
@@ -202,7 +202,7 @@ impl TransducerAlphabet {
         self.length == 0
     }
 
-    pub fn create_translator_from(&mut self, mutator: &Transducer) -> Vec<SymbolNumber> {
+    pub fn create_translator_from(&mut self, mutator: &dyn Transducer) -> Vec<SymbolNumber> {
         let from = mutator.alphabet();
         let from_keys = from.key_table();
 

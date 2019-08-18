@@ -1,4 +1,4 @@
-use hashbrown::{HashMap, HashSet};
+use hashbrown::{HashMap};
 use std::f32;
 use std::sync::Arc;
 
@@ -15,11 +15,11 @@ use std::hash::{Hash, Hasher, BuildHasher};
 
 
 const PRIMES: &[u8] = &[
-    1, 2, 3,  // 5,  7, 11, 13, 17, 19, 23, 29, //7487, 10627, 15569, 20149 
+    1, 2, 3,  // 5,  7, 11, 13, 17, 19, 23, 29, //7487, 10627, 15569, 20149
 //    31,  37,  41,  43,  47,  53,  59,  61,  67,  71,
 //    73,  79,  83,  89,  97, 101, 103, 107, 109, 113,
 //   127, 131, 137, 139, 149, 151, 157, 163, 167, 173,
-//   179, 181, 191, 193, 197, 199, 211, 223, 227, 229 
+//   179, 181, 191, 193, 197, 199, 211, 223, 227, 229
 ];
 
 
@@ -31,7 +31,7 @@ pub struct InverseBloomFilter<T> {
 
 impl<T: Hash + Eq> InverseBloomFilter<T> {
     pub fn new() -> InverseBloomFilter<T> {
-        InverseBloomFilter::with_capacity(1048576)
+        InverseBloomFilter::with_capacity(1_048_576)
     }
 
     pub fn with_capacity(capacity: u64) -> InverseBloomFilter<T> {
@@ -104,10 +104,10 @@ impl<'t, T: Transducer + 't> SpellerWorker<T> {
         config: SpellerConfig,
     ) -> Arc<SpellerWorker<T>> {
         Arc::new(SpellerWorker {
-            speller: speller,
-            input: input,
-            mode: mode,
-            config: config,
+            speller,
+            input,
+            mode,
+            config,
         })
     }
 
@@ -598,7 +598,7 @@ impl<'t, T: Transducer + 't> SpellerWorker<T> {
         let pool = Pool::with_size_and_max(0, 0);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
 
-        let mut seen_nodes: InverseBloomFilter<TreeNode> = InverseBloomFilter::with_capacity(1000_000);
+        let mut seen_nodes: InverseBloomFilter<TreeNode> = InverseBloomFilter::with_capacity(1_000_000);
 
         while let Some(next_node) = nodes.pop() {
             if next_node.input_state as usize == self.input.len()
@@ -623,7 +623,7 @@ impl<'t, T: Transducer + 't> SpellerWorker<T> {
         let mut suggestions: Vec<Suggestion> = vec![];
         let mut best_weight = self.config.max_weight.unwrap_or(f32::INFINITY);
 
-        let mut seen_nodes: InverseBloomFilter<TreeNode> = InverseBloomFilter::with_capacity(2u64.pow(self.config.seen_node_sample_rate as u32));
+        let mut seen_nodes: InverseBloomFilter<TreeNode> = InverseBloomFilter::with_capacity(2u64.pow(u32::from(self.config.seen_node_sample_rate)));
         let mut next_rando = PRIMES.to_vec();
         let mut max_rando = next_rando.pop().unwrap();
         let mut rando = 0;
@@ -655,7 +655,7 @@ impl<'t, T: Transducer + 't> SpellerWorker<T> {
             self.mutator_epsilons(&pool, max_weight, &next_node, &seen_nodes, &mut nodes);
 
             if next_node.input_state as usize != self.input.len() {
-                &mut self.consume_input(&pool, max_weight, &next_node, &seen_nodes, &mut nodes);
+                self.consume_input(&pool, max_weight, &next_node, &seen_nodes, &mut nodes);
                 continue;
             }
 

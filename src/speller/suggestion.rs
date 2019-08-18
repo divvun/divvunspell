@@ -12,8 +12,8 @@ pub struct Suggestion {
 impl Suggestion {
     pub fn new(value: String, weight: Weight) -> Suggestion {
         Suggestion {
-            value: value,
-            weight: weight,
+            value,
+            weight,
         }
     }
 

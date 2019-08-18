@@ -91,21 +91,21 @@ pub enum SpellerArchiveError {
 
 impl SpellerArchive {
     pub fn new(file_path: &str) -> Result<SpellerArchive, SpellerArchiveError> {
-        let file = File::open(file_path).map_err(|e| SpellerArchiveError::OpenFileFailed(e))?;
+        let file = File::open(file_path).map_err(SpellerArchiveError::OpenFileFailed)?;
         let reader = std::io::BufReader::new(&file);
         let mut archive = ZipArchive::new(reader).expect("zip");
 
         // Open file a second time to get around borrow checker
-        let mut file = File::open(file_path).map_err(|e| SpellerArchiveError::OpenFileFailed(e))?;
+        let mut file = File::open(file_path).map_err(SpellerArchiveError::OpenFileFailed)?;
 
         let metadata_mmap = mmap_by_name(&mut file, &mut archive, "index.xml")
-            .map_err(|e| SpellerArchiveError::MetadataMmapFailed(e))?;
+            .map_err(SpellerArchiveError::MetadataMmapFailed)?;
         let metadata = SpellerMetadata::from_bytes(&*metadata_mmap.map()).expect("meta");
 
         let acceptor_mmap = mmap_by_name(&mut file, &mut archive, &metadata.acceptor.id)
-            .map_err(|e| SpellerArchiveError::AcceptorMmapFailed(e))?;
+            .map_err(SpellerArchiveError::AcceptorMmapFailed)?;
         let errmodel_mmap = mmap_by_name(&mut file, &mut archive, &metadata.errmodel.id)
-            .map_err(|e| SpellerArchiveError::ErrmodelMmapFailed(e))?;
+            .map_err(SpellerArchiveError::ErrmodelMmapFailed)?;
         drop(archive);
 
         let acceptor = HfstTransducer::from_mapped_memory(acceptor_mmap.map());
@@ -114,8 +114,8 @@ impl SpellerArchive {
         let speller = Speller::new(errmodel, acceptor);
 
         Ok(SpellerArchive {
-            metadata: metadata,
-            speller: speller,
+            metadata,
+            speller,
         })
     }
 

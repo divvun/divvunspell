@@ -47,9 +47,9 @@ impl<T: Transducer> Speller<T> {
         let alphabet_translator = lexicon.mut_alphabet().create_translator_from(&mutator);
 
         Arc::new(Speller {
-            mutator: mutator,
-            lexicon: lexicon,
-            alphabet_translator: alphabet_translator,
+            mutator,
+            lexicon,
+            alphabet_translator,
         })
     }
 

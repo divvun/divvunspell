@@ -1,6 +1,6 @@
 pub const INDEX_TABLE_SIZE: usize = 6;
 pub const TRANS_TABLE_SIZE: usize = 12;
-pub const TARGET_TABLE: u32 = 2147483648;
+pub const TARGET_TABLE: u32 = 2_147_483_648;
 
 #[cfg(test)]
 mod tests {

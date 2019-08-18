@@ -28,7 +28,7 @@ impl TransducerHeader {
 
         rdr.set_position(8);
 
-        let pos = rdr.position() + header_len as u64;
+        let pos = rdr.position() + u64::from(header_len);
         rdr.set_position(pos);
 
         let input_symbols = rdr.read_u16::<LittleEndian>().unwrap();
@@ -46,12 +46,12 @@ impl TransducerHeader {
         }
 
         TransducerHeader {
-            symbols: symbols,
-            input_symbols: input_symbols,
-            trans_index_table: trans_index_table,
-            trans_target_table: trans_target_table,
-            states: states,
-            transitions: transitions,
+            symbols,
+            input_symbols,
+            trans_index_table,
+            trans_target_table,
+            states,
+            transitions,
             properties: props,
 
             string_content_size: header_len,

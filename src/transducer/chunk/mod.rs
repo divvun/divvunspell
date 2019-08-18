@@ -217,7 +217,7 @@ impl ChfstTransducer {
         let meta_file = File::open(path.join("meta")).map_err(|_| {
             std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                "meta not found in transducer path",
+                format!("`meta` not found in transducer path, looked for {}", path.join("meta").display()),
             )
         })?;
         let meta: MetaRecord = serde_json::from_reader(meta_file)?;
@@ -326,7 +326,7 @@ impl Transducer for ChfstTransducer {
                 None => false,
             }
         } else {
-            let (page, index) = self.index_rel_index(i + sym as u32);
+            let (page, index) = self.index_rel_index(i + u32::from(sym));
             match self.index_tables[page].input_symbol(index) {
                 Some(res) => sym == res,
                 None => false,
@@ -366,12 +366,12 @@ impl Transducer for ChfstTransducer {
 
         if let Some(sym) = self.transition_tables[page].input_symbol(index) {
             if sym != 0 && !self.alphabet.is_flag(sym) {
-                return None;
+                None
             } else {
-                return Some(self.transition_tables[page].symbol_transition(index));
+                Some(self.transition_tables[page].symbol_transition(index))
             }
         } else {
-            return None;
+            None
         }
     }
 
@@ -396,7 +396,7 @@ impl Transducer for ChfstTransducer {
         if i >= TARGET_TABLE {
             Some(i - TARGET_TABLE + 1)
         } else {
-            let (page, index) = self.index_rel_index(i + 1 + symbol as u32);
+            let (page, index) = self.index_rel_index(i + 1 + u32::from(symbol));
 
             if let Some(v) = self.index_tables[page].target(index) {
                 Some(v - TARGET_TABLE)

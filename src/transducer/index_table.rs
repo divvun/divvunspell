@@ -33,7 +33,7 @@ impl IndexTable {
         size: TransitionTableIndex,
     ) -> IndexTable {
         IndexTable {
-            size: size,
+            size,
             mmap: buf,
             offset,
             len,

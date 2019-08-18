@@ -65,8 +65,8 @@ impl TransducerAlphabetParser {
 
         let op = FlagDiacriticOperation {
             operation: fdo,
-            feature: *&self.feature_bucket[&feature],
-            value: *&self.value_bucket[&value],
+            feature: self.feature_bucket[&feature],
+            value: self.value_bucket[&value],
         };
 
         self.operations.insert(i, op);

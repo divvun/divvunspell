@@ -1,3 +1,5 @@
+#![allow(clippy::not_unsafe_ptr_arg_deref)]
+
 use libc::{c_char, size_t, uint8_t};
 use std::ffi::{CStr, CString};
 use std::path::Path;

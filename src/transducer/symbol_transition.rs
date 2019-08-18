@@ -14,9 +14,9 @@ impl SymbolTransition {
         weight: Option<Weight>,
     ) -> SymbolTransition {
         SymbolTransition {
-            target: target,
-            symbol: symbol,
-            weight: weight,
+            target,
+            symbol,
+            weight,
         }
     }
 
