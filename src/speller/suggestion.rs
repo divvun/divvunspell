@@ -2,17 +2,18 @@ use crate::types::Weight;
 use serde_derive::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::cmp::Ordering::Equal;
+use smol_str::SmolStr;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Suggestion {
-    pub value: String,
+    pub value: SmolStr,
     pub weight: Weight,
 }
 
 impl Suggestion {
-    pub fn new(value: String, weight: Weight) -> Suggestion {
+    pub fn new(value: SmolStr, weight: Weight) -> Suggestion {
         Suggestion {
-            value,
+            value: value.into(),
             weight,
         }
     }

@@ -1,3 +1,5 @@
+#![allow(clippy::cast_ptr_alignment)] // FIXME: This at least needs a comment
+
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use memmap::Mmap;
 use std::fmt;

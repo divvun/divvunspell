@@ -1,35 +1,37 @@
-fn trim_start(alphabet: &[String], word: &str) -> String {
-    word.trim_start_matches(|x: char| !alphabet.contains(&x.to_string()))
-        .to_string()
+use smol_str::SmolStr;
+
+fn trim_start(alphabet: &[SmolStr], word: &str) -> SmolStr {
+    word.trim_start_matches(|x: char| !alphabet.contains(&SmolStr::from(x.to_string())))
+        .into()
 }
 
-fn trim_end(alphabet: &[String], word: &str) -> String {
-    word.trim_end_matches(|x: char| !alphabet.contains(&x.to_string()))
-        .to_string()
+fn trim_end(alphabet: &[SmolStr], word: &str) -> SmolStr {
+    word.trim_end_matches(|x: char| !alphabet.contains(&SmolStr::from(x.to_string())))
+        .into()
 }
 
-fn trim_both(alphabet: &[String], word: &str) -> String {
-    word.trim_matches(|x: char| !alphabet.contains(&x.to_string()))
-        .to_string()
+fn trim_both(alphabet: &[SmolStr], word: &str) -> SmolStr {
+    word.trim_matches(|x: char| !alphabet.contains(&SmolStr::from(x.to_string())))
+        .into()
 }
 
-pub fn lower_case(s: &str) -> String {
+pub fn lower_case(s: &str) -> SmolStr {
     s.chars()
         .map(|c| c.to_lowercase().collect::<String>())
-        .collect::<String>()
+        .collect::<SmolStr>()
 }
 
-pub fn upper_case(s: &str) -> String {
+pub fn upper_case(s: &str) -> SmolStr {
     s.chars()
         .map(|c| c.to_uppercase().collect::<String>())
-        .collect::<String>()
+        .collect::<SmolStr>()
 }
 
-pub fn upper_first(s: &str) -> String {
+pub fn upper_first(s: &str) -> SmolStr {
     let mut c = s.chars();
     match c.next() {
-        None => String::new(),
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+        None => SmolStr::new(""),
+        Some(f) => SmolStr::from(f.to_uppercase().collect::<String>() + c.as_str()),
     }
 }
 
@@ -38,7 +40,7 @@ static PUNCTUATION: &[&str] = &[
     ">", "?", "@", "[", "\\", "]", "^", "_", "`", "{", "|", "}", "~",
 ];
 
-fn without_punctuation(alphabet: &[String]) -> Vec<String> {
+fn without_punctuation(alphabet: &[SmolStr]) -> Vec<SmolStr> {
     let x = alphabet
         .iter()
         .filter(|x| !PUNCTUATION.contains(&x.as_str()))
@@ -46,11 +48,11 @@ fn without_punctuation(alphabet: &[String]) -> Vec<String> {
     x.collect::<Vec<_>>()
 }
 
-pub fn word_variants(alphabet: &[String], word: &str) -> Vec<String> {
+pub fn word_variants(alphabet: &[SmolStr], word: &str) -> Vec<SmolStr> {
     let alphabet = without_punctuation(alphabet);
 
     let mut base = vec![
-        word.to_string(),
+        word.into(),
         trim_start(&alphabet, word),
         trim_end(&alphabet, word),
         trim_both(&alphabet, word),
@@ -92,8 +94,8 @@ mod tests {
     fn testsd() {
         let a = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
             .chars()
-            .map(|c| c.to_string())
-            .collect::<Vec<String>>();
+            .map(|c| SmolStr::from(c.to_string()))
+            .collect::<Vec<SmolStr>>();
         println!("{:?}", word_variants(&a, "FOO"));
         println!("{:?}", word_variants(&a, "Giella"));
         println!("{:?}", word_variants(&a, "abc"));

@@ -1,16 +1,17 @@
 use super::TransducerAlphabet;
 use crate::types::{FlagDiacriticOperation, FlagDiacriticOperator, SymbolNumber, ValueNumber};
 use hashbrown::HashMap;
+use smol_str::SmolStr;
 
 type OperationsMap = HashMap<SymbolNumber, FlagDiacriticOperation>;
 
 pub struct TransducerAlphabetParser {
-    key_table: Vec<String>,
+    key_table: Vec<SmolStr>,
     flag_state_size: SymbolNumber,
-    string_to_symbol: HashMap<String, SymbolNumber>,
+    string_to_symbol: HashMap<SmolStr, SymbolNumber>,
     operations: OperationsMap,
-    feature_bucket: HashMap<String, SymbolNumber>,
-    value_bucket: HashMap<String, ValueNumber>,
+    feature_bucket: HashMap<SmolStr, SymbolNumber>,
+    value_bucket: HashMap<SmolStr, ValueNumber>,
     val_n: ValueNumber,
     feat_n: SymbolNumber,
     identity_symbol: Option<SymbolNumber>,
@@ -38,17 +39,15 @@ impl TransducerAlphabetParser {
         //debug!("chunks: {:?}", chunks);
 
         let fdo = FlagDiacriticOperator::from_str(&chunks.next().unwrap()[1..]).unwrap();
-        let feature: String = chunks
+        let feature: SmolStr = chunks
             .next()
             .unwrap_or("")
-            .to_string()
             .chars()
             .filter(|x| x != &'@')
             .collect();
-        let value: String = chunks
+        let value: SmolStr = chunks
             .next()
             .unwrap_or("")
-            .to_string()
             .chars()
             .filter(|x| x != &'@')
             .collect();
@@ -70,7 +69,7 @@ impl TransducerAlphabetParser {
         };
 
         self.operations.insert(i, op);
-        self.key_table.push("".to_string());
+        self.key_table.push("".into());
     }
 
     fn parse_inner(&mut self, buf: &[String]) {
@@ -81,22 +80,22 @@ impl TransducerAlphabetParser {
                 if key.chars().nth(2).unwrap() == '.' {
                     self.handle_special_symbol(i, &key);
                 } else if key == "@_EPSILON_SYMBOL_@" {
-                    self.value_bucket.insert("".to_string(), self.val_n);
-                    self.key_table.push("".to_string());
+                    self.value_bucket.insert("".into(), self.val_n);
+                    self.key_table.push("".into());
                     self.val_n += 1;
                 } else if key == "@_IDENTITY_SYMBOL_@" {
                     self.identity_symbol = Some(i);
-                    self.key_table.push(key.to_string());
+                    self.key_table.push(key.into());
                 } else if key == "@_UNKNOWN_SYMBOL_@" {
                     self.unknown_symbol = Some(i);
-                    self.key_table.push(key.to_string());
+                    self.key_table.push(key.into());
                 } else {
                     // No idea, skip.
-                    self.key_table.push(String::from(""));
+                    self.key_table.push(SmolStr::from(""));
                 }
             } else {
-                self.key_table.push(key.to_string());
-                self.string_to_symbol.insert(key.to_string(), i);
+                self.key_table.push(key.into());
+                self.string_to_symbol.insert(key.into(), i);
             }
         }
 

@@ -1,29 +1,30 @@
 use super::Transducer;
 use crate::types::{FlagDiacriticOperation, FlagDiacriticOperator, SymbolNumber, ValueNumber};
 use hashbrown::HashMap;
+use smol_str::SmolStr;
 
 type OperationsMap = HashMap<SymbolNumber, FlagDiacriticOperation>;
 
 #[derive(Debug)]
 pub struct TransducerAlphabet {
-    pub(crate) key_table: Vec<String>,
+    pub(crate) key_table: Vec<SmolStr>,
     pub(crate) initial_symbol_count: SymbolNumber,
     pub(crate) flag_state_size: SymbolNumber,
     pub(crate) length: usize,
-    pub(crate) string_to_symbol: HashMap<String, SymbolNumber>,
+    pub(crate) string_to_symbol: HashMap<SmolStr, SymbolNumber>,
     pub(crate) operations: OperationsMap,
     pub(crate) identity_symbol: Option<SymbolNumber>,
     pub(crate) unknown_symbol: Option<SymbolNumber>,
 }
 
 struct TransducerAlphabetParser {
-    key_table: Vec<String>,
+    key_table: Vec<SmolStr>,
     flag_state_size: SymbolNumber,
     length: usize,
-    string_to_symbol: HashMap<String, SymbolNumber>,
+    string_to_symbol: HashMap<SmolStr, SymbolNumber>,
     operations: OperationsMap,
-    feature_bucket: HashMap<String, SymbolNumber>,
-    value_bucket: HashMap<String, ValueNumber>,
+    feature_bucket: HashMap<SmolStr, SymbolNumber>,
+    value_bucket: HashMap<SmolStr, ValueNumber>,
     val_n: ValueNumber,
     feat_n: SymbolNumber,
     identity_symbol: Option<SymbolNumber>,
@@ -51,17 +52,15 @@ impl TransducerAlphabetParser {
         let mut chunks = key.split('.');
 
         let fdo = FlagDiacriticOperator::from_str(&chunks.next().unwrap()[1..]).unwrap();
-        let feature: String = chunks
+        let feature: SmolStr = chunks
             .next()
             .unwrap_or("")
-            .to_string()
             .chars()
             .filter(|x| x != &'@')
             .collect();
-        let value: String = chunks
+        let value: SmolStr = chunks
             .next()
             .unwrap_or("")
-            .to_string()
             .chars()
             .filter(|x| x != &'@')
             .collect();
@@ -83,7 +82,7 @@ impl TransducerAlphabetParser {
         };
 
         self.operations.insert(i, op);
-        self.key_table.push(key.to_string());
+        self.key_table.push(key.into());
     }
 
     fn parse_inner(&mut self, buf: &[u8], symbols: SymbolNumber) {
@@ -96,14 +95,14 @@ impl TransducerAlphabetParser {
                 end += 1;
             }
 
-            let key = String::from_utf8_lossy(&buf[offset..offset + end]).into_owned();
+            let key: SmolStr = String::from_utf8_lossy(&buf[offset..offset + end]).into();
 
             if key.starts_with('@') && key.ends_with('@') {
                 if key.chars().nth(2).unwrap() == '.' {
                     self.handle_special_symbol(i, &key);
                 } else if key == "@_EPSILON_SYMBOL_@" {
-                    self.value_bucket.insert("".to_string(), self.val_n);
-                    self.key_table.push("".to_string());
+                    self.value_bucket.insert("".into(), self.val_n);
+                    self.key_table.push("".into());
                     self.val_n += 1;
                 } else if key == "@_IDENTITY_SYMBOL_@" {
                     self.identity_symbol = Some(i);
@@ -114,11 +113,11 @@ impl TransducerAlphabetParser {
                 } else {
                     // No idea, skip.
                     eprintln!("Unhandled alphabet key: {}", &key);
-                    self.key_table.push(String::from(""));
+                    self.key_table.push(SmolStr::from(""));
                 }
             } else {
-                self.key_table.push(key.to_string());
-                self.string_to_symbol.insert(key, i);
+                self.key_table.push(key.clone());
+                self.string_to_symbol.insert(key.clone(), i);
             }
 
             offset += end + 1;
@@ -156,7 +155,7 @@ impl TransducerAlphabet {
         TransducerAlphabetParser::parse(buf, symbols)
     }
 
-    pub fn key_table(&self) -> &Vec<String> {
+    pub fn key_table(&self) -> &Vec<SmolStr> {
         &self.key_table
     }
 
@@ -168,7 +167,7 @@ impl TransducerAlphabet {
         &self.operations
     }
 
-    pub fn string_to_symbol(&self) -> &HashMap<String, SymbolNumber> {
+    pub fn string_to_symbol(&self) -> &HashMap<SmolStr, SymbolNumber> {
         &self.string_to_symbol
     }
 
@@ -178,8 +177,8 @@ impl TransducerAlphabet {
 
     pub fn add_symbol(&mut self, string: &str) {
         self.string_to_symbol
-            .insert(string.to_string(), self.key_table.len() as u16);
-        self.key_table.push(string.to_string());
+            .insert(string.into(), self.key_table.len() as u16);
+        self.key_table.push(string.into());
     }
 
     pub fn identity(&self) -> Option<SymbolNumber> {

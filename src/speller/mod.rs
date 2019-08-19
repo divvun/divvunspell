@@ -4,6 +4,7 @@ pub mod worker;
 use hashbrown::HashMap;
 use std::f32;
 use std::sync::Arc;
+use smol_str::SmolStr;
 
 use self::worker::SpellerWorker;
 use crate::speller::suggestion::Suggestion;
@@ -116,12 +117,12 @@ impl<T: Transducer> Speller<T> {
     fn suggest_caps_merging(
         self: Arc<Self>,
         ref_word: &str,
-        words: Vec<String>,
+        words: Vec<SmolStr>,
         config: &SpellerConfig,
     ) -> Vec<Suggestion> {
         use crate::tokenizer::caps::*;
 
-        let mut best: HashMap<String, f32> = HashMap::new();
+        let mut best: HashMap<SmolStr, f32> = HashMap::new();
 
         for word in words.into_iter() {
             let worker = SpellerWorker::new(
@@ -155,7 +156,7 @@ impl<T: Transducer> Speller<T> {
                 };
 
                 for sugg in r.into_iter() {
-                    best.entry(sugg.value.to_string())
+                    best.entry(sugg.value.clone())
                         .and_modify(|entry| {
                             if entry as &_ > &sugg.weight {
                                 *entry = sugg.weight
@@ -183,7 +184,7 @@ impl<T: Transducer> Speller<T> {
     fn suggest_caps(
         self: Arc<Self>,
         ref_word: &str,
-        words: Vec<String>,
+        words: Vec<SmolStr>,
         config: &SpellerConfig,
     ) -> Vec<Suggestion> {
         use crate::tokenizer::caps::*;

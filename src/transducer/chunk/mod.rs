@@ -1,3 +1,5 @@
+#![allow(clippy::cast_ptr_alignment)] // FIXME: This at least needs a comment
+
 use std::fs::File;
 use std::mem;
 use std::ptr;
@@ -8,6 +10,7 @@ use crate::transducer::symbol_transition::SymbolTransition;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use memmap::Mmap;
 use serde_derive::{Deserialize, Serialize};
+use smol_str::SmolStr;
 
 mod alphabet;
 
