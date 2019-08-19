@@ -283,19 +283,23 @@ impl ChfstTransducer {
 }
 
 impl Transducer for ChfstTransducer {
+    #[inline(always)]
     fn alphabet(&self) -> &TransducerAlphabet {
         &self.alphabet
     }
 
+    #[inline(always)]
     fn mut_alphabet(&mut self) -> &mut TransducerAlphabet {
         &mut self.alphabet
     }
 
+    #[inline(always)]
     fn transition_input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
         let (page, index) = self.transition_rel_index(i);
         self.transition_tables[page].input_symbol(index)
     }
 
+    #[inline(always)]
     fn is_final(&self, i: TransitionTableIndex) -> bool {
         if i >= TARGET_TABLE {
             let (page, index) = self.transition_rel_index(i - TARGET_TABLE);
@@ -306,6 +310,7 @@ impl Transducer for ChfstTransducer {
         }
     }
 
+    #[inline(always)]
     fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight> {
         if i >= TARGET_TABLE {
             let (page, index) = self.transition_rel_index(i - TARGET_TABLE);
@@ -316,6 +321,7 @@ impl Transducer for ChfstTransducer {
         }
     }
 
+    #[inline(always)]
     fn has_transitions(&self, i: TransitionTableIndex, s: Option<SymbolNumber>) -> bool {
         let sym = match s {
             Some(v) => v,
@@ -337,6 +343,7 @@ impl Transducer for ChfstTransducer {
         }
     }
 
+    #[inline(always)]
     fn has_epsilons_or_flags(&self, i: TransitionTableIndex) -> bool {
         if i >= TARGET_TABLE {
             let (page, index) = self.transition_rel_index(i - TARGET_TABLE);
@@ -354,6 +361,7 @@ impl Transducer for ChfstTransducer {
         }
     }
 
+    #[inline(always)]
     fn take_epsilons(&self, i: TransitionTableIndex) -> Option<SymbolTransition> {
         let (page, index) = self.transition_rel_index(i);
 
@@ -364,6 +372,7 @@ impl Transducer for ChfstTransducer {
         }
     }
 
+    #[inline(always)]
     fn take_epsilons_and_flags(&self, i: TransitionTableIndex) -> Option<SymbolTransition> {
         let (page, index) = self.transition_rel_index(i);
 
@@ -378,6 +387,7 @@ impl Transducer for ChfstTransducer {
         }
     }
 
+    #[inline(always)]
     fn take_non_epsilons(
         &self,
         i: TransitionTableIndex,
@@ -395,6 +405,7 @@ impl Transducer for ChfstTransducer {
         }
     }
 
+    #[inline(always)]
     fn next(&self, i: TransitionTableIndex, symbol: SymbolNumber) -> Option<TransitionTableIndex> {
         if i >= TARGET_TABLE {
             Some(i - TARGET_TABLE + 1)

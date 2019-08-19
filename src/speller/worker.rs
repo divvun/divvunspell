@@ -31,10 +31,12 @@ pub struct InverseBloomFilter<T> {
 }
 
 impl<T: Hash + Eq> InverseBloomFilter<T> {
+    #[inline(always)]
     pub fn new() -> InverseBloomFilter<T> {
         InverseBloomFilter::with_capacity(1_048_576)
     }
 
+    #[inline(always)]
     pub fn with_capacity(capacity: u64) -> InverseBloomFilter<T> {
         InverseBloomFilter {
             array: std::iter::from_fn(|| Some(None)).take(capacity as usize).collect(),
@@ -43,15 +45,18 @@ impl<T: Hash + Eq> InverseBloomFilter<T> {
         }
     }
 
+    #[inline(always)]
     pub fn capacity(&self) -> u64 {
         self.capacity
     }
 
+    #[inline(always)]
     pub fn add(&mut self, item: T) {
         let index = self.index_for_hash(&item) as usize;
         self.array[index] = Some(item);
     }
 
+    #[inline(always)]
     pub fn test(&self, item: &T) -> bool {
         let index = self.index_for_hash(item) as usize;
         match self.array[index] {
@@ -60,6 +65,7 @@ impl<T: Hash + Eq> InverseBloomFilter<T> {
         }
     }
 
+    #[inline(always)]
     pub fn test_and_add(&mut self, item: T) -> bool {
         let (old_item, new_item) = self.get_and_set(self.index_for_hash(&item) as usize, Some(item));
         &old_item == new_item
@@ -79,6 +85,7 @@ impl<T: Hash + Eq> InverseBloomFilter<T> {
     }
 }
 
+#[inline(always)]
 fn speller_start_node(pool: &Pool<TreeNode>, size: usize) -> Vec<Recycled<TreeNode>> {
     let start_node = TreeNode::empty(pool, vec![0; size]);
     let mut nodes = Vec::with_capacity(256);
@@ -86,6 +93,7 @@ fn speller_start_node(pool: &Pool<TreeNode>, size: usize) -> Vec<Recycled<TreeNo
     nodes
 }
 
+#[inline(always)]
 fn speller_max_weight(config: &SpellerConfig) -> Weight {
     config.max_weight.unwrap_or(f32::INFINITY)
 }
@@ -98,6 +106,7 @@ pub struct SpellerWorker<T: Transducer> {
 }
 
 impl<'t, T: Transducer + 't> SpellerWorker<T> {
+    #[inline(always)]
     pub fn new(
         speller: Arc<Speller<T>>,
         mode: SpellerWorkerMode,
@@ -112,6 +121,7 @@ impl<'t, T: Transducer + 't> SpellerWorker<T> {
         })
     }
 
+    #[inline(always)]
     fn lexicon_epsilons<'a>(
         &self,
         pool: &'a Pool<TreeNode>,
@@ -178,6 +188,7 @@ impl<'t, T: Transducer + 't> SpellerWorker<T> {
         }
     }
 
+    #[inline(always)]
     fn mutator_epsilons<'a>(
         &self,
         pool: &'a Pool<TreeNode>,
@@ -277,6 +288,7 @@ impl<'t, T: Transducer + 't> SpellerWorker<T> {
         }
     }
 
+    #[inline(always)]
     pub fn queue_lexicon_arcs<'a>(
         &self,
         pool: &'a Pool<TreeNode>,
@@ -339,6 +351,7 @@ impl<'t, T: Transducer + 't> SpellerWorker<T> {
         }
     }
 
+    #[inline(always)]
     fn queue_mutator_arcs<'a>(
         &self,
         pool: &'a Pool<TreeNode>,
@@ -437,6 +450,7 @@ impl<'t, T: Transducer + 't> SpellerWorker<T> {
         }
     }
 
+    #[inline(always)]
     fn consume_input<'a>(
         &self,
         pool: &'a Pool<TreeNode>,
@@ -489,6 +503,7 @@ impl<'t, T: Transducer + 't> SpellerWorker<T> {
         }
     }
 
+    #[inline(always)]
     fn lexicon_consume<'a>(
         &self,
         pool: &'a Pool<TreeNode>,
@@ -559,6 +574,7 @@ impl<'t, T: Transducer + 't> SpellerWorker<T> {
         );
     }
 
+    #[inline(always)]
     fn update_weight_limit(&self, best_weight: Weight, suggestions: &[Suggestion]) -> Weight {
         use std::cmp::Ordering::{Equal, Less};
 
@@ -585,11 +601,12 @@ impl<'t, T: Transducer + 't> SpellerWorker<T> {
         max_weight
     }
 
-    #[inline]
+    #[inline(always)]
     fn is_under_weight_limit(&self, max_weight: Weight, w: Weight) -> bool {
         w <= max_weight
     }
 
+    #[inline(always)]
     fn state_size(&self) -> usize {
         self.speller.lexicon().alphabet().state_size() as usize
     }

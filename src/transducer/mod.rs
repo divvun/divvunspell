@@ -65,6 +65,7 @@ pub struct TransducerSerializeReport {
 }
 
 impl HfstTransducer {
+    #[inline(always)]
     pub fn from_mapped_memory(buf: Arc<Mmap>) -> HfstTransducer {
         let header = TransducerHeader::new(&buf);
         let alphabet_offset = header.len();
@@ -144,28 +145,34 @@ impl HfstTransducer {
         Ok(())
     }
 
+    #[inline(always)]
     pub fn buffer(&self) -> &[u8] {
         &self.buf
     }
 
+    #[inline(always)]
     pub fn index_table(&self) -> &IndexTable {
         &self.index_table
     }
 
+    #[inline(always)]
     pub fn transition_table(&self) -> &TransitionTable {
         &self.transition_table
     }
 
+    #[inline(always)]
     pub fn is_weighted(&self) -> bool {
         self.header.has_flag(HeaderFlag::Weighted)
     }
 
+    #[inline(always)]
     pub fn header(&self) -> &TransducerHeader {
         &self.header
     }
 }
 
 impl Transducer for HfstTransducer {
+    #[inline(always)]
     fn is_final(&self, i: TransitionTableIndex) -> bool {
         if i >= TARGET_TABLE {
             self.transition_table.is_final(i - TARGET_TABLE)
@@ -174,6 +181,7 @@ impl Transducer for HfstTransducer {
         }
     }
 
+    #[inline(always)]
     fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight> {
         if i >= TARGET_TABLE {
             self.transition_table.weight(i - TARGET_TABLE)
@@ -182,6 +190,7 @@ impl Transducer for HfstTransducer {
         }
     }
 
+    #[inline(always)]
     fn has_transitions(&self, i: TransitionTableIndex, s: Option<SymbolNumber>) -> bool {
         let sym = match s {
             Some(v) => v,
@@ -201,6 +210,7 @@ impl Transducer for HfstTransducer {
         }
     }
 
+    #[inline(always)]
     fn has_epsilons_or_flags(&self, i: TransitionTableIndex) -> bool {
         if i >= TARGET_TABLE {
             match self.transition_table.input_symbol(i - TARGET_TABLE) {
@@ -214,6 +224,7 @@ impl Transducer for HfstTransducer {
         }
     }
 
+    #[inline(always)]
     fn take_epsilons(&self, i: TransitionTableIndex) -> Option<SymbolTransition> {
         if let Some(0) = self.transition_table.input_symbol(i) {
             Some(self.transition_table.symbol_transition(i))
@@ -222,6 +233,7 @@ impl Transducer for HfstTransducer {
         }
     }
 
+    #[inline(always)]
     fn take_epsilons_and_flags(&self, i: TransitionTableIndex) -> Option<SymbolTransition> {
         if let Some(sym) = self.transition_table.input_symbol(i) {
             if sym != 0 && !self.alphabet.is_flag(sym) {
@@ -234,6 +246,7 @@ impl Transducer for HfstTransducer {
         }
     }
 
+    #[inline(always)]
     fn take_non_epsilons(
         &self,
         i: TransitionTableIndex,
@@ -250,6 +263,7 @@ impl Transducer for HfstTransducer {
         }
     }
 
+    #[inline(always)]
     fn next(&self, i: TransitionTableIndex, symbol: SymbolNumber) -> Option<TransitionTableIndex> {
         if i >= TARGET_TABLE {
             Some(i - TARGET_TABLE + 1)
@@ -260,14 +274,17 @@ impl Transducer for HfstTransducer {
         }
     }
 
+    #[inline(always)]
     fn transition_input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
         self.transition_table().input_symbol(i)
     }
 
+    #[inline(always)]
     fn alphabet(&self) -> &TransducerAlphabet {
         &self.alphabet
     }
 
+    #[inline(always)]
     fn mut_alphabet(&mut self) -> &mut TransducerAlphabet {
         &mut self.alphabet
     }

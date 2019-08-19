@@ -10,7 +10,7 @@ use divvunspell::transducer::chunk::{ChfstBundle, ChfstTransducer};
 use divvunspell::transducer::HfstTransducer;
 
 fn time_suggest(
-    speller: Arc<Speller<ChfstTransducer>>,
+    speller: Arc<Speller<HfstTransducer>>,
     line: &TestLine,
     cfg: SpellerConfig,
 ) -> String {
@@ -314,8 +314,8 @@ fn main() {
 
     // let words = ["vuovdinfállovuogiŧ", "eanavuoigatvuohtadutkamušas", "nannesivččii", "gárvanivččii", "gáibiđivččii"];
 
-    // let unaligned = SpellerArchive::new("./unaligned-test.zhfst").unwrap();
-    let unaligned = ChfstBundle::from_path(&std::path::Path::new("./out.chfst")).unwrap();
+    let unaligned = SpellerArchive::new("./unaligned-test.zhfst").unwrap();
+    // let unaligned = ChfstBundle::from_path(&std::path::Path::new("./out.chfst")).unwrap();
     // let res = unaligned.speller().suggest_with_config("same", &cfg);
     // let aligned = SpellerArchive::new("./aligned-test.zhfst").unwrap();
     let speller = unaligned.speller();
