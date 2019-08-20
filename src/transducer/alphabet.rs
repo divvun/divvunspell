@@ -97,7 +97,7 @@ impl TransducerAlphabetParser {
 
             let key: SmolStr = String::from_utf8_lossy(&buf[offset..offset + end]).into();
 
-            if key.starts_with('@') && key.ends_with('@') {
+            if key.len() > 1 && key.starts_with('@') && key.ends_with('@') {
                 if key.chars().nth(2).unwrap() == '.' {
                     self.handle_special_symbol(i, &key);
                 } else if key == "@_EPSILON_SYMBOL_@" {
