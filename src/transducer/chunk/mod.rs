@@ -10,7 +10,6 @@ use crate::transducer::symbol_transition::SymbolTransition;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use memmap::Mmap;
 use serde_derive::{Deserialize, Serialize};
-use smol_str::SmolStr;
 
 mod alphabet;
 
@@ -113,8 +112,7 @@ impl IndexTable {
         }
 
         let index = (INDEX_TABLE_SIZE * i as usize) + 4;
-        let weight: Weight =
-            unsafe { ptr::read(self.buf.as_ptr().add(index) as *const _) };
+        let weight: Weight = unsafe { ptr::read(self.buf.as_ptr().add(index) as *const _) };
 
         Some(weight)
     }
@@ -220,7 +218,10 @@ impl ChfstTransducer {
         let meta_file = File::open(path.join("meta")).map_err(|_| {
             std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                format!("`meta` not found in transducer path, looked for {}", path.join("meta").display()),
+                format!(
+                    "`meta` not found in transducer path, looked for {}",
+                    path.join("meta").display()
+                ),
             )
         })?;
         let meta: MetaRecord = serde_json::from_reader(meta_file)?;

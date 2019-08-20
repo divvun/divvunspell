@@ -1,4 +1,4 @@
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum FlagDiacriticOperator {
     PositiveSet,
     NegativeSet,
@@ -47,8 +47,3 @@ pub type ValueNumber = i16;
 pub type TransitionTableIndex = u32;
 pub type Weight = f32;
 pub type FlagDiacriticState = Vec<i16>;
-
-pub enum SpellerWorkerMode {
-    Correct,
-    Unknown,
-}

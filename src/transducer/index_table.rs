@@ -42,10 +42,12 @@ impl IndexTable {
         }
     }
 
+    #[inline(always)]
     pub fn len(&self) -> usize {
         self.len - self.offset
     }
 
+    #[inline(always)]
     fn make_cursor<'a>(&'a self) -> Cursor<&'a [u8]> {
         Cursor::new(&self.mmap)
     }
@@ -101,6 +103,7 @@ impl IndexTable {
         Ok(chunk_count)
     }
 
+    #[inline(always)]
     pub fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
         if i >= self.size {
             return None;
@@ -124,6 +127,7 @@ impl IndexTable {
         }
     }
 
+    #[inline(always)]
     pub fn target(&self, i: TransitionTableIndex) -> Option<TransitionTableIndex> {
         if i >= self.size {
             return None;
@@ -148,6 +152,7 @@ impl IndexTable {
 
     // Final weight reads from the same position as target, but for a different tuple
     // This can probably be abstracted out more nicely
+    #[inline(always)]
     pub fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight> {
         if i >= self.size {
             return None;
@@ -165,6 +170,7 @@ impl IndexTable {
         Some(weight)
     }
 
+    #[inline(always)]
     pub fn is_final(&self, i: TransitionTableIndex) -> bool {
         self.input_symbol(i) == None && self.target(i) != None
     }

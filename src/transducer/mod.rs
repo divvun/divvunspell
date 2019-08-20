@@ -136,7 +136,12 @@ impl HfstTransducer {
             index_table_count,
             transition_table_count,
             chunk_size,
-            raw_alphabet: self.alphabet().key_table().iter().map(|x| x.to_string()).collect(),
+            raw_alphabet: self
+                .alphabet()
+                .key_table()
+                .iter()
+                .map(|x| x.to_string())
+                .collect(),
         };
 
         eprintln!("Writing meta index...");

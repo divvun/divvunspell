@@ -89,6 +89,14 @@ pub enum SpellerArchiveError {
     Unknown(u8),
 }
 
+impl std::error::Error for SpellerArchiveError {}
+
+impl std::fmt::Display for SpellerArchiveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        write!(f, "{:?}", self)
+    }
+}
+
 impl SpellerArchive {
     pub fn new(file_path: &str) -> Result<SpellerArchive, SpellerArchiveError> {
         let file = File::open(file_path).map_err(SpellerArchiveError::OpenFileFailed)?;
@@ -113,10 +121,7 @@ impl SpellerArchive {
 
         let speller = Speller::new(errmodel, acceptor);
 
-        Ok(SpellerArchive {
-            metadata,
-            speller,
-        })
+        Ok(SpellerArchive { metadata, speller })
     }
 
     pub fn speller(&self) -> Arc<Speller<HfstTransducer>> {

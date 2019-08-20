@@ -1,20 +1,20 @@
 use serde_xml_rs::{from_reader, Error, ParserConfig};
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SpellerMetadata {
     pub info: SpellerMetadataInfo,
     pub acceptor: SpellerMetadataAcceptor,
     pub errmodel: SpellerMetadataErrmodel,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SpellerTitle {
     pub lang: Option<String>,
     #[serde(rename = "$value")]
     pub value: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SpellerMetadataInfo {
     pub locale: String,
     pub title: Vec<SpellerTitle>,
@@ -22,7 +22,7 @@ pub struct SpellerMetadataInfo {
     pub producer: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SpellerMetadataAcceptor {
     #[serde(rename = "type", default)]
     pub type_: String,
@@ -31,7 +31,7 @@ pub struct SpellerMetadataAcceptor {
     pub description: String,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SpellerMetadataErrmodel {
     pub id: String,
     pub title: Vec<SpellerTitle>,

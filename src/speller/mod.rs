@@ -2,16 +2,17 @@ pub mod suggestion;
 pub mod worker;
 
 use hashbrown::HashMap;
+use serde_derive::{Deserialize, Serialize};
+use smol_str::SmolStr;
 use std::f32;
 use std::sync::Arc;
-use smol_str::SmolStr;
 
 use self::worker::SpellerWorker;
 use crate::speller::suggestion::Suggestion;
 use crate::transducer::Transducer;
-use crate::types::{SpellerWorkerMode, SymbolNumber, Weight};
+use crate::types::{SymbolNumber, Weight};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SpellerConfig {
     pub n_best: Option<usize>,
     pub max_weight: Option<Weight>,
@@ -19,7 +20,7 @@ pub struct SpellerConfig {
     pub with_caps: bool,
     pub pool_start: usize,
     pub pool_max: usize,
-    pub seen_node_sample_rate: u8,
+    pub seen_node_sample_rate: u64,
 }
 
 impl SpellerConfig {
@@ -86,7 +87,6 @@ impl<T: Transducer> Speller<T> {
         for word in words.into_iter() {
             let worker = SpellerWorker::new(
                 self.clone(),
-                SpellerWorkerMode::Unknown,
                 self.to_input_vec(&word),
                 SpellerConfig::default(),
             );
@@ -104,12 +104,7 @@ impl<T: Transducer> Speller<T> {
     }
 
     fn suggest_single(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
-        let worker = SpellerWorker::new(
-            self.clone(),
-            SpellerWorkerMode::Correct,
-            self.to_input_vec(word),
-            config.clone(),
-        );
+        let worker = SpellerWorker::new(self.clone(), self.to_input_vec(word), config.clone());
 
         worker.suggest()
     }
@@ -125,12 +120,7 @@ impl<T: Transducer> Speller<T> {
         let mut best: HashMap<SmolStr, f32> = HashMap::new();
 
         for word in words.into_iter() {
-            let worker = SpellerWorker::new(
-                self.clone(),
-                SpellerWorkerMode::Correct,
-                self.to_input_vec(&word),
-                config.clone(),
-            );
+            let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
 
             let suggestions = worker.suggest();
 
@@ -190,12 +180,7 @@ impl<T: Transducer> Speller<T> {
         use crate::tokenizer::caps::*;
 
         for word in words.into_iter() {
-            let worker = SpellerWorker::new(
-                self.clone(),
-                SpellerWorkerMode::Correct,
-                self.to_input_vec(&word),
-                config.clone(),
-            );
+            let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
 
             let suggestions = worker.suggest();
 

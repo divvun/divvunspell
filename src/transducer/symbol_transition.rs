@@ -20,18 +20,22 @@ impl SymbolTransition {
         }
     }
 
+    #[inline(always)]
     pub fn target(&self) -> Option<TransitionTableIndex> {
         self.target
     }
 
+    #[inline(always)]
     pub fn symbol(&self) -> Option<SymbolNumber> {
         self.symbol
     }
 
+    #[inline(always)]
     pub fn weight(&self) -> Option<Weight> {
         self.weight
     }
 
+    #[inline(always)]
     pub fn clone_with_epsilon_symbol(&self) -> SymbolTransition {
         SymbolTransition {
             target: self.target,

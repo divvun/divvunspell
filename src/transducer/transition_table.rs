@@ -27,6 +27,7 @@ impl fmt::Debug for TransitionTable {
 }
 
 impl TransitionTable {
+    #[inline(always)]
     pub fn new(mmap: Arc<Mmap>, offset: usize, len: usize, size: u32) -> TransitionTable {
         TransitionTable {
             size,
@@ -90,11 +91,12 @@ impl TransitionTable {
         Ok(chunk_count as usize)
     }
 
+    #[inline(always)]
     fn make_cursor(&self) -> Cursor<&[u8]> {
         Cursor::new(&self.mmap)
     }
 
-    #[inline]
+    #[inline(always)]
     fn read_symbol_from_cursor(&self, index: usize) -> Option<SymbolNumber> {
         let index = self.offset + index;
         let x: SymbolNumber = if cfg!(all(target_arch = "arm", target_pointer_width = "32")) {
@@ -111,6 +113,7 @@ impl TransitionTable {
         }
     }
 
+    #[inline(always)]
     pub fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
         if i >= self.size {
             return None;
@@ -121,6 +124,7 @@ impl TransitionTable {
         sym
     }
 
+    #[inline(always)]
     pub fn output_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
         if i >= self.size {
             return None;
@@ -130,6 +134,7 @@ impl TransitionTable {
         self.read_symbol_from_cursor(index)
     }
 
+    #[inline(always)]
     pub fn target(&self, i: TransitionTableIndex) -> Option<TransitionTableIndex> {
         if i >= self.size {
             return None;
@@ -153,6 +158,7 @@ impl TransitionTable {
         }
     }
 
+    #[inline(always)]
     pub fn weight(&self, i: TransitionTableIndex) -> Option<Weight> {
         if i >= self.size {
             return None;
@@ -173,10 +179,12 @@ impl TransitionTable {
         Some(x)
     }
 
+    #[inline(always)]
     pub fn is_final(&self, i: TransitionTableIndex) -> bool {
         self.input_symbol(i) == None && self.output_symbol(i) == None && self.target(i) == Some(1)
     }
 
+    #[inline(always)]
     pub fn symbol_transition(&self, i: TransitionTableIndex) -> SymbolTransition {
         SymbolTransition::new(self.target(i), self.output_symbol(i), self.weight(i))
     }
