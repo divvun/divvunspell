@@ -151,7 +151,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let matches = App::new("divvunspell-accuracy")
         .setting(AppSettings::ArgRequiredElseHelp)
         .version(env!("CARGO_PKG_VERSION"))
-        .author("Brendan Molloy <brendan@bbqsrc.net>")
         .about("Accuracy testing for DivvunSpell.")
         .arg(
             Arg::with_name("config")
