@@ -155,12 +155,7 @@ static tuples: &'static [TestLine] = &[
             "borramušráhkadanfihtiid",
         ],
     ),
-    (
-        "humašivččii",
-        "humašii",
-        6.762947,
-        &["gumažii", "jumažii"],
-    ),
+    ("humašivččii", "humašii", 6.762947, &["gumažii", "jumažii"]),
     (
         "buorranivččii",
         "buorránivččii",
