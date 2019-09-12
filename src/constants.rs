@@ -27,5 +27,4 @@ mod tests {
 
         assert!(TRANS_TABLE_SIZE == c);
     }
-
 }

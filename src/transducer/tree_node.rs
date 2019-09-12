@@ -1,6 +1,6 @@
 use lifeguard::{Pool, Recycled};
-use std::hash::{Hash, Hasher};
 use std::cmp::Ordering;
+use std::hash::{Hash, Hasher};
 
 use super::symbol_transition::SymbolTransition;
 use crate::types::{
@@ -43,7 +43,7 @@ impl std::cmp::Ord for TreeNode {
         } else if self.weight > other.weight {
             return Ordering::Greater;
         } else {
-            return self.string.cmp(&other.string)
+            return self.string.cmp(&other.string);
         }
     }
 }
@@ -95,7 +95,8 @@ impl lifeguard::InitializeWith<&TreeNode> for TreeNode {
 
         if self.flag_state != source.flag_state {
             self.flag_state.truncate(0);
-            self.flag_state.extend_from_slice(&source.flag_state.as_slice());
+            self.flag_state
+                .extend_from_slice(&source.flag_state.as_slice());
         }
 
         self.weight = source.weight;
@@ -153,7 +154,8 @@ impl TreeNode {
 
         if node.flag_state != self.flag_state {
             node.flag_state.truncate(0);
-            node.flag_state.extend_from_slice(&self.flag_state.as_slice());
+            node.flag_state
+                .extend_from_slice(&self.flag_state.as_slice());
         }
 
         node.weight = self.weight + transition.weight().unwrap();
@@ -178,7 +180,8 @@ impl TreeNode {
 
         if node.flag_state != self.flag_state {
             node.flag_state.truncate(0);
-            node.flag_state.extend_from_slice(&self.flag_state.as_slice());
+            node.flag_state
+                .extend_from_slice(&self.flag_state.as_slice());
         }
 
         node.weight = self.weight + transition.weight().unwrap();
@@ -211,7 +214,8 @@ impl TreeNode {
 
         if node.flag_state != self.flag_state {
             node.flag_state.truncate(0);
-            node.flag_state.extend_from_slice(&self.flag_state.as_slice());
+            node.flag_state
+                .extend_from_slice(&self.flag_state.as_slice());
         }
 
         node.weight = self.weight + weight;
@@ -257,7 +261,8 @@ impl TreeNode {
 
         if node.flag_state != self.flag_state {
             node.flag_state.truncate(0);
-            node.flag_state.extend_from_slice(&self.flag_state.as_slice());
+            node.flag_state
+                .extend_from_slice(&self.flag_state.as_slice());
         }
 
         node.weight = self.weight + transition.weight().unwrap();
