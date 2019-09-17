@@ -248,7 +248,7 @@ pub extern "C" fn suggest_vec_get_weight(handle: &mut Vec<Suggestion>, index: si
 // Tokenizer
 
 use crate::tokenizer::Tokenize;
-use unic_segment::WordBoundIndices;
+use crate::tokenizer::word::WordBoundIndices;
 
 pub struct CWordBoundIndices {
     string: String,
@@ -264,6 +264,7 @@ pub extern "C" fn word_bound_indices(utf8_string: *const c_char) -> *mut CWordBo
         string,
         iterator: unsafe { std::mem::uninitialized() },
     };
+
     thing.iterator = unsafe { std::mem::transmute(thing.string.word_bound_indices()) };
     Box::into_raw(Box::new(thing))
 }
