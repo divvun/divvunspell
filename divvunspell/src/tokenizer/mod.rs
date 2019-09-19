@@ -46,13 +46,43 @@ mod tests {
         let msg = "this is an ordinary-sentence! \"This was quoted,\", an emoji: (😄), and\t a";
 
         assert_eq!(
-            msg.word_bound_indices_with_alphabet("abcdefghijklmnopqr-stuvwxyz".chars().collect()).collect::<Vec<(usize, &str)>>(),
-            vec![(0, "this"), (4, " "), (5, "is"), (7, " "), (8, "an"), (10, " "),
-                (11, "ordinary-sentence"), (28, "!"), (29, " "),
-                (30, "\""), (31, "This"), (35, " "), (36, "was"), (39, " "), (40, "quoted"),
-                (46, ","), (47, "\""), (48, ","), (49, " "), (50, "an"), (52, " "),
-                (53, "emoji"), (58, ":"), (59, " "), (60, "("), (61, "😄"), (65, ")"),
-                (66, ","), (67, " "), (68, "and"), (71, "\t"), (72, " "), (73, "a")]
+            msg.word_bound_indices_with_alphabet("abcdefghijklmnopqr-stuvwxyz".chars().collect())
+                .collect::<Vec<(usize, &str)>>(),
+            vec![
+                (0, "this"),
+                (4, " "),
+                (5, "is"),
+                (7, " "),
+                (8, "an"),
+                (10, " "),
+                (11, "ordinary-sentence"),
+                (28, "!"),
+                (29, " "),
+                (30, "\""),
+                (31, "This"),
+                (35, " "),
+                (36, "was"),
+                (39, " "),
+                (40, "quoted"),
+                (46, ","),
+                (47, "\""),
+                (48, ","),
+                (49, " "),
+                (50, "an"),
+                (52, " "),
+                (53, "emoji"),
+                (58, ":"),
+                (59, " "),
+                (60, "("),
+                (61, "😄"),
+                (65, ")"),
+                (66, ","),
+                (67, " "),
+                (68, "and"),
+                (71, "\t"),
+                (72, " "),
+                (73, "a")
+            ]
         );
     }
 }

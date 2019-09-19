@@ -343,8 +343,7 @@ impl Default for WordBreak {
 mod data {
     use super::long_names as WB;
     use unic_char_property::tables::CharDataTable;
-    pub const WORD_BREAK_TABLE: CharDataTable<super::WordBreak> =
-        include!("tables/word_break.rsv");
+    pub const WORD_BREAK_TABLE: CharDataTable<super::WordBreak> = include!("tables/word_break.rsv");
 }
 
 impl WordBreak {

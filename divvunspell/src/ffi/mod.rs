@@ -247,8 +247,8 @@ pub extern "C" fn suggest_vec_get_weight(handle: &mut Vec<Suggestion>, index: si
 
 // Tokenizer
 
-use crate::tokenizer::Tokenize;
 use crate::tokenizer::word::WordBoundIndices;
+use crate::tokenizer::Tokenize;
 
 pub struct CWordBoundIndices {
     string: String,

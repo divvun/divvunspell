@@ -211,15 +211,13 @@ impl<'a> Iterator for WordBounds<'a> {
             prev_zwj = cat == WB::ZWJ;
             // if there's a category cached, grab it
             cat = match self.cat {
-                None => {
-                    match &self.alphabet {
-                        None => WB::of(ch),
-                        Some(alphabet) => {
-                            if alphabet.contains(&ch) {
-                                WB::ALetter
-                            } else {
-                                WB::of(ch)
-                            }
+                None => match &self.alphabet {
+                    None => WB::of(ch),
+                    Some(alphabet) => {
+                        if alphabet.contains(&ch) {
+                            WB::ALetter
+                        } else {
+                            WB::of(ch)
                         }
                     }
                 },
@@ -463,7 +461,7 @@ impl<'a> DoubleEndedIterator for WordBounds<'a> {
                             WB::of(ch)
                         }
                     }
-                }
+                },
                 _ => self.catb.take().unwrap(),
             };
             take_cat = true;
