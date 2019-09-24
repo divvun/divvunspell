@@ -1,4 +1,4 @@
-use memmap::{Mmap, MmapOptions};
+use memmap::MmapOptions;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::Seek;

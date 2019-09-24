@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum FlagDiacriticOperator {
     PositiveSet,
     NegativeSet,
@@ -35,7 +35,7 @@ pub enum HeaderFlag {
     HasUnweightedInputEpsilonCycles,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FlagDiacriticOperation {
     pub operation: FlagDiacriticOperator,
     pub feature: SymbolNumber,

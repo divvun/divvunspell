@@ -1,19 +1,13 @@
 pub mod meta;
 
-use memmap::{Mmap, MmapOptions};
-use std::fs::File;
-use std::io::prelude::*;
-use std::io::Seek;
+use memmap::Mmap;
 use std::sync::Arc;
-use ::zip::ZipArchive;
-
-use self::meta::SpellerMetadata;
-use crate::speller::Speller;
-use crate::transducer::hfst::HfstTransducer;
 
 mod zip;
+// mod boxf;
 
 pub use self::zip::ZipSpellerArchive;
+// pub use self::boxf::BoxSpellerArchive;
 
 pub struct TempMmap {
     mmap: Arc<Mmap>,

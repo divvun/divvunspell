@@ -15,7 +15,6 @@ use self::header::TransducerHeader;
 use self::index_table::IndexTable;
 use self::transition_table::TransitionTable;
 
-use super::tree_node::TreeNode;
 use super::symbol_transition::SymbolTransition;
 
 use super::{Alphabet, Transducer};
@@ -162,7 +161,7 @@ impl HfstTransducer {
 
 impl Transducer for HfstTransducer {
     type Alphabet = TransducerAlphabet;
-    
+
     #[inline(always)]
     fn is_final(&self, i: TransitionTableIndex) -> bool {
         if i >= TARGET_TABLE {
