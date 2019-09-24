@@ -1,9 +1,9 @@
 use super::Transducer;
-use crate::types::{FlagDiacriticOperation, FlagDiacriticOperator, SymbolNumber, ValueNumber};
+use crate::types::{FlagDiacriticOperation, FlagDiacriticOperator, SymbolNumber, ValueNumber, OperationsMap};
 use hashbrown::HashMap;
 use smol_str::SmolStr;
 
-type OperationsMap = HashMap<SymbolNumber, FlagDiacriticOperation>;
+use super::super::Alphabet;
 
 #[derive(Debug)]
 pub struct TransducerAlphabet {
@@ -154,54 +154,56 @@ impl TransducerAlphabet {
     pub fn new(buf: &[u8], symbols: SymbolNumber) -> TransducerAlphabet {
         TransducerAlphabetParser::parse(buf, symbols)
     }
+}
 
-    pub fn key_table(&self) -> &Vec<SmolStr> {
+impl Alphabet for TransducerAlphabet {
+    fn key_table(&self) -> &Vec<SmolStr> {
         &self.key_table
     }
 
-    pub fn state_size(&self) -> SymbolNumber {
+    fn state_size(&self) -> SymbolNumber {
         self.flag_state_size
     }
 
-    pub fn operations(&self) -> &OperationsMap {
+    fn operations(&self) -> &OperationsMap {
         &self.operations
     }
 
-    pub fn string_to_symbol(&self) -> &HashMap<SmolStr, SymbolNumber> {
+    fn string_to_symbol(&self) -> &HashMap<SmolStr, SymbolNumber> {
         &self.string_to_symbol
     }
 
-    pub fn is_flag(&self, symbol: SymbolNumber) -> bool {
+    fn is_flag(&self, symbol: SymbolNumber) -> bool {
         self.operations.contains_key(&symbol)
     }
 
-    pub fn add_symbol(&mut self, string: &str) {
+    fn add_symbol(&mut self, string: &str) {
         self.string_to_symbol
             .insert(string.into(), self.key_table.len() as u16);
         self.key_table.push(string.into());
     }
 
-    pub fn identity(&self) -> Option<SymbolNumber> {
+    fn identity(&self) -> Option<SymbolNumber> {
         self.identity_symbol
     }
 
-    pub fn unknown(&self) -> Option<SymbolNumber> {
+    fn unknown(&self) -> Option<SymbolNumber> {
         self.unknown_symbol
     }
 
-    pub fn initial_symbol_count(&self) -> SymbolNumber {
+    fn initial_symbol_count(&self) -> SymbolNumber {
         self.initial_symbol_count
     }
 
-    pub fn len(&self) -> usize {
+    fn len(&self) -> usize {
         self.length
     }
 
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.length == 0
     }
 
-    pub fn create_translator_from(&mut self, mutator: &dyn Transducer) -> Vec<SymbolNumber> {
+    fn create_translator_from(&mut self, mutator: &dyn Transducer<Alphabet = Self>) -> Vec<SymbolNumber> {
         let from = mutator.alphabet();
         let from_keys = from.key_table();
 

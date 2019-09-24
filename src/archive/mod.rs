@@ -9,7 +9,7 @@ use ::zip::ZipArchive;
 
 use self::meta::SpellerMetadata;
 use crate::speller::Speller;
-use crate::transducer::HfstTransducer;
+use crate::transducer::hfst::HfstTransducer;
 
 mod zip;
 

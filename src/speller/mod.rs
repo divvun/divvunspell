@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use self::worker::SpellerWorker;
 use crate::speller::suggestion::Suggestion;
-use crate::transducer::Transducer;
+use crate::transducer::{Alphabet, Transducer};
 use crate::types::{SymbolNumber, Weight};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -8,7 +8,7 @@ use lifeguard::{Pool, Recycled};
 use super::{Speller, SpellerConfig};
 use crate::speller::suggestion::Suggestion;
 use crate::transducer::tree_node::TreeNode;
-use crate::transducer::Transducer;
+use crate::transducer::{Alphabet, Transducer};
 use crate::types::{SymbolNumber, Weight};
 
 #[inline(always)]

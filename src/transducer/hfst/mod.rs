@@ -1,10 +1,7 @@
-pub mod alphabet;
-pub mod chunk;
 pub mod header;
 pub mod index_table;
-pub mod symbol_transition;
+pub mod alphabet;
 pub mod transition_table;
-pub mod tree_node;
 
 use memmap::Mmap;
 use std::fmt;
@@ -16,26 +13,13 @@ use crate::types::{HeaderFlag, SymbolNumber, TransitionTableIndex, Weight};
 use self::alphabet::TransducerAlphabet;
 use self::header::TransducerHeader;
 use self::index_table::IndexTable;
-use self::symbol_transition::SymbolTransition;
 use self::transition_table::TransitionTable;
 
-pub trait Transducer {
-    fn alphabet(&self) -> &TransducerAlphabet;
-    fn mut_alphabet(&mut self) -> &mut TransducerAlphabet;
-    fn transition_input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber>;
-    fn has_transitions(&self, i: TransitionTableIndex, s: Option<SymbolNumber>) -> bool;
-    fn next(&self, i: TransitionTableIndex, symbol: SymbolNumber) -> Option<TransitionTableIndex>;
-    fn has_epsilons_or_flags(&self, i: TransitionTableIndex) -> bool;
-    fn take_epsilons_and_flags(&self, i: TransitionTableIndex) -> Option<SymbolTransition>;
-    fn take_epsilons(&self, i: TransitionTableIndex) -> Option<SymbolTransition>;
-    fn take_non_epsilons(
-        &self,
-        i: TransitionTableIndex,
-        symbol: SymbolNumber,
-    ) -> Option<SymbolTransition>;
-    fn is_final(&self, i: TransitionTableIndex) -> bool;
-    fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight>;
-}
+use super::tree_node::TreeNode;
+use super::symbol_transition::SymbolTransition;
+
+use super::{Alphabet, Transducer};
+
 pub struct HfstTransducer {
     buf: Arc<Mmap>,
     header: TransducerHeader,
@@ -99,56 +83,56 @@ impl HfstTransducer {
         }
     }
 
-    pub fn serialize(
-        &self,
-        chunk_size: usize,
-        target_dir: &std::path::Path,
-    ) -> Result<(), TransducerSerializeError> {
-        if chunk_size % 8 != 0 {
-            return Err(TransducerSerializeError::InvalidChunkSize);
-        }
+    // pub fn serialize(
+    //     &self,
+    //     chunk_size: usize,
+    //     target_dir: &std::path::Path,
+    // ) -> Result<(), TransducerSerializeError> {
+    //     if chunk_size % 8 != 0 {
+    //         return Err(TransducerSerializeError::InvalidChunkSize);
+    //     }
 
-        // Ensure target path exists
-        if !target_dir.exists() {
-            eprintln!("Creating directory: {:?}", target_dir);
-            std::fs::create_dir_all(target_dir).expect("create target dir");
-        }
+    //     // Ensure target path exists
+    //     if !target_dir.exists() {
+    //         eprintln!("Creating directory: {:?}", target_dir);
+    //         std::fs::create_dir_all(target_dir).expect("create target dir");
+    //     }
 
-        // Write index table chunks
-        eprintln!(
-            "Writing index table... (Size: {})",
-            self.index_table().len()
-        );
-        let index_table_count = self
-            .index_table()
-            .serialize(chunk_size, target_dir)
-            .unwrap();
+    //     // Write index table chunks
+    //     eprintln!(
+    //         "Writing index table... (Size: {})",
+    //         self.index_table().len()
+    //     );
+    //     let index_table_count = self
+    //         .index_table()
+    //         .serialize(chunk_size, target_dir)
+    //         .unwrap();
 
-        // Write transition table chunks
-        eprintln!("Writing transition table...");
-        let transition_table_count = self
-            .transition_table()
-            .serialize(chunk_size, target_dir)
-            .unwrap();
+    //     // Write transition table chunks
+    //     eprintln!("Writing transition table...");
+    //     let transition_table_count = self
+    //         .transition_table()
+    //         .serialize(chunk_size, target_dir)
+    //         .unwrap();
 
-        // Write header + meta index
-        let meta = self::chunk::MetaRecord {
-            index_table_count,
-            transition_table_count,
-            chunk_size,
-            raw_alphabet: self
-                .alphabet()
-                .key_table()
-                .iter()
-                .map(|x| x.to_string())
-                .collect(),
-        };
+    //     // Write header + meta index
+    //     let meta = self::chunk::MetaRecord {
+    //         index_table_count,
+    //         transition_table_count,
+    //         chunk_size,
+    //         raw_alphabet: self
+    //             .alphabet()
+    //             .key_table()
+    //             .iter()
+    //             .map(|x| x.to_string())
+    //             .collect(),
+    //     };
 
-        eprintln!("Writing meta index...");
-        meta.serialize(target_dir);
+    //     eprintln!("Writing meta index...");
+    //     meta.serialize(target_dir);
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
     #[inline(always)]
     pub fn buffer(&self) -> &[u8] {
@@ -177,6 +161,8 @@ impl HfstTransducer {
 }
 
 impl Transducer for HfstTransducer {
+    type Alphabet = TransducerAlphabet;
+    
     #[inline(always)]
     fn is_final(&self, i: TransitionTableIndex) -> bool {
         if i >= TARGET_TABLE {
@@ -285,12 +271,12 @@ impl Transducer for HfstTransducer {
     }
 
     #[inline(always)]
-    fn alphabet(&self) -> &TransducerAlphabet {
+    fn alphabet(&self) -> &Self::Alphabet {
         &self.alphabet
     }
 
     #[inline(always)]
-    fn mut_alphabet(&mut self) -> &mut TransducerAlphabet {
+    fn mut_alphabet(&mut self) -> &mut Self::Alphabet {
         &mut self.alphabet
     }
 }
