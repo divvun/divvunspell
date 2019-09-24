@@ -6,7 +6,7 @@ use std::path::Path;
 use std::ptr::null;
 use std::sync::Arc;
 
-use crate::archive::SpellerArchive;
+use crate::archive::ZipSpellerArchive;
 use crate::speller::suggestion::Suggestion;
 use crate::speller::{Speller, SpellerConfig};
 // use crate::tokenizer::{Tokenize, Tokenizer, Token};
