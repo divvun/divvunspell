@@ -7,7 +7,7 @@ use ::zip::{ZipArchive, CompressionMethod};
 
 use self::meta::SpellerMetadata;
 use crate::speller::Speller;
-use crate::transducer::hfst::HfstTransducer;
+use crate::transducer::{Transducer, hfst::HfstTransducer};
 
 use super::*;
 

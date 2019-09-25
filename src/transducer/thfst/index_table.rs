@@ -3,7 +3,8 @@ use std::ptr;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use memmap::Mmap;
 
-pub(super) struct IndexTable {
+#[doc(hidden)]
+pub struct IndexTable {
     buf: Mmap,
     size: u32,
 }

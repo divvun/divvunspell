@@ -12,11 +12,12 @@ use crate::constants::TRANS_TABLE_SIZE;
 use crate::transducer::symbol_transition::SymbolTransition;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 
+#[doc(hidden)]
 pub struct TransitionTable {
-    size: TransitionTableIndex,
-    mmap: Arc<Mmap>,
-    offset: usize,
-    len: usize,
+    pub(crate) size: TransitionTableIndex,
+    pub(crate) mmap: Arc<Mmap>,
+    pub(crate) offset: usize,
+    pub(crate) len: usize,
 }
 
 impl fmt::Debug for TransitionTable {
@@ -35,60 +36,6 @@ impl TransitionTable {
             offset,
             len,
         }
-    }
-
-    pub fn serialize(&self, chunk_size: usize, target_dir: &std::path::Path) -> Result<usize, ()> {
-        eprintln!(
-            "size: {}, len: {}, offset: {}",
-            self.size, self.len, self.offset
-        );
-
-        if chunk_size % 12 != 0 {
-            panic!("Chunk size must be divisible by 12");
-        }
-
-        // Size is the number of indexes, and that multiplied by TRANS_TABLE_SIZE is the total byte size
-        let total_bytes = self.len - self.offset;
-
-        // How many indexes can we get per chunk size?
-        let max_index_per_iter = chunk_size / TRANS_TABLE_SIZE as usize;
-
-        // Divide the chunks
-        let has_excess = total_bytes % chunk_size != 0;
-        let chunk_count = total_bytes / chunk_size + (if has_excess { 1 } else { 0 });
-        eprintln!(
-            "Chunk count: {} max index per iter: {} total bytes: {}",
-            chunk_count, max_index_per_iter, total_bytes
-        );
-
-        for i in 1usize..=chunk_count {
-            eprintln!("Writing chunk: {}", i);
-
-            let filename = format!("transition-{:02}", i - 1);
-            let mut file = std::fs::File::create(target_dir.join(filename)).unwrap();
-
-            let begin = (max_index_per_iter * (i - 1usize)) as u32;
-            let end = cmp::min(max_index_per_iter * i, self.size as usize) as u32;
-
-            eprintln!("Chunk {}: {}..{}", i, begin, end);
-
-            for index in begin..end {
-                let input_symbol = self.input_symbol(index).unwrap_or(u16::MAX);
-                let output_symbol = self.output_symbol(index).unwrap_or(u16::MAX);
-                let target = self.target(index).unwrap_or(u32::MAX);
-                let weight = self.weight(index).unwrap();
-
-                file.write_u16::<LittleEndian>(input_symbol).unwrap();
-                file.write_u16::<LittleEndian>(output_symbol).unwrap();
-                file.write_u32::<LittleEndian>(target).unwrap();
-                file.write_u32::<LittleEndian>(unsafe { std::mem::transmute::<f32, u32>(weight) })
-                    .unwrap();
-            }
-        }
-
-        eprintln!("Done transition serialize.");
-
-        Ok(chunk_count as usize)
     }
 
     #[inline(always)]

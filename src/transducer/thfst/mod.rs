@@ -11,8 +11,8 @@ mod alphabet;
 mod index_table;
 mod transition_table;
 
-use index_table::IndexTable;
-use transition_table::TransitionTable;
+pub use self::index_table::IndexTable;
+pub use self::transition_table::TransitionTable;
 
 use self::alphabet::TransducerAlphabet;
 use crate::transducer::{Alphabet, Transducer};
@@ -139,6 +139,11 @@ impl ThfstTransducer {
 
 impl Transducer for ThfstTransducer {
     type Alphabet = TransducerAlphabet;
+    const FILE_EXT: &'static str = "thfst";
+
+    fn from_mapped_memory(buf: std::sync::Arc<memmap::Mmap>) -> Self {
+        unimplemented!()
+    }
 
     #[inline(always)]
     fn alphabet(&self) -> &TransducerAlphabet {

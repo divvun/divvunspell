@@ -4,15 +4,20 @@ pub mod thfst;
 pub mod tree_node;
 mod symbol_transition;
 
+use std::sync::Arc;
 use hashbrown::HashMap;
 use smol_str::SmolStr;
+use memmap::Mmap;
 
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight, OperationsMap};
 
 use self::symbol_transition::SymbolTransition;
 
 pub trait Transducer {
+    const FILE_EXT: &'static str;
     type Alphabet: Alphabet;
+
+    fn from_mapped_memory(buf: Arc<Mmap>) -> Self;
 
     fn alphabet(&self) -> &Self::Alphabet;
     fn mut_alphabet(&mut self) -> &mut Self::Alphabet;
@@ -32,7 +37,7 @@ pub trait Transducer {
     fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight>;
 }
 
-pub trait Alphabet {
+pub trait Alphabet where Self: Sized {
     // fn new(buf: &[u8], symbols: SymbolNumber) -> Self;
     fn key_table(&self) -> &Vec<SmolStr>;
     fn state_size(&self) -> SymbolNumber;
@@ -45,5 +50,9 @@ pub trait Alphabet {
     fn initial_symbol_count(&self) -> SymbolNumber;
     fn len(&self) -> usize;
     fn is_empty(&self) -> bool;
-    fn create_translator_from(&mut self, mutator: &dyn Transducer<Alphabet = Self>) -> Vec<SymbolNumber>;
+    fn create_translator_from<T: Transducer<Alphabet = Self>>(&mut self, mutator: &T) -> Vec<SymbolNumber>;
 }
+
+
+#[cfg(feature = "convert")]
+pub mod convert;

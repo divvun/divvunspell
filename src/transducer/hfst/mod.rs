@@ -3,8 +3,10 @@ pub mod index_table;
 pub mod alphabet;
 pub mod transition_table;
 
-use memmap::Mmap;
+use memmap::{Mmap, MmapOptions};
 use std::fmt;
+use std::fs::File;
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::constants::{INDEX_TABLE_SIZE, TARGET_TABLE, TRANS_TABLE_SIZE};
@@ -12,8 +14,9 @@ use crate::types::{HeaderFlag, SymbolNumber, TransitionTableIndex, Weight};
 
 use self::alphabet::TransducerAlphabet;
 use self::header::TransducerHeader;
-use self::index_table::IndexTable;
-use self::transition_table::TransitionTable;
+
+pub use self::index_table::IndexTable;
+pub use self::transition_table::TransitionTable;
 
 use super::symbol_transition::SymbolTransition;
 
@@ -48,8 +51,45 @@ pub struct TransducerSerializeReport {
 }
 
 impl HfstTransducer {
+    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<HfstTransducer, std::io::Error> {
+        let path = path.as_ref();
+        let file = File::open(path)?;
+        let mmap = unsafe { MmapOptions::new().map(&file) }?;
+        Ok(HfstTransducer::from_mapped_memory(Arc::new(mmap)))
+    }
+
     #[inline(always)]
-    pub fn from_mapped_memory(buf: Arc<Mmap>) -> HfstTransducer {
+    pub fn buffer(&self) -> &[u8] {
+        &self.buf
+    }
+
+    #[inline(always)]
+    pub fn index_table(&self) -> &IndexTable {
+        &self.index_table
+    }
+
+    #[inline(always)]
+    pub fn transition_table(&self) -> &TransitionTable {
+        &self.transition_table
+    }
+
+    #[inline(always)]
+    pub fn is_weighted(&self) -> bool {
+        self.header.has_flag(HeaderFlag::Weighted)
+    }
+
+    #[inline(always)]
+    pub fn header(&self) -> &TransducerHeader {
+        &self.header
+    }
+}
+
+impl Transducer for HfstTransducer {
+    type Alphabet = TransducerAlphabet;
+    const FILE_EXT: &'static str = "hfst";
+
+    #[inline(always)]
+    fn from_mapped_memory(buf: Arc<Mmap>) -> HfstTransducer {
         let header = TransducerHeader::new(&buf);
         let alphabet_offset = header.len();
         let alphabet =
@@ -81,86 +121,6 @@ impl HfstTransducer {
             transition_table: trans_table,
         }
     }
-
-    // pub fn serialize(
-    //     &self,
-    //     chunk_size: usize,
-    //     target_dir: &std::path::Path,
-    // ) -> Result<(), TransducerSerializeError> {
-    //     if chunk_size % 8 != 0 {
-    //         return Err(TransducerSerializeError::InvalidChunkSize);
-    //     }
-
-    //     // Ensure target path exists
-    //     if !target_dir.exists() {
-    //         eprintln!("Creating directory: {:?}", target_dir);
-    //         std::fs::create_dir_all(target_dir).expect("create target dir");
-    //     }
-
-    //     // Write index table chunks
-    //     eprintln!(
-    //         "Writing index table... (Size: {})",
-    //         self.index_table().len()
-    //     );
-    //     let index_table_count = self
-    //         .index_table()
-    //         .serialize(chunk_size, target_dir)
-    //         .unwrap();
-
-    //     // Write transition table chunks
-    //     eprintln!("Writing transition table...");
-    //     let transition_table_count = self
-    //         .transition_table()
-    //         .serialize(chunk_size, target_dir)
-    //         .unwrap();
-
-    //     // Write header + meta index
-    //     let meta = self::chunk::MetaRecord {
-    //         index_table_count,
-    //         transition_table_count,
-    //         chunk_size,
-    //         raw_alphabet: self
-    //             .alphabet()
-    //             .key_table()
-    //             .iter()
-    //             .map(|x| x.to_string())
-    //             .collect(),
-    //     };
-
-    //     eprintln!("Writing meta index...");
-    //     meta.serialize(target_dir);
-
-    //     Ok(())
-    // }
-
-    #[inline(always)]
-    pub fn buffer(&self) -> &[u8] {
-        &self.buf
-    }
-
-    #[inline(always)]
-    pub fn index_table(&self) -> &IndexTable {
-        &self.index_table
-    }
-
-    #[inline(always)]
-    pub fn transition_table(&self) -> &TransitionTable {
-        &self.transition_table
-    }
-
-    #[inline(always)]
-    pub fn is_weighted(&self) -> bool {
-        self.header.has_flag(HeaderFlag::Weighted)
-    }
-
-    #[inline(always)]
-    pub fn header(&self) -> &TransducerHeader {
-        &self.header
-    }
-}
-
-impl Transducer for HfstTransducer {
-    type Alphabet = TransducerAlphabet;
 
     #[inline(always)]
     fn is_final(&self, i: TransitionTableIndex) -> bool {

@@ -4,7 +4,8 @@ use crate::transducer::symbol_transition::SymbolTransition;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use memmap::Mmap;
 
-pub(super) struct TransitionTable {
+#[doc(hidden)]
+pub struct TransitionTable {
     buf: Mmap,
     size: u32,
 }

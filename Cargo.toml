@@ -36,6 +36,7 @@ mimallocator = "0.1"
 box_format = { path = "../box-compress/box-format" }
 
 clap = { version = "2.33.0", optional = true }
+structopt = { version = "0.3.2", optional = true }
 csv = { version = "1.1", optional = true }
 rayon = { version = "1.1.0", optional = true }
 indicatif = { git = "https://github.com/mitsuhiko/indicatif", features = ["with_rayon"], optional = true }
@@ -46,5 +47,6 @@ codegen-units = 1
 lto = "fat"
 
 [features]
-binaries = ["clap", "csv", "rayon", "indicatif"]
+binaries = ["clap", "structopt", "csv", "rayon", "indicatif"]
 compression = ["zip/deflate"]
+convert = []

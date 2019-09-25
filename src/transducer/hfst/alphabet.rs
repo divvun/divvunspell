@@ -5,7 +5,7 @@ use smol_str::SmolStr;
 
 use super::super::Alphabet;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct TransducerAlphabet {
     pub(crate) key_table: Vec<SmolStr>,
     pub(crate) initial_symbol_count: SymbolNumber,
@@ -203,7 +203,7 @@ impl Alphabet for TransducerAlphabet {
         self.length == 0
     }
 
-    fn create_translator_from(&mut self, mutator: &dyn Transducer<Alphabet = Self>) -> Vec<SymbolNumber> {
+    fn create_translator_from<T: Transducer<Alphabet = Self>>(&mut self, mutator: &T) -> Vec<SymbolNumber> {
         let from = mutator.alphabet();
         let from_keys = from.key_table();
 
