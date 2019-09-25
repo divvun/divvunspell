@@ -1,15 +1,12 @@
-#![cfg(feature = "binaries")]
-
 use std::io::{self, Read};
 
 use clap::{App, AppSettings, Arg, SubCommand};
-use hashbrown::HashMap;
 
-use divvunspell::archive::SpellerArchive;
+use divvunspell::archive::ZipSpellerArchive;
 use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::{Speller, SpellerConfig};
 use divvunspell::tokenizer::Tokenize;
-use divvunspell::transducer::chunk::ChfstBundle;
+// use divvunspell::transducer::chunk::ChfstBundle;
 
 use serde_derive::Serialize;
 
@@ -93,14 +90,6 @@ fn main() {
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("chfst")
-                .short("c")
-                .long("chfst")
-                .value_name("CHFST")
-                .help("Use the given CHFST bundle")
-                .takes_value(true),
-        )
-        .arg(
             Arg::with_name("suggest")
                 .short("s")
                 .long("suggest")
@@ -138,51 +127,7 @@ fn main() {
                 .multiple(true)
                 .help("The words to be processed"),
         )
-        .subcommand(
-            SubCommand::with_name("chunk").arg(
-                Arg::with_name("zhfst")
-                    .short("z")
-                    .long("zhfst")
-                    .value_name("ZHFST")
-                    .required(true)
-                    .help("Use the given ZHFST file")
-                    .takes_value(true),
-            ),
-        )
         .get_matches();
-
-    if let Some(ref matches) = matches.subcommand_matches("chunk") {
-        let zhfst_file = matches.value_of("zhfst").unwrap();
-
-        let archive = match divvunspell::archive::SpellerArchive::new(zhfst_file) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("{:?}", e);
-                std::process::exit(1);
-            }
-        };
-
-        let speller = archive.speller();
-        let mutator = speller.mutator();
-        let lexicon = speller.lexicon();
-
-        use std::path::Path;
-
-        let target_dir = Path::new("./out.chfst");
-        let chunk_size: usize = 24 * 1024 * 1024;
-
-        eprintln!("Serializing lexicon...");
-        lexicon
-            .serialize(chunk_size, &target_dir.join("lexicon"))
-            .unwrap();
-
-        eprintln!("Serializing mutator...");
-        mutator
-            .serialize(chunk_size, &target_dir.join("mutator"))
-            .unwrap();
-
-        return;
-    }
 
     let is_always_suggesting = matches.is_present("always-suggest");
     let is_suggesting = matches.is_present("suggest") || is_always_suggesting;
@@ -224,7 +169,7 @@ fn main() {
     };
 
     if let Some(zhfst_file) = matches.value_of("zhfst") {
-        let archive = match divvunspell::archive::SpellerArchive::new(zhfst_file) {
+        let archive = match ZipSpellerArchive::new(zhfst_file) {
             Ok(v) => v,
             Err(e) => {
                 eprintln!("{:?}", e);
@@ -233,26 +178,6 @@ fn main() {
         };
 
         let speller = archive.speller();
-
-        for word in words {
-            let is_correct = speller.clone().is_correct(&word);
-            writer.write_correction(&word, is_correct);
-
-            if is_suggesting && (is_always_suggesting || !is_correct) {
-                let suggestions = speller.clone().suggest_with_config(&word, &suggest_cfg);
-                writer.write_suggestions(&word, &suggestions);
-            }
-        }
-    } else if let Some(chfst_file) = matches.value_of("chfst") {
-        let bundle = match ChfstBundle::from_path(std::path::Path::new(chfst_file)) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("{:?}", e);
-                std::process::exit(1);
-            }
-        };
-
-        let speller = bundle.speller();
 
         for word in words {
             let is_correct = speller.clone().is_correct(&word);

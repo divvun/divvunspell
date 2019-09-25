@@ -1,9 +1,5 @@
 use structopt::StructOpt;
 use std::path::{Path, PathBuf};
-use std::fs::File;
-use std::io::{prelude::*, BufWriter};
-
-use byteorder::{LittleEndian, WriteBytesExt};
 
 use divvunspell::transducer::{
     hfst::{

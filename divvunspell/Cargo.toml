@@ -3,15 +3,7 @@ name = "divvunspell"
 version = "0.4.0"
 authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
 edition = "2018"
-license = "MIT/Apache-2.0"
-
-[[bin]]
-name = "divvunspell"
-required-features = ["binaries"]
-
-[[bin]]
-name = "accuracy"
-required-features = ["binaries"]
+license = "MIT OR Apache-2.0"
 
 [lib]
 name = "divvunspell"
@@ -33,20 +25,8 @@ tempdir = "0.3.7"
 lifeguard = "0.6"
 smol_str = { version = "0.1.12", features = ["serde"] }
 mimallocator = "0.1"
-box_format = { path = "../box-compress/box-format" }
-
-clap = { version = "2.33.0", optional = true }
-structopt = { version = "0.3.2", optional = true }
-csv = { version = "1.1", optional = true }
-rayon = { version = "1.1.0", optional = true }
-indicatif = { git = "https://github.com/mitsuhiko/indicatif", features = ["with_rayon"], optional = true }
-
-[profile.release]
-debug = true
-codegen-units = 1
-lto = "fat"
+box_format = { path = "../../box-compress/box-format" }
 
 [features]
-binaries = ["clap", "structopt", "csv", "rayon", "indicatif"]
 compression = ["zip/deflate"]
 convert = []

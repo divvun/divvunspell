@@ -1,0 +1,10 @@
+[workspace]
+members = [
+  "divvunspell",
+  "divvunspell-tools",
+]
+
+[profile.release]
+debug = true
+codegen-units = 1
+lto = "fat"

@@ -1,6 +1,6 @@
 # divvunspell
 
-An implementation of [hfst-ospell](https://github.com/hfst/hfst-ospell) in Rust, with added features like tokenization, case handling, and being thread safe.
+An implementation of [hfst-ospell](https://github.com/hfst/hfst-ospell) in Rust, with added features like tokenization, case handling, and parallelisation.
 
 [![Build Status](https://travis-ci.org/divvun/divvunspell.svg?branch=master)](https://travis-ci.org/divvun/divvunspell)
 
@@ -9,7 +9,7 @@ An implementation of [hfst-ospell](https://github.com/hfst/hfst-ospell) in Rust,
 curl https://sh.rustup.rs -sSf | sh
 source $HOME/.cargo/env
 rustup default nightly
-cargo build --bin divvunspell --features binaries --release
+cargo build --bin divvunspell --release
 ```
 
 ## Building command line frontend
@@ -17,13 +17,13 @@ cargo build --bin divvunspell --features binaries --release
 To build the command line frontend for testing spellers:
 
 ```
-cargo build --bin divvunspell --features binaries --release
+cargo build --bin divvunspell --release
 ```
 
 The result will be in the `target/release/` directory. To install the binary on your $PATH:
 
 ```
-cargo install --bin divvunspell --features binaries --path .
+cargo install --bin divvunspell --path .
 ```
 
 Usage:

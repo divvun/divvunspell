@@ -2,7 +2,7 @@ use std::error::Error;
 use std::time::{Instant, SystemTime};
 
 use clap::{App, AppSettings, Arg};
-use divvunspell::archive::SpellerArchive;
+use divvunspell::archive::ZipSpellerArchive;
 use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::SpellerConfig;
 use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
@@ -191,7 +191,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let archive = match matches.value_of("zhfst") {
-        Some(path) => SpellerArchive::new(path)?,
+        Some(path) => ZipSpellerArchive::new(path)?,
         None => {
             eprintln!("No ZHFST found for given path; aborting.");
             std::process::exit(1);

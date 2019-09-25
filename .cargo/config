@@ -2,4 +2,4 @@
 rustflags = ["-C", "target-cpu=native"]
 
 [alias]
-accuracy-test = "run --bin accuracy --features binaries --release"
+accuracy-test = "run --bin accuracy --release"

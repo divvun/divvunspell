@@ -1,0 +1,26 @@
+[package]
+name = "divvunspell-tools"
+version = "0.4.0"
+authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "divvunspell"
+
+[[bin]]
+name = "accuracy"
+
+[[bin]]
+name = "thfst"
+
+[dependencies]
+serde = "1.0.101"
+serde_derive = "1.0.101"
+serde_json = "1.0.40"
+divvunspell = { path = "../divvunspell", features = ["convert"] }
+clap = { version = "2.33.0" }
+structopt = { version = "0.3.2"}
+csv = { version = "1.1" }
+rayon = { version = "1.2.0"}
+indicatif = { git = "https://github.com/mitsuhiko/indicatif", features = ["with_rayon"] }
