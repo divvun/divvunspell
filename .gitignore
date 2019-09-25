@@ -1,3 +1,4 @@
 target
 .DS_Store
-/support/accuracy-viewer/public/report.json
+report.json
+tmp
