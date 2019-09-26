@@ -8,7 +8,10 @@ use divvunspell::archive::{BoxSpellerArchive, ZipSpellerArchive};
 use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::{Speller, SpellerConfig};
 use divvunspell::tokenizer::Tokenize;
-use divvunspell::transducer::{thfst::{ThfstTransducer, ThfstChunkedTransducer}, Transducer};
+use divvunspell::transducer::{
+    thfst::{ThfstChunkedTransducer, ThfstTransducer},
+    Transducer,
+};
 
 trait OutputWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool);

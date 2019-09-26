@@ -57,16 +57,18 @@ fn mmap_by_name<R: Read + Seek>(
 }
 
 impl ZipSpellerArchive {
-    pub fn new(file_path: &str) -> Result<ZipSpellerArchive, SpellerArchiveError> {
-        let file = File::open(file_path).map_err(SpellerArchiveError::File)?;
+    pub fn open<P: AsRef<std::path::Path>>(
+        file_path: P,
+    ) -> Result<ZipSpellerArchive, SpellerArchiveError> {
+        let file = File::open(&file_path).map_err(SpellerArchiveError::File)?;
         let reader = std::io::BufReader::new(&file);
         let mut archive = ZipArchive::new(reader).expect("zip");
 
         // // Open file a second time to get around borrow checker
         let mut file = File::open(file_path).map_err(SpellerArchiveError::File)?;
 
-        let metadata_mmap = mmap_by_name(&mut file, &mut archive, "index.xml")
-            .map_err(SpellerArchiveError::Io)?;
+        let metadata_mmap =
+            mmap_by_name(&mut file, &mut archive, "index.xml").map_err(SpellerArchiveError::Io)?;
         let metadata = SpellerMetadata::from_bytes(&*metadata_mmap.map()).expect("meta");
 
         let acceptor_mmap = mmap_by_name(&mut file, &mut archive, &metadata.acceptor.id)

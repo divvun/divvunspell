@@ -1,11 +1,10 @@
-
 use std::ptr;
 
 use memmap::Mmap;
 
 use crate::transducer::TransducerError;
-use crate::util::{self, Filesystem, ToMemmap};
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
+use crate::util::{self, Filesystem, ToMemmap};
 
 #[doc(hidden)]
 pub struct IndexTable {
@@ -28,7 +27,12 @@ impl IndexTable {
         Ok(IndexTable { buf, size })
     }
 
-    pub fn from_path_partial<P, FS, F>(fs: &FS, path: P, chunk: u64, total: u64) -> Result<Self, TransducerError>
+    pub fn from_path_partial<P, FS, F>(
+        fs: &FS,
+        path: P,
+        chunk: u64,
+        total: u64,
+    ) -> Result<Self, TransducerError>
     where
         P: AsRef<std::path::Path>,
         FS: Filesystem<File = F>,
@@ -36,7 +40,10 @@ impl IndexTable {
     {
         let file = fs.open(path).map_err(TransducerError::Io)?;
         let len = file.len().map_err(TransducerError::Io)? / total;
-        let buf = unsafe { file.partial_memory_map(chunk * len, len as usize).map_err(TransducerError::Memmap)? };
+        let buf = unsafe {
+            file.partial_memory_map(chunk * len, len as usize)
+                .map_err(TransducerError::Memmap)?
+        };
         let size = (buf.len() / INDEX_TABLE_SIZE) as u32;
         Ok(IndexTable { buf, size })
     }

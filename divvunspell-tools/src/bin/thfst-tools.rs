@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
+use divvunspell::archive::ZipSpellerArchive;
 use divvunspell::transducer::{
     convert::ConvertFile,
     hfst::HfstTransducer,
@@ -12,7 +13,7 @@ use box_format::{BoxFileWriter, BoxPath, Compression};
 
 #[derive(Debug, StructOpt)]
 #[structopt(
-    name = "thfst",
+    name = "thfst-tools",
     about = "Tromsø-Helsinki Finite State Transducer toolkit."
 )]
 enum Opts {
@@ -26,9 +27,6 @@ enum Opts {
     ZhfstToBhfst {
         #[structopt(parse(from_os_str))]
         from: PathBuf,
-
-        #[structopt(parse(from_os_str))]
-        output: PathBuf,
     },
 
     ThfstsToBhfst {
@@ -46,13 +44,6 @@ enum Opts {
 use std::num::NonZeroU64;
 
 const ALIGNMENT: NonZeroU64 = unsafe { std::num::NonZeroU64::new_unchecked(8) };
-
-fn convert_hfst_to_thfst(hfst_path: &Path) -> Result<(), std::io::Error> {
-    let fs = divvunspell::util::Fs;
-    let transducer = HfstTransducer::from_path(&fs, hfst_path).map_err(|e| e.into_io_error())?;
-    thfst::ThfstTransducer::convert_file(&transducer, hfst_path)?;
-    Ok(())
-}
 
 #[inline(always)]
 fn boxpath(path: &Path, filename: &str) -> BoxPath {
@@ -91,19 +82,54 @@ fn insert_thfst_files(boxfile: &mut BoxFileWriter, path: &Path) -> Result<(), st
     insert(boxfile, Compression::Stored, path, "transition")
 }
 
+fn convert_hfst_to_thfst(hfst_path: &Path) -> Result<(), std::io::Error> {
+    let fs = divvunspell::util::Fs;
+    let transducer = HfstTransducer::from_path(&fs, hfst_path).map_err(|e| e.into_io_error())?;
+    thfst::ThfstTransducer::convert_file(&transducer, hfst_path)?;
+    Ok(())
+}
+
 fn convert_thfsts_to_bhfst(
     acceptor_path: &Path,
     errmodel_path: &Path,
     output_path: &Path,
 ) -> Result<(), std::io::Error> {
     let fs = divvunspell::util::Fs;
-    let _acceptor_transducer = ThfstTransducer::from_path(&fs, acceptor_path).map_err(|e| e.into_io_error())?;
-    let _errmodel_transducer = ThfstTransducer::from_path(&fs, errmodel_path).map_err(|e| e.into_io_error())?;
+    let _acceptor_transducer =
+        ThfstTransducer::from_path(&fs, acceptor_path).map_err(|e| e.into_io_error())?;
+    let _errmodel_transducer =
+        ThfstTransducer::from_path(&fs, errmodel_path).map_err(|e| e.into_io_error())?;
 
     let mut boxfile: BoxFileWriter = BoxFileWriter::create_with_alignment(output_path, ALIGNMENT)?;
 
     insert_thfst_files(&mut boxfile, acceptor_path)?;
     insert_thfst_files(&mut boxfile, errmodel_path)?;
+
+    Ok(())
+}
+
+fn convert_zhfst_to_bhfst(zhfst_path: &Path) -> Result<(), std::io::Error> {
+    let zhfst_path = std::fs::canonicalize(zhfst_path)?;
+
+    let _zhfst = ZipSpellerArchive::open(&zhfst_path).map_err(|e| e.into_io_error())?;
+
+    let dir = tempdir::TempDir::new("zhfst")?;
+
+    std::process::Command::new("unzip")
+        .current_dir(&dir)
+        .args(&[&zhfst_path])
+        .output()?;
+
+    let acceptor_path = dir.as_ref().join("acceptor.default.hfst");
+    let errmodel_path = dir.as_ref().join("errmodel.default.hfst");
+    convert_hfst_to_thfst(&acceptor_path)?;
+    convert_hfst_to_thfst(&errmodel_path)?;
+
+    let bhfst_path = zhfst_path.with_extension("bhfst");
+    let mut boxfile: BoxFileWriter = BoxFileWriter::create_with_alignment(bhfst_path, ALIGNMENT)?;
+
+    insert_thfst_files(&mut boxfile, &acceptor_path.with_extension("thfst"))?;
+    insert_thfst_files(&mut boxfile, &errmodel_path.with_extension("thfst"))?;
 
     Ok(())
 }
@@ -118,6 +144,6 @@ fn main() -> Result<(), std::io::Error> {
             errmodel,
             output,
         } => convert_thfsts_to_bhfst(&acceptor, &errmodel, &output),
-        _ => Ok(()),
+        Opts::ZhfstToBhfst { from } => convert_zhfst_to_bhfst(&from),
     }
 }

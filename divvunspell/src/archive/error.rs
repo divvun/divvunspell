@@ -1,6 +1,6 @@
+use crate::transducer::TransducerError;
 use std::fmt;
 use std::io::Error;
-use crate::transducer::TransducerError;
 
 #[derive(Debug)]
 pub enum SpellerArchiveError {
@@ -9,6 +9,22 @@ pub enum SpellerArchiveError {
     Transducer(TransducerError),
     UnsupportedCompressed,
     Unknown(u8),
+}
+
+impl SpellerArchiveError {
+    pub fn into_io_error(self) -> Error {
+        match self {
+            SpellerArchiveError::File(e) => e,
+            SpellerArchiveError::Io(e) => e,
+            SpellerArchiveError::Transducer(e) => e.into_io_error(),
+            SpellerArchiveError::UnsupportedCompressed => {
+                Error::new(std::io::ErrorKind::Other, "unsupported compression")
+            }
+            SpellerArchiveError::Unknown(n) => {
+                Error::new(std::io::ErrorKind::Other, format!("unknown: {}", n))
+            }
+        }
+    }
 }
 
 impl std::error::Error for SpellerArchiveError {}

@@ -1,6 +1,6 @@
 use std::{mem, ptr};
 
-use crate::transducer::{TransducerError, symbol_transition::SymbolTransition};
+use crate::transducer::{symbol_transition::SymbolTransition, TransducerError};
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use crate::util::{self, Filesystem, ToMemmap};
 use memmap::Mmap;
@@ -25,8 +25,13 @@ impl TransitionTable {
         let size = (buf.len() / TRANS_TABLE_SIZE) as u32;
         Ok(TransitionTable { buf, size })
     }
-    
-    pub fn from_path_partial<P, FS, F>(fs: &FS, path: P, chunk: u64, total: u64) -> Result<Self, TransducerError>
+
+    pub fn from_path_partial<P, FS, F>(
+        fs: &FS,
+        path: P,
+        chunk: u64,
+        total: u64,
+    ) -> Result<Self, TransducerError>
     where
         P: AsRef<std::path::Path>,
         FS: Filesystem<File = F>,
@@ -34,7 +39,10 @@ impl TransitionTable {
     {
         let file = fs.open(path).map_err(|e| TransducerError::Io(e))?;
         let len = file.len().map_err(TransducerError::Io)? / total;
-        let buf = unsafe { file.partial_memory_map(chunk * len, len as usize).map_err(TransducerError::Memmap)? };
+        let buf = unsafe {
+            file.partial_memory_map(chunk * len, len as usize)
+                .map_err(TransducerError::Memmap)?
+        };
         let size = (buf.len() / TRANS_TABLE_SIZE) as u32;
         Ok(TransitionTable { buf, size })
     }

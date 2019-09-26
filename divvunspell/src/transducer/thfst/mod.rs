@@ -5,7 +5,7 @@ use std::path::Path;
 use std::{u16, u32};
 
 use crate::constants::TARGET_TABLE;
-use crate::transducer::{TransducerError, symbol_transition::SymbolTransition};
+use crate::transducer::{symbol_transition::SymbolTransition, TransducerError};
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use serde::{Deserialize, Serialize};
 
@@ -57,16 +57,14 @@ pub struct ThfstTransducer {
 
 macro_rules! error {
     ($path:path, $name:expr) => {
-        TransducerError::Io(
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!(
-                    "`{}` not found in transducer path, looked for {}",
-                    $name,
-                    $path.join($name).display()
-                ),
-            )
-        )
+        TransducerError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!(
+                "`{}` not found in transducer path, looked for {}",
+                $name,
+                $path.join($name).display()
+            ),
+        ))
     };
 }
 
@@ -87,8 +85,8 @@ impl Transducer for ThfstTransducer {
         let alphabet: TransducerAlphabet = serde_json::from_reader(alphabet_file)
             .map_err(|e| TransducerError::Alphabet(Box::new(e)))?;
 
-        let index_table = IndexTable::from_path(fs, path.join("index"))
-            .map_err(|_| error!(path, "index"))?;
+        let index_table =
+            IndexTable::from_path(fs, path.join("index")).map_err(|_| error!(path, "index"))?;
         let transition_table = TransitionTable::from_path(fs, path.join("transition"))
             .map_err(|_| error!(path, "transition"))?;
 

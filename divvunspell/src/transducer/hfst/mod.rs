@@ -9,6 +9,8 @@ use std::sync::Arc;
 
 use memmap::Mmap;
 
+use self::alphabet::TransducerAlphabetParser;
+use self::header::TransducerHeader;
 pub use self::index_table::IndexTable;
 pub use self::transition_table::TransitionTable;
 use super::alphabet::TransducerAlphabet;
@@ -17,8 +19,6 @@ use super::{Transducer, TransducerError};
 use crate::constants::{INDEX_TABLE_SIZE, TARGET_TABLE, TRANS_TABLE_SIZE};
 use crate::types::{HeaderFlag, SymbolNumber, TransitionTableIndex, Weight};
 use crate::util::{self, Filesystem, ToMemmap};
-use self::alphabet::TransducerAlphabetParser;
-use self::header::TransducerHeader;
 
 pub struct HfstTransducer {
     buf: Arc<Mmap>,
