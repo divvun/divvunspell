@@ -187,7 +187,7 @@ mod unix {
 
             let index = (INDEX_TABLE_SIZE * i as usize) + 4;
             let x = self.read_u32_at(index as u64);
-            let weight: Weight = unsafe { std::mem::transmute::<u32, f32>(x) };
+            let weight: Weight = f32::from_bits(x);
 
             Some(weight)
         }

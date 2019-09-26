@@ -26,7 +26,7 @@ impl<F: vfs::File + ToMemmap> MemmapTransitionTable<F> {
         P: AsRef<std::path::Path>,
         FS: Filesystem<File = F>,
     {
-        let file = fs.open(path).map_err(|e| TransducerError::Io(e))?;
+        let file = fs.open(path).map_err(TransducerError::Io)?;
         let len = file.len().map_err(TransducerError::Io)? / total;
         let buf = unsafe {
             file.partial_memory_map(chunk * len, len as usize)
@@ -57,8 +57,8 @@ impl<F: vfs::File + ToMemmap> TransitionTable<F> for MemmapTransitionTable<F> {
         P: AsRef<std::path::Path>,
         FS: Filesystem<File = F>,
     {
-        let file = fs.open(path).map_err(|e| TransducerError::Io(e))?;
-        let buf = unsafe { file.memory_map() }.map_err(|e| TransducerError::Memmap(e))?;
+        let file = fs.open(path).map_err(TransducerError::Io)?;
+        let buf = unsafe { file.memory_map() }.map_err(TransducerError::Memmap)?;
         let size = (buf.len() / TRANS_TABLE_SIZE) as u32;
         Ok(MemmapTransitionTable {
             buf,
@@ -219,7 +219,7 @@ mod unix {
                 + (2 * mem::size_of::<SymbolNumber>())
                 + mem::size_of::<TransitionTableIndex>();
             let x = self.read_u32_at(index as u64);
-            let x = unsafe { std::mem::transmute::<u32, f32>(x) };
+            let x = f32::from_bits(x);
             Some(x)
         }
     }

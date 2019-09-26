@@ -186,7 +186,7 @@ impl<'a> Iterator for WordBounds<'a> {
     }
 
     #[inline]
-    #[cfg_attr(feature = "cargo-clippy", allow(match_same_arms))]
+    #[allow(clippy::cognitive_complexity)]
     fn next(&mut self) -> Option<&'a str> {
         use self::FormatExtendType::*;
         use self::WordBoundsState::*;
@@ -428,6 +428,7 @@ impl<'a> Iterator for WordBounds<'a> {
 
 impl<'a> DoubleEndedIterator for WordBounds<'a> {
     #[inline]
+    #[allow(clippy::cognitive_complexity)]
     #[cfg_attr(feature = "cargo-clippy", allow(cyclomatic_complexity))]
     fn next_back(&mut self) -> Option<&'a str> {
         use self::FormatExtendType::*;

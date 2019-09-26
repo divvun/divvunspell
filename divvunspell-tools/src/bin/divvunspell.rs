@@ -4,14 +4,11 @@ use std::sync::Arc;
 use clap::{App, AppSettings, Arg, ArgGroup};
 use serde::Serialize;
 
-use divvunspell::archive::{BoxSpellerArchive, ZipSpellerArchive};
+use divvunspell::archive::{boxf::ThfstBoxSpellerArchive, BoxSpellerArchive, ZipSpellerArchive};
 use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::{Speller, SpellerConfig};
 use divvunspell::tokenizer::Tokenize;
-use divvunspell::transducer::{
-    thfst::{FileThfstTransducer, MemmapThfstTransducer},
-    Transducer,
-};
+use divvunspell::transducer::{thfst::MemmapThfstTransducer, Transducer};
 use divvunspell::vfs;
 
 trait OutputWriter {
@@ -238,10 +235,7 @@ fn main() {
             &suggest_cfg,
         );
     } else if let Some(bhfst_file) = matches.value_of("bhfst") {
-        let archive: BoxSpellerArchive<
-            FileThfstTransducer<vfs::boxf::File>,
-            FileThfstTransducer<vfs::boxf::File>,
-        > = match BoxSpellerArchive::open(bhfst_file) {
+        let archive: ThfstBoxSpellerArchive = match BoxSpellerArchive::open(bhfst_file) {
             Ok(v) => v,
             Err(e) => {
                 eprintln!("{:?}", e);

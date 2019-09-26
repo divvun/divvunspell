@@ -102,8 +102,8 @@ impl<F: vfs::File + ToMemmap> Transducer<F> for HfstTransducer<F> {
         P: AsRef<Path>,
         FS: Filesystem<File = F>,
     {
-        let file = fs.open(path).map_err(|e| TransducerError::Io(e))?;
-        let mmap = unsafe { file.memory_map() }.map_err(|e| TransducerError::Memmap(e))?;
+        let file = fs.open(path).map_err(TransducerError::Io)?;
+        let mmap = unsafe { file.memory_map() }.map_err(TransducerError::Memmap)?;
         Ok(HfstTransducer::from_mapped_memory(Arc::new(mmap)))
     }
 

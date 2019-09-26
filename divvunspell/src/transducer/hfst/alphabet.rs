@@ -21,8 +21,8 @@ pub struct TransducerAlphabetParser {
     unknown_symbol: Option<SymbolNumber>,
 }
 
-impl TransducerAlphabetParser {
-    pub fn new() -> TransducerAlphabetParser {
+impl std::default::Default for TransducerAlphabetParser {
+    fn default() -> Self {
         TransducerAlphabetParser {
             key_table: Vec::with_capacity(64),
             flag_state_size: 0,
@@ -36,6 +36,12 @@ impl TransducerAlphabetParser {
             identity_symbol: None,
             unknown_symbol: None,
         }
+    }
+}
+
+impl TransducerAlphabetParser {
+    pub fn new() -> TransducerAlphabetParser {
+        Self::default()
     }
 
     fn handle_special_symbol(&mut self, i: SymbolNumber, key: &str) {
