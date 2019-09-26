@@ -2,19 +2,19 @@ use std::sync::Arc;
 
 use box_format::BoxFileReader;
 
-use self::meta::SpellerMetadata;
-use super::*;
 use crate::speller::Speller;
 use crate::transducer::{thfst::ThfstTransducer, Transducer};
 use crate::util::boxf::Filesystem;
+use super::meta::SpellerMetadata;
+use super::error::SpellerArchiveError;
 
-pub struct BoxSpellerArchive<T: Transducer> {
+pub struct BoxSpellerArchive<T: Transducer, U: Transducer> {
     // metadata: SpellerMetadata,
-    speller: Arc<Speller<T>>,
+    speller: Arc<Speller<T, U>>,
 }
 
-impl BoxSpellerArchive<ThfstTransducer> {
-    pub fn new(file_path: &str) -> Result<BoxSpellerArchive<ThfstTransducer>, SpellerArchiveError> {
+impl BoxSpellerArchive<ThfstTransducer, ThfstTransducer> {
+    pub fn new(file_path: &str) -> Result<BoxSpellerArchive<ThfstTransducer, ThfstTransducer>, SpellerArchiveError> {
         let archive =
             BoxFileReader::open(file_path).map_err(SpellerArchiveError::OpenFileFailed)?;
 
@@ -27,7 +27,7 @@ impl BoxSpellerArchive<ThfstTransducer> {
         Ok(BoxSpellerArchive { speller })
     }
 
-    pub fn speller(&self) -> Arc<Speller<ThfstTransducer>> {
+    pub fn speller(&self) -> Arc<Speller<ThfstTransducer, ThfstTransducer>> {
         self.speller.clone()
     }
 

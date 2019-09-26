@@ -7,7 +7,7 @@ use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::SpellerConfig;
 use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use serde_derive::Serialize;
+use serde::Serialize;
 
 static CFG: SpellerConfig = SpellerConfig {
     max_weight: Some(50000.0),

@@ -1,14 +1,14 @@
 use std::io::{self, Read};
+use std::sync::Arc;
 
 use clap::{App, AppSettings, Arg, ArgGroup};
+use serde::Serialize;
 
 use divvunspell::archive::{BoxSpellerArchive, ZipSpellerArchive};
 use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::{Speller, SpellerConfig};
 use divvunspell::tokenizer::Tokenize;
-// use divvunspell::transducer::chunk::ChfstBundle;
-
-use serde_derive::Serialize;
+use divvunspell::transducer::{Transducer};
 
 trait OutputWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool);
@@ -75,11 +75,8 @@ impl OutputWriter for JsonWriter {
     }
 }
 
-use divvunspell::transducer::Transducer;
-use std::sync::Arc;
-
-fn run<T: Transducer>(
-    speller: Arc<Speller<T>>,
+fn run<T: Transducer, U: Transducer>(
+    speller: Arc<Speller<T, U>>,
     words: Vec<String>,
     writer: &mut dyn OutputWriter,
     is_suggesting: bool,

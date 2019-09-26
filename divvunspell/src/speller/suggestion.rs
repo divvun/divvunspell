@@ -1,5 +1,5 @@
 use crate::types::Weight;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 use std::cmp::Ordering;
 use std::cmp::Ordering::Equal;

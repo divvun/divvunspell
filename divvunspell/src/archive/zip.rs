@@ -5,15 +5,15 @@ use std::io::prelude::*;
 use std::io::Seek;
 use std::sync::Arc;
 
-use self::meta::SpellerMetadata;
 use crate::speller::Speller;
 use crate::transducer::hfst::HfstTransducer;
-
-use super::*;
+use super::meta::SpellerMetadata;
+use super::error::SpellerArchiveError;
+use super::{MmapRef, TempMmap};
 
 pub struct ZipSpellerArchive {
     metadata: SpellerMetadata,
-    speller: Arc<Speller<HfstTransducer>>,
+    speller: Arc<Speller<HfstTransducer, HfstTransducer>>,
 }
 
 fn mmap_by_name<R: Read + Seek>(
@@ -84,7 +84,7 @@ impl ZipSpellerArchive {
         // unimplemented!()
     }
 
-    pub fn speller(&self) -> Arc<Speller<HfstTransducer>> {
+    pub fn speller(&self) -> Arc<Speller<HfstTransducer, HfstTransducer>> {
         self.speller.clone()
     }
 

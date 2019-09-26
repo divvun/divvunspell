@@ -4,6 +4,7 @@ pub const TARGET_TABLE: u32 = 2_147_483_648;
 
 #[cfg(test)]
 mod tests {
+    #![allow(non_snake_case)]
     use super::*;
 
     #[test]

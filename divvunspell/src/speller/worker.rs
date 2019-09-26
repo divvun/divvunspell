@@ -8,7 +8,7 @@ use lifeguard::{Pool, Recycled};
 use super::{Speller, SpellerConfig};
 use crate::speller::suggestion::Suggestion;
 use crate::transducer::tree_node::TreeNode;
-use crate::transducer::{Alphabet, Transducer};
+use crate::transducer::Transducer;
 use crate::types::{SymbolNumber, Weight};
 
 #[inline(always)]
@@ -24,20 +24,24 @@ fn speller_max_weight(config: &SpellerConfig) -> Weight {
     config.max_weight.unwrap_or(f32::MAX)
 }
 
-pub struct SpellerWorker<T: Transducer> {
-    speller: Arc<Speller<T>>,
+pub struct SpellerWorker<T: Transducer, U: Transducer> {
+    speller: Arc<Speller<T, U>>,
     input: Vec<SymbolNumber>,
     config: SpellerConfig,
 }
 
 #[allow(clippy::too_many_arguments)]
-impl<'t, T: Transducer + 't> SpellerWorker<T> {
+impl<'t, T: Transducer + 't, U: Transducer + 't> SpellerWorker<T, U>
+where
+    T: Transducer,
+    U: Transducer,
+{
     #[inline(always)]
     pub fn new(
-        speller: Arc<Speller<T>>,
+        speller: Arc<Speller<T, U>>,
         input: Vec<SymbolNumber>,
         config: SpellerConfig,
-    ) -> Arc<SpellerWorker<T>> {
+    ) -> Arc<SpellerWorker<T, U>> {
         Arc::new(SpellerWorker {
             speller,
             input,

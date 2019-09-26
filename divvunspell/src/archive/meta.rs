@@ -1,3 +1,4 @@
+use serde::{Serialize, Deserialize};
 use serde_xml_rs::{from_reader, Error, ParserConfig};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -62,7 +63,7 @@ impl SpellerMetadata {
 #[test]
 fn test_xml_parse() {
     use std::str::FromStr;
-    
+
     let xml_data = r##"
         <?xml version="1.0" encoding="UTF-8"?>
         <hfstspeller dtdversion="1.0" hfstversion="3">

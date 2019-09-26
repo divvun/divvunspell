@@ -4,10 +4,9 @@ use crate::constants::TARGET_TABLE;
 use crate::transducer::symbol_transition::SymbolTransition;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 
-use super::alphabet::TransducerAlphabet;
 use super::index_table::IndexTable;
 use super::transition_table::TransitionTable;
-use crate::transducer::{Alphabet, Transducer};
+use crate::transducer::{Transducer, TransducerAlphabet};
 use crate::util::{self, Filesystem, ToMemmap};
 
 /// Tromsø-Helsinki Finite State Transducer format
@@ -79,7 +78,7 @@ impl ThfstChunkedTransducer {
 }
 
 impl Transducer for ThfstChunkedTransducer {
-    type Alphabet = TransducerAlphabet;
+    // type Alphabet = TransducerAlphabet;
     const FILE_EXT: &'static str = "thfst";
 
     #[inline(always)]

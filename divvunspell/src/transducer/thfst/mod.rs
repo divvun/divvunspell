@@ -7,7 +7,7 @@ use std::{u16, u32};
 use crate::constants::TARGET_TABLE;
 use crate::transducer::symbol_transition::SymbolTransition;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 mod alphabet;
 mod chunked;
@@ -18,8 +18,7 @@ pub use self::chunked::ThfstChunkedTransducer;
 pub use self::index_table::IndexTable;
 pub use self::transition_table::TransitionTable;
 
-use self::alphabet::TransducerAlphabet;
-use crate::transducer::{Alphabet, Transducer};
+use crate::transducer::{Transducer, TransducerAlphabet};
 use crate::util::{self, Filesystem, ToMemmap};
 
 #[repr(C)]
@@ -98,7 +97,7 @@ impl ThfstTransducer {
 }
 
 impl Transducer for ThfstTransducer {
-    type Alphabet = TransducerAlphabet;
+    // type Alphabet = TransducerAlphabet;
     const FILE_EXT: &'static str = "thfst";
 
     #[inline(always)]
@@ -209,12 +208,12 @@ impl Transducer for ThfstTransducer {
     }
 
     #[inline(always)]
-    fn alphabet(&self) -> &Self::Alphabet {
+    fn alphabet(&self) -> &TransducerAlphabet {
         &self.alphabet
     }
 
     #[inline(always)]
-    fn mut_alphabet(&mut self) -> &mut Self::Alphabet {
+    fn mut_alphabet(&mut self) -> &mut TransducerAlphabet {
         &mut self.alphabet
     }
 }

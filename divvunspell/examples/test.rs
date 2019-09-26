@@ -4,17 +4,17 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use divvunspell::archive::ZipSpellerArchive;
-
 use divvunspell::speller::{Speller, SpellerConfig};
-
 use divvunspell::transducer::hfst::HfstTransducer;
 
-fn run(speller: Arc<Speller<HfstTransducer>>, line: &TestLine, cfg: &SpellerConfig) {
+type HfstSpeller = Speller<HfstTransducer, HfstTransducer>;
+
+fn run(speller: Arc<HfstSpeller>, line: &TestLine, cfg: &SpellerConfig) {
     let _ = speller.suggest_with_config(line.0, &cfg);
 }
 
 fn time_suggest(
-    speller: Arc<Speller<HfstTransducer>>,
+    speller: Arc<HfstSpeller>,
     line: &TestLine,
     cfg: &SpellerConfig,
 ) -> String {

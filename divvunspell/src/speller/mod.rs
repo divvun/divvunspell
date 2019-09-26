@@ -2,14 +2,14 @@ pub mod suggestion;
 pub mod worker;
 
 use hashbrown::HashMap;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 use std::f32;
 use std::sync::Arc;
 
 use self::worker::SpellerWorker;
 use crate::speller::suggestion::Suggestion;
-use crate::transducer::{Alphabet, Transducer};
+use crate::transducer::Transducer;
 use crate::types::{SymbolNumber, Weight};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -38,14 +38,18 @@ impl SpellerConfig {
 }
 
 #[derive(Debug)]
-pub struct Speller<T: Transducer> {
+pub struct Speller<T: Transducer, U: Transducer> {
     mutator: T,
-    lexicon: T,
+    lexicon: U,
     alphabet_translator: Vec<SymbolNumber>,
 }
 
-impl<T: Transducer> Speller<T> {
-    pub fn new(mutator: T, mut lexicon: T) -> Arc<Speller<T>> {
+impl<T, U> Speller<T, U>
+where
+    T: Transducer,
+    U: Transducer,
+{
+    pub fn new(mutator: T, mut lexicon: U) -> Arc<Speller<T, U>> {
         let alphabet_translator = lexicon.mut_alphabet().create_translator_from(&mutator);
 
         Arc::new(Speller {
@@ -59,7 +63,7 @@ impl<T: Transducer> Speller<T> {
         &self.mutator
     }
 
-    pub fn lexicon(&self) -> &T {
+    pub fn lexicon(&self) -> &U {
         &self.lexicon
     }
 

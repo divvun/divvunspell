@@ -11,16 +11,13 @@ use std::sync::Arc;
 use crate::constants::{INDEX_TABLE_SIZE, TARGET_TABLE, TRANS_TABLE_SIZE};
 use crate::types::{HeaderFlag, SymbolNumber, TransitionTableIndex, Weight};
 use crate::util::{self, Filesystem, ToMemmap};
-
-use self::alphabet::TransducerAlphabet;
+use super::alphabet::TransducerAlphabet;
+use self::alphabet::TransducerAlphabetParser;
 use self::header::TransducerHeader;
-
 pub use self::index_table::IndexTable;
 pub use self::transition_table::TransitionTable;
-
 use super::symbol_transition::SymbolTransition;
-
-use super::{Alphabet, Transducer};
+use super::Transducer;
 
 pub struct HfstTransducer {
     buf: Arc<Mmap>,
@@ -56,7 +53,7 @@ impl HfstTransducer {
         let header = TransducerHeader::new(&buf);
         let alphabet_offset = header.len();
         let alphabet =
-            TransducerAlphabet::new(&buf[alphabet_offset..buf.len()], header.symbol_count());
+            TransducerAlphabetParser::parse(&buf[alphabet_offset..buf.len()], header.symbol_count());
 
         let index_table_offset = alphabet_offset + alphabet.len();
 
@@ -123,7 +120,7 @@ impl HfstTransducer {
 }
 
 impl Transducer for HfstTransducer {
-    type Alphabet = TransducerAlphabet;
+    // type Alphabet = TransducerAlphabet;
     const FILE_EXT: &'static str = "hfst";
 
     #[inline(always)]
@@ -234,12 +231,12 @@ impl Transducer for HfstTransducer {
     }
 
     #[inline(always)]
-    fn alphabet(&self) -> &Self::Alphabet {
+    fn alphabet(&self) -> &TransducerAlphabet {
         &self.alphabet
     }
 
     #[inline(always)]
-    fn mut_alphabet(&mut self) -> &mut Self::Alphabet {
+    fn mut_alphabet(&mut self) -> &mut TransducerAlphabet {
         &mut self.alphabet
     }
 }
