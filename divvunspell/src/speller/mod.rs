@@ -89,6 +89,7 @@ where
             .collect()
     }
 
+    #[allow(clippy::wrong_self_convention)]
     pub fn is_correct(self: Arc<Self>, word: &str) -> bool {
         use crate::tokenizer::caps::*;
 
