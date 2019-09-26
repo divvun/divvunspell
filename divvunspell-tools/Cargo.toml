@@ -1,6 +1,6 @@
 [package]
 name = "divvunspell-tools"
-version = "0.4.0"
+version = "0.5.0"
 authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
@@ -18,7 +18,7 @@ name = "thfst-tools"
 serde = "1.0.101"
 serde_derive = "1.0.101"
 serde_json = "1.0.40"
-divvunspell = { path = "../divvunspell", features = ["convert"] }
+divvunspell = { path = "../divvunspell", features = ["convert", "compression"] }
 clap = { version = "2.33.0" }
 structopt = { version = "0.3.2"}
 csv = { version = "1.1" }
