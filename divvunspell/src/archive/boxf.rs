@@ -15,7 +15,7 @@ pub struct BoxSpellerArchive<T: Transducer, U: Transducer> {
 }
 
 impl<T: Transducer, U: Transducer> BoxSpellerArchive<T, U> {
-    pub fn open(file_path: &str) -> Result<BoxSpellerArchive<T, U>, SpellerArchiveError> {
+    pub fn open<P: AsRef<std::path::Path>>(file_path: P) -> Result<BoxSpellerArchive<T, U>, SpellerArchiveError> {
         let archive = BoxFileReader::open(file_path).map_err(SpellerArchiveError::File)?;
 
         let fs = BoxFilesystem::new(&archive);

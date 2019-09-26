@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
-use divvunspell::archive::ZipSpellerArchive;
+use divvunspell::archive::{BoxSpellerArchive, ZipSpellerArchive};
 use divvunspell::transducer::{
     convert::ConvertFile,
     hfst::HfstTransducer,
@@ -17,18 +17,19 @@ use box_format::{BoxFileWriter, BoxPath, Compression};
     about = "Tromsø-Helsinki Finite State Transducer toolkit."
 )]
 enum Opts {
-    #[structopt(help = "Convert an HFST file to THFST")]
+    #[structopt(about = "Convert an HFST file to THFST")]
     HfstToThfst {
         #[structopt(parse(from_os_str))]
         from: PathBuf,
     },
 
-    #[structopt(help = "Convert a ZHFST file to BHFST")]
+    #[structopt(about = "Convert a ZHFST file to BHFST")]
     ZhfstToBhfst {
         #[structopt(parse(from_os_str))]
         from: PathBuf,
     },
 
+    #[structopt(about = "Convert a THFST acceptor/errmodel pair to BHFST")]
     ThfstsToBhfst {
         #[structopt(parse(from_os_str))]
         acceptor: PathBuf,
@@ -39,6 +40,12 @@ enum Opts {
         #[structopt(parse(from_os_str))]
         output: PathBuf,
     },
+
+    #[structopt(about = "Print metadata for BHFST")]
+    BhfstInfo {
+        #[structopt(parse(from_os_str))]
+        path: PathBuf,
+    }
 }
 
 use std::num::NonZeroU64;
@@ -110,15 +117,25 @@ fn convert_thfsts_to_bhfst(
 
 fn convert_zhfst_to_bhfst(zhfst_path: &Path) -> Result<(), std::io::Error> {
     let zhfst_path = std::fs::canonicalize(zhfst_path)?;
+    let zhfst = ZipSpellerArchive::open(&zhfst_path).map_err(|e| e.into_io_error())?;
 
-    let _zhfst = ZipSpellerArchive::open(&zhfst_path).map_err(|e| e.into_io_error())?;
-
+    let meta_json = match zhfst.metadata() {
+        Some(metadata) => {
+            let mut metadata = metadata.to_owned();
+            metadata.acceptor.id = metadata.acceptor.id.replace(".hfst", ".thfst");
+            metadata.errmodel.id = metadata.errmodel.id.replace(".hfst", ".thfst");
+            Some(serde_json::to_string_pretty(&metadata)?)
+        }
+        None => None
+    };
+    
     let dir = tempdir::TempDir::new("zhfst")?;
 
     std::process::Command::new("unzip")
         .current_dir(&dir)
         .args(&[&zhfst_path])
         .output()?;
+
 
     let acceptor_path = dir.as_ref().join("acceptor.default.hfst");
     let errmodel_path = dir.as_ref().join("errmodel.default.hfst");
@@ -127,6 +144,15 @@ fn convert_zhfst_to_bhfst(zhfst_path: &Path) -> Result<(), std::io::Error> {
 
     let bhfst_path = zhfst_path.with_extension("bhfst");
     let mut boxfile: BoxFileWriter = BoxFileWriter::create_with_alignment(bhfst_path, ALIGNMENT)?;
+
+    if let Some(v) = meta_json {
+        boxfile.insert(
+            Compression::Stored,
+            BoxPath::new("meta.json").unwrap(),
+            &mut std::io::Cursor::new(v),
+            std::collections::HashMap::new(),
+        )?;
+    }
 
     insert_thfst_files(&mut boxfile, &acceptor_path.with_extension("thfst"))?;
     insert_thfst_files(&mut boxfile, &errmodel_path.with_extension("thfst"))?;
@@ -145,5 +171,11 @@ fn main() -> Result<(), std::io::Error> {
             output,
         } => convert_thfsts_to_bhfst(&acceptor, &errmodel, &output),
         Opts::ZhfstToBhfst { from } => convert_zhfst_to_bhfst(&from),
+        Opts::BhfstInfo { path } => {
+            let ar: BoxSpellerArchive<ThfstTransducer, ThfstTransducer> =
+                BoxSpellerArchive::open(&path).map_err(|e| e.into_io_error())?;
+            println!("{:#?}", ar.metadata());
+            Ok(())
+        }
     }
 }

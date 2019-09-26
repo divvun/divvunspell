@@ -1,21 +1,21 @@
 use serde::{Deserialize, Serialize};
 use serde_xml_rs::{from_reader, Error, ParserConfig};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SpellerMetadata {
     pub info: SpellerMetadataInfo,
     pub acceptor: SpellerMetadataAcceptor,
     pub errmodel: SpellerMetadataErrmodel,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SpellerTitle {
     pub lang: Option<String>,
     #[serde(rename = "$value")]
     pub value: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SpellerMetadataInfo {
     pub locale: String,
     pub title: Vec<SpellerTitle>,
@@ -23,7 +23,7 @@ pub struct SpellerMetadataInfo {
     pub producer: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SpellerMetadataAcceptor {
     #[serde(rename = "type", default)]
     pub type_: String,
@@ -32,7 +32,7 @@ pub struct SpellerMetadataAcceptor {
     pub description: String,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SpellerMetadataErrmodel {
     pub id: String,
     pub title: Vec<SpellerTitle>,
@@ -95,5 +95,6 @@ fn test_xml_parse() {
         </hfstspeller>
     "##;
 
-    let _ = SpellerMetadata::from_str(&xml_data).unwrap();
+    let s = SpellerMetadata::from_str(&xml_data).unwrap();
+    println!("{:#?}", s);
 }
