@@ -69,8 +69,10 @@ macro_rules! error {
     };
 }
 
-impl ThfstTransducer {
-    pub fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<Self, std::io::Error>
+impl Transducer for ThfstTransducer {
+    const FILE_EXT: &'static str = "thfst";
+
+    fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<Self, std::io::Error>
     where
         P: AsRef<Path>,
         FS: Filesystem<File = F>,
@@ -94,11 +96,6 @@ impl ThfstTransducer {
             alphabet,
         })
     }
-}
-
-impl Transducer for ThfstTransducer {
-    // type Alphabet = TransducerAlphabet;
-    const FILE_EXT: &'static str = "thfst";
 
     #[inline(always)]
     fn is_final(&self, i: TransitionTableIndex) -> bool {

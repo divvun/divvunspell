@@ -8,16 +8,16 @@ use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::constants::{INDEX_TABLE_SIZE, TARGET_TABLE, TRANS_TABLE_SIZE};
-use crate::types::{HeaderFlag, SymbolNumber, TransitionTableIndex, Weight};
-use crate::util::{self, Filesystem, ToMemmap};
-use super::alphabet::TransducerAlphabet;
 use self::alphabet::TransducerAlphabetParser;
 use self::header::TransducerHeader;
 pub use self::index_table::IndexTable;
 pub use self::transition_table::TransitionTable;
+use super::alphabet::TransducerAlphabet;
 use super::symbol_transition::SymbolTransition;
 use super::Transducer;
+use crate::constants::{INDEX_TABLE_SIZE, TARGET_TABLE, TRANS_TABLE_SIZE};
+use crate::types::{HeaderFlag, SymbolNumber, TransitionTableIndex, Weight};
+use crate::util::{self, Filesystem, ToMemmap};
 
 pub struct HfstTransducer {
     buf: Arc<Mmap>,
@@ -37,23 +37,15 @@ impl fmt::Debug for HfstTransducer {
     }
 }
 
-// #[derive(Debug)]
-// pub enum TransducerSerializeError {
-//     InvalidChunkSize,
-// }
-
-// pub struct TransducerSerializeReport {
-//     pub index_table_chunks: usize,
-//     pub transition_table_chunks: usize,
-// }
-
 impl HfstTransducer {
     #[inline(always)]
     pub fn from_mapped_memory(buf: Arc<Mmap>) -> HfstTransducer {
         let header = TransducerHeader::new(&buf);
         let alphabet_offset = header.len();
-        let alphabet =
-            TransducerAlphabetParser::parse(&buf[alphabet_offset..buf.len()], header.symbol_count());
+        let alphabet = TransducerAlphabetParser::parse(
+            &buf[alphabet_offset..buf.len()],
+            header.symbol_count(),
+        );
 
         let index_table_offset = alphabet_offset + alphabet.len();
 
@@ -82,31 +74,10 @@ impl HfstTransducer {
         }
     }
 
-    pub fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<HfstTransducer, std::io::Error>
-    where
-        P: AsRef<Path>,
-        FS: Filesystem<File = F>,
-        F: util::File + ToMemmap,
-    {
-        let file = fs.open(path)?;
-        let mmap = unsafe { file.map() }?;
-        Ok(HfstTransducer::from_mapped_memory(Arc::new(mmap)))
-    }
-
     #[inline(always)]
     pub fn buffer(&self) -> &[u8] {
         &self.buf
     }
-
-    // #[inline(always)]
-    // pub fn index_table(&self) -> &IndexTable {
-    //     &self.index_table
-    // }
-
-    // #[inline(always)]
-    // pub fn transition_table(&self) -> &TransitionTable {
-    //     &self.transition_table
-    // }
 
     #[inline(always)]
     pub fn is_weighted(&self) -> bool {
@@ -120,8 +91,18 @@ impl HfstTransducer {
 }
 
 impl Transducer for HfstTransducer {
-    // type Alphabet = TransducerAlphabet;
     const FILE_EXT: &'static str = "hfst";
+
+    fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<HfstTransducer, std::io::Error>
+    where
+        P: AsRef<Path>,
+        FS: Filesystem<File = F>,
+        F: util::File + ToMemmap,
+    {
+        let file = fs.open(path)?;
+        let mmap = unsafe { file.map() }?;
+        Ok(HfstTransducer::from_mapped_memory(Arc::new(mmap)))
+    }
 
     #[inline(always)]
     fn is_final(&self, i: TransitionTableIndex) -> bool {

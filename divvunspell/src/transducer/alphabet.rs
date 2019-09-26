@@ -1,11 +1,9 @@
 use hashbrown::HashMap;
+use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
-use serde::{Serialize, Deserialize};
 
-use crate::types::{
-    OperationsMap, SymbolNumber,
-};
 use crate::transducer::Transducer;
+use crate::types::{OperationsMap, SymbolNumber};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TransducerAlphabet {
@@ -72,10 +70,7 @@ impl TransducerAlphabet {
         self.length == 0
     }
 
-    pub fn create_translator_from<T: Transducer>(
-        &mut self,
-        mutator: &T,
-    ) -> Vec<SymbolNumber> {
+    pub fn create_translator_from<T: Transducer>(&mut self, mutator: &T) -> Vec<SymbolNumber> {
         let from = mutator.alphabet();
         let from_keys = from.key_table();
 

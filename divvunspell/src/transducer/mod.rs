@@ -1,7 +1,7 @@
-pub mod hfst;
-pub mod thfst;
 mod alphabet;
+pub mod hfst;
 mod symbol_transition;
+pub mod thfst;
 pub mod tree_node;
 
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
@@ -9,9 +9,16 @@ use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 pub use self::alphabet::TransducerAlphabet;
 use self::symbol_transition::SymbolTransition;
 
-pub trait Transducer {
+use crate::util::{self, Filesystem, ToMemmap};
+
+pub trait Transducer: Sized {
     const FILE_EXT: &'static str;
-    // type Alphabet: Alphabet;
+
+    fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<Self, std::io::Error>
+    where
+        P: AsRef<std::path::Path>,
+        FS: Filesystem<File = F>,
+        F: util::File + ToMemmap;
 
     fn alphabet(&self) -> &TransducerAlphabet;
     fn mut_alphabet(&mut self) -> &mut TransducerAlphabet;

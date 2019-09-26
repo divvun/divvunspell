@@ -5,11 +5,11 @@ use std::io::prelude::*;
 use std::io::Seek;
 use std::sync::Arc;
 
+use super::error::SpellerArchiveError;
+use super::meta::SpellerMetadata;
+use super::{MmapRef, TempMmap};
 use crate::speller::Speller;
 use crate::transducer::hfst::HfstTransducer;
-use super::meta::SpellerMetadata;
-use super::error::SpellerArchiveError;
-use super::{MmapRef, TempMmap};
 
 pub struct ZipSpellerArchive {
     metadata: SpellerMetadata,
@@ -81,7 +81,6 @@ impl ZipSpellerArchive {
         let speller = Speller::new(errmodel, acceptor);
 
         Ok(ZipSpellerArchive { metadata, speller })
-        // unimplemented!()
     }
 
     pub fn speller(&self) -> Arc<Speller<HfstTransducer, HfstTransducer>> {

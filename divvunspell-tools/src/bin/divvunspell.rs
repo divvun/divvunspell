@@ -8,7 +8,7 @@ use divvunspell::archive::{BoxSpellerArchive, ZipSpellerArchive};
 use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::{Speller, SpellerConfig};
 use divvunspell::tokenizer::Tokenize;
-use divvunspell::transducer::{Transducer};
+use divvunspell::transducer::{thfst::ThfstTransducer, Transducer};
 
 trait OutputWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool);
@@ -234,13 +234,14 @@ fn main() {
             &suggest_cfg,
         );
     } else if let Some(bhfst_file) = matches.value_of("bhfst") {
-        let archive = match BoxSpellerArchive::new(bhfst_file) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("{:?}", e);
-                std::process::exit(1);
-            }
-        };
+        let archive: BoxSpellerArchive<ThfstTransducer, ThfstTransducer> =
+            match BoxSpellerArchive::new(bhfst_file) {
+                Ok(v) => v,
+                Err(e) => {
+                    eprintln!("{:?}", e);
+                    std::process::exit(1);
+                }
+            };
 
         let speller = archive.speller();
         run(
@@ -252,7 +253,6 @@ fn main() {
             &suggest_cfg,
         );
     } else {
-        use divvunspell::transducer::thfst::ThfstTransducer;
         match (matches.value_of("acceptor"), matches.value_of("errmodel")) {
             (Some(acceptor_file), Some(errmodel_file)) => {
                 let fs = divvunspell::util::Fs;

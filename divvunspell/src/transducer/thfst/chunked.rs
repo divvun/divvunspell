@@ -48,8 +48,10 @@ macro_rules! error {
     };
 }
 
-impl ThfstChunkedTransducer {
-    pub fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<Self, std::io::Error>
+impl Transducer for ThfstChunkedTransducer {
+    const FILE_EXT: &'static str = "thfst";
+
+    fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<Self, std::io::Error>
     where
         P: AsRef<Path>,
         FS: Filesystem<File = F>,
@@ -75,11 +77,6 @@ impl ThfstChunkedTransducer {
             alphabet,
         })
     }
-}
-
-impl Transducer for ThfstChunkedTransducer {
-    // type Alphabet = TransducerAlphabet;
-    const FILE_EXT: &'static str = "thfst";
 
     #[inline(always)]
     fn alphabet(&self) -> &TransducerAlphabet {

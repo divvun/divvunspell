@@ -5,6 +5,7 @@ use divvunspell::transducer::{
     convert::ConvertFile,
     hfst::HfstTransducer,
     thfst::{self, ThfstTransducer},
+    Transducer,
 };
 
 use box_format::{BoxFileWriter, BoxPath, Compression};

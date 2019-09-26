@@ -13,11 +13,7 @@ fn run(speller: Arc<HfstSpeller>, line: &TestLine, cfg: &SpellerConfig) {
     let _ = speller.suggest_with_config(line.0, &cfg);
 }
 
-fn time_suggest(
-    speller: Arc<HfstSpeller>,
-    line: &TestLine,
-    cfg: &SpellerConfig,
-) -> String {
+fn time_suggest(speller: Arc<HfstSpeller>, line: &TestLine, cfg: &SpellerConfig) -> String {
     // println!("[!] Test: {}; Expected: {}; Orig. time: {}; Orig. results:\n    {}", line.0, line.1, line.2, line.3.join(", "));
 
     let now = Instant::now();

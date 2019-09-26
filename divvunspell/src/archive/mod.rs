@@ -1,9 +1,9 @@
 use memmap::Mmap;
 use std::sync::Arc;
 
-pub mod meta;
-pub mod error;
 mod boxf;
+pub mod error;
+pub mod meta;
 mod zip;
 
 pub use self::boxf::BoxSpellerArchive;

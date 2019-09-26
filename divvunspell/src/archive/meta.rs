@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use serde_xml_rs::{from_reader, Error, ParserConfig};
 
 #[derive(Serialize, Deserialize, Debug)]
