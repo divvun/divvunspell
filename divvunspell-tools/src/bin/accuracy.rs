@@ -2,9 +2,10 @@ use std::error::Error;
 use std::time::{Instant, SystemTime};
 
 use clap::{App, AppSettings, Arg};
-use divvunspell::archive::ZipSpellerArchive;
+use divvunspell::archive::{BoxSpellerArchive, ZipSpellerArchive};
 use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::SpellerConfig;
+use divvunspell::transducer::thfst::ThfstTransducer;
 use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::Serialize;
@@ -161,10 +162,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .value_name("WORDS")
                 .help("The 'input -> expected' list in tab-delimited value file (TSV)"),
         )
+        // .arg(
+        //     Arg::with_name("bhfst")
+        //         .value_name("BHFST")
+        //         .help("Use the given BHFST file"),
+        // )
         .arg(
-            Arg::with_name("bhfst")
-                .value_name("BHFST")
-                .help("Use the given BHFST file"),
+            Arg::with_name("zhfst")
+                .value_name("ZHFST")
+                .help("Use the given ZHFST file"),
         )
         .arg(
             Arg::with_name("json-output")
@@ -187,6 +193,15 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         None => CFG.clone(),
     };
+
+    // let archive: BoxSpellerArchive<ThfstTransducer, ThfstTransducer> =
+    //     match matches.value_of("bhfst") {
+    //         Some(path) => BoxSpellerArchive::open(path)?,
+    //         None => {
+    //             eprintln!("No BHFST found for given path; aborting.");
+    //             std::process::exit(1);
+    //         }
+    //     };
 
     let archive = match matches.value_of("zhfst") {
         Some(path) => ZipSpellerArchive::open(path)?,

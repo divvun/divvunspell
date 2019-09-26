@@ -11,8 +11,8 @@ use memmap::Mmap;
 
 use self::alphabet::TransducerAlphabetParser;
 use self::header::TransducerHeader;
-pub use self::index_table::IndexTable;
-pub use self::transition_table::TransitionTable;
+pub use self::index_table::MappedIndexTable;
+pub use self::transition_table::MappedTransitionTable;
 use super::alphabet::TransducerAlphabet;
 use super::symbol_transition::SymbolTransition;
 use super::{Transducer, TransducerError};
@@ -20,15 +20,19 @@ use crate::constants::{INDEX_TABLE_SIZE, TARGET_TABLE};
 use crate::types::{HeaderFlag, SymbolNumber, TransitionTableIndex, Weight};
 use crate::util::{self, Filesystem, ToMemmap};
 
-pub struct HfstTransducer {
+pub struct HfstTransducer<F>
+where
+    F: util::File + ToMemmap,
+{
     buf: Arc<Mmap>,
     header: TransducerHeader,
     alphabet: TransducerAlphabet,
-    pub(crate) index_table: IndexTable,
-    pub(crate) transition_table: TransitionTable,
+    pub(crate) index_table: MappedIndexTable,
+    pub(crate) transition_table: MappedTransitionTable,
+    _file: std::marker::PhantomData<F>,
 }
 
-impl fmt::Debug for HfstTransducer {
+impl<F: util::File + ToMemmap> fmt::Debug for HfstTransducer<F> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "{:?}", self.header)?;
         writeln!(f, "{:?}", self.alphabet)?;
@@ -38,9 +42,9 @@ impl fmt::Debug for HfstTransducer {
     }
 }
 
-impl HfstTransducer {
+impl<F: util::File + ToMemmap> HfstTransducer<F> {
     #[inline(always)]
-    pub fn from_mapped_memory(buf: Arc<Mmap>) -> HfstTransducer {
+    pub fn from_mapped_memory(buf: Arc<Mmap>) -> HfstTransducer<F> {
         let header = TransducerHeader::new(&buf);
         let alphabet_offset = header.len();
         let alphabet = TransducerAlphabetParser::parse(
@@ -51,14 +55,14 @@ impl HfstTransducer {
         let index_table_offset = alphabet_offset + alphabet.len();
 
         let index_table_end = index_table_offset + INDEX_TABLE_SIZE * header.index_table_size();
-        let index_table = IndexTable::new(
+        let index_table = MappedIndexTable::new(
             buf.clone(),
             index_table_offset,
             index_table_end,
             header.index_table_size() as u32,
         );
 
-        let trans_table = TransitionTable::new(
+        let trans_table = MappedTransitionTable::new(
             buf.clone(),
             index_table_end,
             header.target_table_size() as u32,
@@ -70,6 +74,7 @@ impl HfstTransducer {
             alphabet,
             index_table,
             transition_table: trans_table,
+            _file: std::marker::PhantomData::<F>,
         }
     }
 
@@ -89,14 +94,13 @@ impl HfstTransducer {
     }
 }
 
-impl Transducer for HfstTransducer {
+impl<F: util::File + ToMemmap> Transducer<F> for HfstTransducer<F> {
     const FILE_EXT: &'static str = "hfst";
 
-    fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<HfstTransducer, TransducerError>
+    fn from_path<P, FS>(fs: &FS, path: P) -> Result<HfstTransducer<F>, TransducerError>
     where
         P: AsRef<Path>,
         FS: Filesystem<File = F>,
-        F: util::File + ToMemmap,
     {
         let file = fs.open(path).map_err(|e| TransducerError::Io(e))?;
         let mmap = unsafe { file.memory_map() }.map_err(|e| TransducerError::Memmap(e))?;

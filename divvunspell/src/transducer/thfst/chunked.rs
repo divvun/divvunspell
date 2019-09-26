@@ -4,19 +4,25 @@ use crate::constants::TARGET_TABLE;
 use crate::transducer::symbol_transition::SymbolTransition;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 
-use super::index_table::IndexTable;
-use super::transition_table::TransitionTable;
+use super::index_table::MemmapIndexTable;
+use super::transition_table::MemmapTransitionTable;
 use crate::transducer::{Transducer, TransducerAlphabet, TransducerError};
 use crate::util::{self, Filesystem, ToMemmap};
 
+use crate::transducer::{IndexTable, TransitionTable};
+
 /// Tromsø-Helsinki Finite State Transducer format
-pub struct ThfstChunkedTransducer {
+pub struct ThfstChunkedTransducer<F>
+where
+    F: util::File + ToMemmap,
+{
     // meta: MetaRecord,
-    index_tables: Vec<IndexTable>,
+    index_tables: Vec<MemmapIndexTable<F>>,
     indexes_per_chunk: u32,
-    transition_tables: Vec<TransitionTable>,
+    transition_tables: Vec<MemmapTransitionTable<F>>,
     transitions_per_chunk: u32,
     alphabet: TransducerAlphabet,
+    _file: std::marker::PhantomData<F>,
 }
 
 macro_rules! transition_rel_index {
@@ -48,14 +54,13 @@ macro_rules! error {
     };
 }
 
-impl Transducer for ThfstChunkedTransducer {
+impl<F: crate::util::File + crate::util::ToMemmap> Transducer<F> for ThfstChunkedTransducer<F> {
     const FILE_EXT: &'static str = "thfst";
 
-    fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<Self, TransducerError>
+    fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
     where
         P: AsRef<Path>,
         FS: Filesystem<File = F>,
-        F: util::File + ToMemmap,
     {
         let path = path.as_ref();
         let alphabet_file = fs
@@ -71,7 +76,7 @@ impl Transducer for ThfstChunkedTransducer {
         loop {
             let index_path = path.join("index");
             let indexes = (0..index_chunk_count)
-                .map(|i| IndexTable::from_path_partial(fs, &index_path, i, index_chunk_count))
+                .map(|i| MemmapIndexTable::from_path_partial(fs, &index_path, i, index_chunk_count))
                 .collect::<Result<Vec<_>, _>>();
 
             match indexes {
@@ -99,7 +104,9 @@ impl Transducer for ThfstChunkedTransducer {
         loop {
             let trans_path = path.join("transition");
             let tables = (0..trans_chunk_count)
-                .map(|i| TransitionTable::from_path_partial(fs, &trans_path, i, trans_chunk_count))
+                .map(|i| {
+                    MemmapTransitionTable::from_path_partial(fs, &trans_path, i, trans_chunk_count)
+                })
                 .collect::<Result<Vec<_>, _>>();
 
             match tables {
@@ -127,6 +134,7 @@ impl Transducer for ThfstChunkedTransducer {
             index_tables,
             transition_tables,
             alphabet,
+            _file: std::marker::PhantomData::<F>,
         })
     }
 

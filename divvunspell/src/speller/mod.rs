@@ -38,24 +38,30 @@ impl SpellerConfig {
 }
 
 #[derive(Debug)]
-pub struct Speller<T: Transducer, U: Transducer> {
+pub struct Speller<F, T: Transducer<F>, U: Transducer<F>>
+where
+    F: crate::util::File + crate::util::ToMemmap,
+{
     mutator: T,
     lexicon: U,
     alphabet_translator: Vec<SymbolNumber>,
+    _file: std::marker::PhantomData<F>,
 }
 
-impl<T, U> Speller<T, U>
+impl<F, T, U> Speller<F, T, U>
 where
-    T: Transducer,
-    U: Transducer,
+    F: crate::util::File + crate::util::ToMemmap,
+    T: Transducer<F>,
+    U: Transducer<F>,
 {
-    pub fn new(mutator: T, mut lexicon: U) -> Arc<Speller<T, U>> {
+    pub fn new(mutator: T, mut lexicon: U) -> Arc<Speller<F, T, U>> {
         let alphabet_translator = lexicon.mut_alphabet().create_translator_from(&mutator);
 
         Arc::new(Speller {
             mutator,
             lexicon,
             alphabet_translator,
+            _file: std::marker::PhantomData::<F>,
         })
     }
 

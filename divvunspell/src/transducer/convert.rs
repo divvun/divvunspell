@@ -16,8 +16,13 @@ pub trait ConvertFrom<T> {
     fn convert_from<W: Write>(from: &T, writer: &mut W) -> Result<(), std::io::Error>;
 }
 
-impl ConvertFile<hfst::HfstTransducer> for thfst::ThfstTransducer {
-    fn convert_file(transducer: &hfst::HfstTransducer, path: &Path) -> Result<(), std::io::Error> {
+impl ConvertFile<hfst::HfstTransducer<std::fs::File>>
+    for thfst::MemmapThfstTransducer<std::fs::File>
+{
+    fn convert_file(
+        transducer: &hfst::HfstTransducer<std::fs::File>,
+        path: &Path,
+    ) -> Result<(), std::io::Error> {
         let thfst_path = path.with_extension("thfst");
         std::fs::create_dir_all(&thfst_path)?;
 
@@ -26,10 +31,10 @@ impl ConvertFile<hfst::HfstTransducer> for thfst::ThfstTransducer {
         let alphabet_path = thfst_path.join("alphabet");
 
         let mut writer = BufWriter::new(File::create(transition_path)?);
-        thfst::TransitionTable::convert_from(&transducer.transition_table, &mut writer)?;
+        thfst::MemmapTransitionTable::convert_from(&transducer.transition_table, &mut writer)?;
 
         let mut writer = BufWriter::new(File::create(index_path)?);
-        thfst::IndexTable::convert_from(&transducer.index_table, &mut writer)?;
+        thfst::MemmapIndexTable::convert_from(&transducer.index_table, &mut writer)?;
 
         let writer = BufWriter::new(File::create(alphabet_path)?);
         serde_json::to_writer_pretty(writer, transducer.alphabet())?;
@@ -38,9 +43,9 @@ impl ConvertFile<hfst::HfstTransducer> for thfst::ThfstTransducer {
     }
 }
 
-impl ConvertFrom<hfst::IndexTable> for thfst::IndexTable {
+impl ConvertFrom<hfst::MappedIndexTable> for thfst::MemmapIndexTable<std::fs::File> {
     fn convert_from<W: Write>(
-        table: &hfst::IndexTable,
+        table: &hfst::MappedIndexTable,
         writer: &mut W,
     ) -> Result<(), std::io::Error> {
         use std::{u16, u32};
@@ -63,9 +68,9 @@ impl ConvertFrom<hfst::IndexTable> for thfst::IndexTable {
     }
 }
 
-impl ConvertFrom<hfst::TransitionTable> for thfst::TransitionTable {
+impl ConvertFrom<hfst::MappedTransitionTable> for thfst::MemmapTransitionTable<std::fs::File> {
     fn convert_from<W: Write>(
-        table: &hfst::TransitionTable,
+        table: &hfst::MappedTransitionTable,
         writer: &mut W,
     ) -> Result<(), std::io::Error> {
         use std::{u16, u32};

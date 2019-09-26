@@ -30,14 +30,13 @@ impl TransducerError {
     }
 }
 
-pub trait Transducer: Sized {
+pub trait Transducer<F: util::File + ToMemmap>: Sized {
     const FILE_EXT: &'static str;
 
-    fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<Self, TransducerError>
+    fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
     where
         P: AsRef<std::path::Path>,
-        FS: Filesystem<File = F>,
-        F: util::File + ToMemmap;
+        FS: Filesystem<File = F>;
 
     fn alphabet(&self) -> &TransducerAlphabet;
     fn mut_alphabet(&mut self) -> &mut TransducerAlphabet;
@@ -56,5 +55,42 @@ pub trait Transducer: Sized {
     fn is_final(&self, i: TransitionTableIndex) -> bool;
     fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight>;
 }
+
+pub trait TransitionTable<F: util::File + ToMemmap>: Sized {
+    fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
+    where
+        P: AsRef<std::path::Path>,
+        FS: Filesystem<File = F>;
+    fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber>;
+    fn output_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber>;
+    fn target(&self, i: TransitionTableIndex) -> Option<TransitionTableIndex>;
+    fn weight(&self, i: TransitionTableIndex) -> Option<Weight>;
+
+    #[inline(always)]
+    fn is_final(&self, i: TransitionTableIndex) -> bool {
+        self.input_symbol(i) == None && self.output_symbol(i) == None && self.target(i) == Some(1)
+    }
+
+    #[inline(always)]
+    fn symbol_transition(&self, i: TransitionTableIndex) -> SymbolTransition {
+        SymbolTransition::new(self.target(i), self.output_symbol(i), self.weight(i))
+    }
+}
+
+pub trait IndexTable<F: util::File + ToMemmap>: Sized {
+    fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
+    where
+        P: AsRef<std::path::Path>,
+        FS: Filesystem<File = F>;
+    fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber>;
+    fn target(&self, i: TransitionTableIndex) -> Option<TransitionTableIndex>;
+    fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight>;
+
+    #[inline(always)]
+    fn is_final(&self, i: TransitionTableIndex) -> bool {
+        self.input_symbol(i) == None && self.target(i) != None
+    }
+}
+
 #[cfg(feature = "convert")]
 pub mod convert;

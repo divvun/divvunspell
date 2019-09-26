@@ -14,23 +14,23 @@ use crate::transducer::symbol_transition::SymbolTransition;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 
 #[doc(hidden)]
-pub struct TransitionTable {
+pub struct MappedTransitionTable {
     pub(crate) size: TransitionTableIndex,
     pub(crate) mmap: Arc<Mmap>,
     pub(crate) offset: usize,
 }
 
-impl fmt::Debug for TransitionTable {
+impl fmt::Debug for MappedTransitionTable {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Transition table index: {}", self.size)?;
         Ok(())
     }
 }
 
-impl TransitionTable {
+impl MappedTransitionTable {
     #[inline(always)]
-    pub fn new(mmap: Arc<Mmap>, offset: usize, size: u32) -> TransitionTable {
-        TransitionTable { size, mmap, offset }
+    pub fn new(mmap: Arc<Mmap>, offset: usize, size: u32) -> MappedTransitionTable {
+        MappedTransitionTable { size, mmap, offset }
     }
 
     #[inline(always)]

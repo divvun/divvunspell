@@ -2,6 +2,9 @@ use memmap::{Mmap, MmapOptions};
 use std::io::{Read, Result};
 use std::path::Path;
 
+#[cfg(unix)]
+use std::os::unix::fs::FileExt;
+
 pub trait Filesystem {
     type File: File;
 
@@ -16,6 +19,10 @@ pub trait ToMemmap {
 pub trait File: Read {
     fn len(&self) -> Result<u64>;
     fn is_empty(&self) -> Result<bool>;
+    #[cfg(unix)]
+    fn read_at(&self, buf: &mut [u8], offset: u64) -> Result<usize>;
+    #[cfg(unix)]
+    fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> Result<()>;
 }
 
 impl File for std::fs::File {
@@ -25,6 +32,18 @@ impl File for std::fs::File {
 
     fn is_empty(&self) -> Result<bool> {
         self.len().map(|x| x == 0)
+    }
+
+    #[cfg(unix)]
+    #[inline(always)]
+    fn read_at(&self, buf: &mut [u8], offset: u64) -> Result<usize> {
+        FileExt::read_at(self, buf, offset)
+    }
+
+    #[cfg(unix)]
+    #[inline(always)]
+    fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> Result<()> {
+        FileExt::read_exact_at(self, buf, offset)
     }
 }
 
@@ -49,7 +68,7 @@ impl Filesystem for Fs {
     }
 }
 
-pub(crate) mod boxf {
+pub mod boxf {
     use box_format::{BoxFileReader, BoxPath};
     use std::io::{Read, Result};
     use std::path::Path;
@@ -90,6 +109,18 @@ pub(crate) mod boxf {
 
         fn is_empty(&self) -> Result<bool> {
             Ok(self.len == 0)
+        }
+
+        #[cfg(unix)]
+        #[inline(always)]
+        fn read_at(&self, buf: &mut [u8], offset: u64) -> Result<usize> {
+            self.file.read_at(buf, self.offset + offset)
+        }
+
+        #[cfg(unix)]
+        #[inline(always)]
+        fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> Result<()> {
+            self.file.read_exact_at(buf, self.offset + offset)
         }
     }
 

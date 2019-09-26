@@ -13,7 +13,8 @@ use crate::transducer::hfst::HfstTransducer;
 
 pub struct ZipSpellerArchive {
     metadata: SpellerMetadata,
-    speller: Arc<Speller<HfstTransducer, HfstTransducer>>,
+    speller:
+        Arc<Speller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>>,
 }
 
 fn mmap_by_name<R: Read + Seek>(
@@ -85,7 +86,10 @@ impl ZipSpellerArchive {
         Ok(ZipSpellerArchive { metadata, speller })
     }
 
-    pub fn speller(&self) -> Arc<Speller<HfstTransducer, HfstTransducer>> {
+    pub fn speller(
+        &self,
+    ) -> Arc<Speller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>>
+    {
         self.speller.clone()
     }
 

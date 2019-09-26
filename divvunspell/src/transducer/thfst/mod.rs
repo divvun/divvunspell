@@ -13,9 +13,19 @@ mod chunked;
 mod index_table;
 mod transition_table;
 
-pub use self::chunked::ThfstChunkedTransducer;
-pub use self::index_table::IndexTable;
-pub use self::transition_table::TransitionTable;
+// pub use self::chunked::ThfstChunkedTransducer;
+pub use self::index_table::MemmapIndexTable;
+pub use self::transition_table::MemmapTransitionTable;
+
+pub type MemmapThfstTransducer<F> =
+    ThfstTransducer<MemmapIndexTable<F>, MemmapTransitionTable<F>, F>;
+
+#[cfg(unix)]
+pub type FileThfstTransducer<F> = ThfstTransducer<
+    self::index_table::FileIndexTable<F>,
+    self::transition_table::FileTransitionTable<F>,
+    F,
+>;
 
 use crate::transducer::{Transducer, TransducerAlphabet};
 use crate::util::{self, Filesystem, ToMemmap};
@@ -49,10 +59,16 @@ pub struct MetaRecord {
     pub alphabet: TransducerAlphabet,
 }
 
-pub struct ThfstTransducer {
-    index_table: IndexTable,
-    transition_table: TransitionTable,
+pub struct ThfstTransducer<I, T, F>
+where
+    I: crate::transducer::IndexTable<F>,
+    T: crate::transducer::TransitionTable<F>,
+    F: util::File + ToMemmap,
+{
+    index_table: I,
+    transition_table: T,
     alphabet: TransducerAlphabet,
+    _file: std::marker::PhantomData<F>,
 }
 
 macro_rules! error {
@@ -68,14 +84,18 @@ macro_rules! error {
     };
 }
 
-impl Transducer for ThfstTransducer {
+impl<I, T, F> Transducer<F> for ThfstTransducer<I, T, F>
+where
+    I: crate::transducer::IndexTable<F>,
+    T: crate::transducer::TransitionTable<F>,
+    F: util::File + ToMemmap,
+{
     const FILE_EXT: &'static str = "thfst";
 
-    fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<Self, TransducerError>
+    fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
     where
         P: AsRef<Path>,
         FS: Filesystem<File = F>,
-        F: util::File + ToMemmap,
     {
         let path = path.as_ref();
         let alphabet_file = fs
@@ -86,14 +106,15 @@ impl Transducer for ThfstTransducer {
             .map_err(|e| TransducerError::Alphabet(Box::new(e)))?;
 
         let index_table =
-            IndexTable::from_path(fs, path.join("index")).map_err(|_| error!(path, "index"))?;
-        let transition_table = TransitionTable::from_path(fs, path.join("transition"))
-            .map_err(|_| error!(path, "transition"))?;
+            I::from_path(fs, path.join("index")).map_err(|_| error!(path, "index"))?;
+        let transition_table =
+            T::from_path(fs, path.join("transition")).map_err(|_| error!(path, "transition"))?;
 
         Ok(ThfstTransducer {
             index_table,
             transition_table,
             alphabet,
+            _file: std::marker::PhantomData::<F>,
         })
     }
 

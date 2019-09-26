@@ -1,10 +1,10 @@
 use memmap::Mmap;
 use std::sync::Arc;
 
-mod boxf;
+pub mod boxf;
 pub mod error;
 pub mod meta;
-mod zip;
+pub mod zip;
 
 pub use self::boxf::BoxSpellerArchive;
 pub use self::zip::ZipSpellerArchive;

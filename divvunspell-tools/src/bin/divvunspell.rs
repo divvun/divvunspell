@@ -9,9 +9,10 @@ use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::{Speller, SpellerConfig};
 use divvunspell::tokenizer::Tokenize;
 use divvunspell::transducer::{
-    thfst::{ThfstChunkedTransducer, ThfstTransducer},
+    thfst::{FileThfstTransducer, MemmapThfstTransducer},
     Transducer,
 };
+use divvunspell::util;
 
 trait OutputWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool);
@@ -78,8 +79,8 @@ impl OutputWriter for JsonWriter {
     }
 }
 
-fn run<T: Transducer, U: Transducer>(
-    speller: Arc<Speller<T, U>>,
+fn run<F: util::File + util::ToMemmap, T: Transducer<F>, U: Transducer<F>>(
+    speller: Arc<Speller<F, T, U>>,
     words: Vec<String>,
     writer: &mut dyn OutputWriter,
     is_suggesting: bool,
@@ -237,14 +238,16 @@ fn main() {
             &suggest_cfg,
         );
     } else if let Some(bhfst_file) = matches.value_of("bhfst") {
-        let archive: BoxSpellerArchive<ThfstChunkedTransducer, ThfstChunkedTransducer> =
-            match BoxSpellerArchive::open(bhfst_file) {
-                Ok(v) => v,
-                Err(e) => {
-                    eprintln!("{:?}", e);
-                    std::process::exit(1);
-                }
-            };
+        let archive: BoxSpellerArchive<
+            FileThfstTransducer<util::boxf::File>,
+            FileThfstTransducer<util::boxf::File>,
+        > = match BoxSpellerArchive::open(bhfst_file) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("{:?}", e);
+                std::process::exit(1);
+            }
+        };
 
         let speller = archive.speller();
         run(
@@ -259,8 +262,8 @@ fn main() {
         match (matches.value_of("acceptor"), matches.value_of("errmodel")) {
             (Some(acceptor_file), Some(errmodel_file)) => {
                 let fs = divvunspell::util::Fs;
-                let acceptor = ThfstTransducer::from_path(&fs, acceptor_file).unwrap();
-                let errmodel = ThfstTransducer::from_path(&fs, errmodel_file).unwrap();
+                let acceptor = MemmapThfstTransducer::from_path(&fs, acceptor_file).unwrap();
+                let errmodel = MemmapThfstTransducer::from_path(&fs, errmodel_file).unwrap();
                 let speller = Speller::new(errmodel, acceptor);
 
                 run(

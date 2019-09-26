@@ -5,16 +5,29 @@ use box_format::BoxFileReader;
 use super::error::SpellerArchiveError;
 use super::meta::SpellerMetadata;
 use crate::speller::Speller;
-use crate::transducer::Transducer;
+use crate::transducer::{thfst::MemmapThfstTransducer, Transducer};
 use crate::util::boxf::Filesystem as BoxFilesystem;
 use crate::util::Filesystem;
 
-pub struct BoxSpellerArchive<T: Transducer, U: Transducer> {
+pub type ThfstBoxSpellerArchive = BoxSpellerArchive<
+    MemmapThfstTransducer<crate::util::boxf::File>,
+    MemmapThfstTransducer<crate::util::boxf::File>,
+>;
+
+pub struct BoxSpellerArchive<T, U>
+where
+    T: Transducer<crate::util::boxf::File>,
+    U: Transducer<crate::util::boxf::File>,
+{
     metadata: Option<SpellerMetadata>,
-    speller: Arc<Speller<T, U>>,
+    speller: Arc<Speller<crate::util::boxf::File, T, U>>,
 }
 
-impl<T: Transducer, U: Transducer> BoxSpellerArchive<T, U> {
+impl<T, U> BoxSpellerArchive<T, U>
+where
+    T: Transducer<crate::util::boxf::File>,
+    U: Transducer<crate::util::boxf::File>,
+{
     pub fn open<P: AsRef<std::path::Path>>(
         file_path: P,
     ) -> Result<BoxSpellerArchive<T, U>, SpellerArchiveError> {
@@ -35,7 +48,7 @@ impl<T: Transducer, U: Transducer> BoxSpellerArchive<T, U> {
         Ok(BoxSpellerArchive { speller, metadata })
     }
 
-    pub fn speller(&self) -> Arc<Speller<T, U>> {
+    pub fn speller(&self) -> Arc<Speller<crate::util::boxf::File, T, U>> {
         self.speller.clone()
     }
 

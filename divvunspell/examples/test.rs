@@ -7,7 +7,8 @@ use divvunspell::archive::ZipSpellerArchive;
 use divvunspell::speller::{Speller, SpellerConfig};
 use divvunspell::transducer::hfst::HfstTransducer;
 
-type HfstSpeller = Speller<HfstTransducer, HfstTransducer>;
+type HfstSpeller =
+    Speller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>;
 
 fn run(speller: Arc<HfstSpeller>, line: &TestLine, cfg: &SpellerConfig) {
     let _ = speller.suggest_with_config(line.0, &cfg);

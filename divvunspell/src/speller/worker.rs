@@ -24,24 +24,29 @@ fn speller_max_weight(config: &SpellerConfig) -> Weight {
     config.max_weight.unwrap_or(f32::MAX)
 }
 
-pub struct SpellerWorker<T: Transducer, U: Transducer> {
-    speller: Arc<Speller<T, U>>,
+pub struct SpellerWorker<
+    F: crate::util::File + crate::util::ToMemmap,
+    T: Transducer<F>,
+    U: Transducer<F>,
+> {
+    speller: Arc<Speller<F, T, U>>,
     input: Vec<SymbolNumber>,
     config: SpellerConfig,
 }
 
 #[allow(clippy::too_many_arguments)]
-impl<'t, T: Transducer + 't, U: Transducer + 't> SpellerWorker<T, U>
+impl<'t, F, T: Transducer<F> + 't, U: Transducer<F> + 't> SpellerWorker<F, T, U>
 where
-    T: Transducer,
-    U: Transducer,
+    F: crate::util::File + crate::util::ToMemmap,
+    T: Transducer<F>,
+    U: Transducer<F>,
 {
     #[inline(always)]
     pub fn new(
-        speller: Arc<Speller<T, U>>,
+        speller: Arc<Speller<F, T, U>>,
         input: Vec<SymbolNumber>,
         config: SpellerConfig,
-    ) -> Arc<SpellerWorker<T, U>> {
+    ) -> Arc<SpellerWorker<F, T, U>> {
         Arc::new(SpellerWorker {
             speller,
             input,

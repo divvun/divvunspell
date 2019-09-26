@@ -1,11 +1,11 @@
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
-use divvunspell::archive::{BoxSpellerArchive, ZipSpellerArchive};
+use divvunspell::archive::{boxf::ThfstBoxSpellerArchive, BoxSpellerArchive, ZipSpellerArchive};
 use divvunspell::transducer::{
     convert::ConvertFile,
     hfst::HfstTransducer,
-    thfst::{self, ThfstTransducer},
+    thfst::{self, MemmapThfstTransducer},
     Transducer,
 };
 
@@ -109,9 +109,9 @@ fn convert_thfsts_to_bhfst(
 ) -> Result<(), std::io::Error> {
     let fs = divvunspell::util::Fs;
     let _acceptor_transducer =
-        ThfstTransducer::from_path(&fs, acceptor_path).map_err(|e| e.into_io_error())?;
+        MemmapThfstTransducer::from_path(&fs, acceptor_path).map_err(|e| e.into_io_error())?;
     let _errmodel_transducer =
-        ThfstTransducer::from_path(&fs, errmodel_path).map_err(|e| e.into_io_error())?;
+        MemmapThfstTransducer::from_path(&fs, errmodel_path).map_err(|e| e.into_io_error())?;
 
     let mut boxfile: BoxFileWriter = BoxFileWriter::create_with_alignment(output_path, ALIGNMENT)?;
 
@@ -126,7 +126,10 @@ fn convert_zhfst_to_bhfst(zhfst_path: &Path) -> Result<(), std::io::Error> {
     let zhfst = ZipSpellerArchive::open(&zhfst_path).map_err(|e| e.into_io_error())?;
 
     let dir = tempdir::TempDir::new("zhfst")?;
-    println!("Unzipping {:?} to temporary directory...", zhfst_path.file_name().unwrap());
+    println!(
+        "Unzipping {:?} to temporary directory...",
+        zhfst_path.file_name().unwrap()
+    );
     std::process::Command::new("unzip")
         .current_dir(&dir)
         .args(&[&zhfst_path])
@@ -181,7 +184,7 @@ fn main() -> Result<(), std::io::Error> {
         } => convert_thfsts_to_bhfst(&acceptor, &errmodel, &output),
         Opts::ZhfstToBhfst { from } => convert_zhfst_to_bhfst(&from),
         Opts::BhfstInfo { path } => {
-            let ar: BoxSpellerArchive<ThfstTransducer, ThfstTransducer> =
+            let ar: ThfstBoxSpellerArchive =
                 BoxSpellerArchive::open(&path).map_err(|e| e.into_io_error())?;
             println!("{:#?}", ar.metadata());
             Ok(())
