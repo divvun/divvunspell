@@ -32,7 +32,7 @@ pub extern "C" fn speller_archive_new(
     let c_path = unsafe { CStr::from_ptr(raw_path) };
     let file_path = c_path.to_str().unwrap();
 
-    match SpellerArchive::new(file_path) {
+    match SpellerArchive::open(file_path) {
         Ok(v) => {
             let archive = Box::new(v);
             Box::into_raw(archive)

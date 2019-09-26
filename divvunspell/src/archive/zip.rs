@@ -89,7 +89,7 @@ impl ZipSpellerArchive {
         self.speller.clone()
     }
 
-    pub fn metadata(&self) -> &SpellerMetadata {
-        &self.metadata
+    pub fn metadata(&self) -> Option<&SpellerMetadata> {
+        Some(&self.metadata)
     }
 }

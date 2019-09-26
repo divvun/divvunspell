@@ -6,34 +6,36 @@ use super::error::SpellerArchiveError;
 use super::meta::SpellerMetadata;
 use crate::speller::Speller;
 use crate::transducer::Transducer;
-use crate::util::boxf::Filesystem;
+use crate::util::Filesystem;
+use crate::util::boxf::Filesystem as BoxFilesystem;
 
 pub struct BoxSpellerArchive<T: Transducer, U: Transducer> {
-    // metadata: SpellerMetadata,
+    metadata: Option<SpellerMetadata>,
     speller: Arc<Speller<T, U>>,
 }
 
 impl<T: Transducer, U: Transducer> BoxSpellerArchive<T, U> {
-    pub fn new(file_path: &str) -> Result<BoxSpellerArchive<T, U>, SpellerArchiveError> {
+    pub fn open(file_path: &str) -> Result<BoxSpellerArchive<T, U>, SpellerArchiveError> {
         let archive = BoxFileReader::open(file_path).map_err(SpellerArchiveError::File)?;
 
-        let fs = Filesystem::new(&archive);
+        let fs = BoxFilesystem::new(&archive);
 
+        let metadata = fs.open("meta.json").ok()
+            .and_then(|x| serde_json::from_reader(x).ok());
         let errmodel =
             T::from_path(&fs, "errmodel.default.thfst").map_err(SpellerArchiveError::Transducer)?;
         let acceptor =
             U::from_path(&fs, "acceptor.default.thfst").map_err(SpellerArchiveError::Transducer)?;
 
         let speller = Speller::new(errmodel, acceptor);
-        Ok(BoxSpellerArchive { speller })
+        Ok(BoxSpellerArchive { speller, metadata })
     }
 
     pub fn speller(&self) -> Arc<Speller<T, U>> {
         self.speller.clone()
     }
 
-    pub fn metadata(&self) -> &SpellerMetadata {
-        // &self.metadata
-        unimplemented!()
+    pub fn metadata(&self) -> Option<&SpellerMetadata> {
+        self.metadata.as_ref()
     }
 }

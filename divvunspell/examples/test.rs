@@ -309,10 +309,10 @@ fn main() {
 
     // let words = ["vuovdinfállovuogiŧ", "eanavuoigatvuohtadutkamušas", "nannesivččii", "gárvanivččii", "gáibiđivččii"];
 
-    let unaligned = ZipSpellerArchive::new("./unaligned-test.zhfst").unwrap();
+    let unaligned = ZipSpellerArchive::open("./unaligned-test.zhfst").unwrap();
     // let unaligned = ChfstBundle::from_path(&std::path::Path::new("./out.chfst")).unwrap();
     // let res = unaligned.speller().suggest_with_config("same", &cfg);
-    // let aligned = SpellerArchive::new("./aligned-test.zhfst").unwrap();
+    // let aligned = SpellerArchive::open("./aligned-test.zhfst").unwrap();
     let speller = unaligned.speller();
 
     for i in 0..1 {

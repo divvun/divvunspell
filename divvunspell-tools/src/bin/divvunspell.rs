@@ -219,7 +219,7 @@ fn main() {
     };
 
     if let Some(zhfst_file) = matches.value_of("zhfst") {
-        let archive = match ZipSpellerArchive::new(zhfst_file) {
+        let archive = match ZipSpellerArchive::open(zhfst_file) {
             Ok(v) => v,
             Err(e) => {
                 eprintln!("{:?}", e);
@@ -238,7 +238,7 @@ fn main() {
         );
     } else if let Some(bhfst_file) = matches.value_of("bhfst") {
         let archive: BoxSpellerArchive<ThfstChunkedTransducer, ThfstChunkedTransducer> =
-            match BoxSpellerArchive::new(bhfst_file) {
+            match BoxSpellerArchive::open(bhfst_file) {
                 Ok(v) => v,
                 Err(e) => {
                     eprintln!("{:?}", e);

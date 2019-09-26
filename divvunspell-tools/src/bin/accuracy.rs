@@ -65,7 +65,7 @@ struct AccuracyResult<'a> {
 
 #[derive(Debug, Serialize)]
 struct Report<'a> {
-    metadata: &'a divvunspell::archive::meta::SpellerMetadata,
+    metadata: Option<&'a divvunspell::archive::meta::SpellerMetadata>,
     config: &'a SpellerConfig,
     summary: Summary,
     results: Vec<AccuracyResult<'a>>,
@@ -189,7 +189,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let archive = match matches.value_of("zhfst") {
-        Some(path) => ZipSpellerArchive::new(path)?,
+        Some(path) => ZipSpellerArchive::open(path)?,
         None => {
             eprintln!("No ZHFST found for given path; aborting.");
             std::process::exit(1);
