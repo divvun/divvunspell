@@ -18,7 +18,6 @@ pub struct TransitionTable {
     pub(crate) size: TransitionTableIndex,
     pub(crate) mmap: Arc<Mmap>,
     pub(crate) offset: usize,
-    pub(crate) len: usize,
 }
 
 impl fmt::Debug for TransitionTable {
@@ -30,13 +29,8 @@ impl fmt::Debug for TransitionTable {
 
 impl TransitionTable {
     #[inline(always)]
-    pub fn new(mmap: Arc<Mmap>, offset: usize, len: usize, size: u32) -> TransitionTable {
-        TransitionTable {
-            size,
-            mmap,
-            offset,
-            len,
-        }
+    pub fn new(mmap: Arc<Mmap>, offset: usize, size: u32) -> TransitionTable {
+        TransitionTable { size, mmap, offset }
     }
 
     #[inline(always)]

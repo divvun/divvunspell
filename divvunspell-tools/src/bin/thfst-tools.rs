@@ -45,7 +45,7 @@ enum Opts {
     BhfstInfo {
         #[structopt(parse(from_os_str))]
         path: PathBuf,
-    }
+    },
 }
 
 use std::num::NonZeroU64;
@@ -80,10 +80,10 @@ fn insert(
 
 #[inline(always)]
 fn insert_thfst_files(boxfile: &mut BoxFileWriter, path: &Path) -> Result<(), std::io::Error> {
-    boxfile.mkdir(
-        BoxPath::new(path.file_name().unwrap()).unwrap(),
-        std::collections::HashMap::new(),
-    )?;
+    let boxpath = BoxPath::new(path.file_name().unwrap()).unwrap();
+    println!("Inserting \"{}\"...", &boxpath);
+
+    boxfile.mkdir(boxpath, std::collections::HashMap::new())?;
     insert(boxfile, Compression::Stored, path, "alphabet")?;
     insert(boxfile, Compression::Stored, path, "index")?;
     insert(boxfile, Compression::Stored, path, "transition")
@@ -92,6 +92,12 @@ fn insert_thfst_files(boxfile: &mut BoxFileWriter, path: &Path) -> Result<(), st
 fn convert_hfst_to_thfst(hfst_path: &Path) -> Result<(), std::io::Error> {
     let fs = divvunspell::util::Fs;
     let transducer = HfstTransducer::from_path(&fs, hfst_path).map_err(|e| e.into_io_error())?;
+    println!(
+        "Converting {:?} to {:?}...",
+        &hfst_path.file_name().unwrap(),
+        &hfst_path.with_extension("thfst").file_name().unwrap()
+    );
+
     thfst::ThfstTransducer::convert_file(&transducer, hfst_path)?;
     Ok(())
 }
@@ -119,33 +125,29 @@ fn convert_zhfst_to_bhfst(zhfst_path: &Path) -> Result<(), std::io::Error> {
     let zhfst_path = std::fs::canonicalize(zhfst_path)?;
     let zhfst = ZipSpellerArchive::open(&zhfst_path).map_err(|e| e.into_io_error())?;
 
-    let meta_json = match zhfst.metadata() {
-        Some(metadata) => {
-            let mut metadata = metadata.to_owned();
-            metadata.acceptor.id = metadata.acceptor.id.replace(".hfst", ".thfst");
-            metadata.errmodel.id = metadata.errmodel.id.replace(".hfst", ".thfst");
-            Some(serde_json::to_string_pretty(&metadata)?)
-        }
-        None => None
-    };
-    
     let dir = tempdir::TempDir::new("zhfst")?;
-
+    println!("Unzipping {:?} to temporary directory...", zhfst_path.file_name().unwrap());
     std::process::Command::new("unzip")
         .current_dir(&dir)
         .args(&[&zhfst_path])
         .output()?;
 
-
-    let acceptor_path = dir.as_ref().join("acceptor.default.hfst");
-    let errmodel_path = dir.as_ref().join("errmodel.default.hfst");
-    convert_hfst_to_thfst(&acceptor_path)?;
-    convert_hfst_to_thfst(&errmodel_path)?;
-
     let bhfst_path = zhfst_path.with_extension("bhfst");
-    let mut boxfile: BoxFileWriter = BoxFileWriter::create_with_alignment(bhfst_path, ALIGNMENT)?;
+    let mut boxfile: BoxFileWriter = BoxFileWriter::create_with_alignment(&bhfst_path, ALIGNMENT)?;
+
+    let meta_json = match zhfst.metadata() {
+        Some(metadata) => {
+            println!("Converting \"index.xml\" to \"meta.json\"...");
+            let mut m = metadata.to_owned();
+            m.acceptor.id = metadata.acceptor.id.replace(".hfst", ".thfst");
+            m.errmodel.id = metadata.errmodel.id.replace(".hfst", ".thfst");
+            Some(serde_json::to_string_pretty(&m)?)
+        }
+        None => None,
+    };
 
     if let Some(v) = meta_json {
+        println!("Inserting \"meta.json\"...");
         boxfile.insert(
             Compression::Stored,
             BoxPath::new("meta.json").unwrap(),
@@ -154,8 +156,15 @@ fn convert_zhfst_to_bhfst(zhfst_path: &Path) -> Result<(), std::io::Error> {
         )?;
     }
 
+    let acceptor_path = dir.as_ref().join("acceptor.default.hfst");
+    convert_hfst_to_thfst(&acceptor_path)?;
     insert_thfst_files(&mut boxfile, &acceptor_path.with_extension("thfst"))?;
+
+    let errmodel_path = dir.as_ref().join("errmodel.default.hfst");
+    convert_hfst_to_thfst(&errmodel_path)?;
     insert_thfst_files(&mut boxfile, &errmodel_path.with_extension("thfst"))?;
+
+    println!("Wrote to {:?}.", bhfst_path);
 
     Ok(())
 }

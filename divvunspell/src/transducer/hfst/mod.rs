@@ -16,7 +16,7 @@ pub use self::transition_table::TransitionTable;
 use super::alphabet::TransducerAlphabet;
 use super::symbol_transition::SymbolTransition;
 use super::{Transducer, TransducerError};
-use crate::constants::{INDEX_TABLE_SIZE, TARGET_TABLE, TRANS_TABLE_SIZE};
+use crate::constants::{INDEX_TABLE_SIZE, TARGET_TABLE};
 use crate::types::{HeaderFlag, SymbolNumber, TransitionTableIndex, Weight};
 use crate::util::{self, Filesystem, ToMemmap};
 
@@ -58,11 +58,9 @@ impl HfstTransducer {
             header.index_table_size() as u32,
         );
 
-        let trans_table_end = index_table_end + TRANS_TABLE_SIZE * header.target_table_size();
         let trans_table = TransitionTable::new(
             buf.clone(),
             index_table_end,
-            trans_table_end,
             header.target_table_size() as u32,
         );
 

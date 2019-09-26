@@ -45,10 +45,10 @@ impl ConvertFrom<hfst::IndexTable> for thfst::IndexTable {
     ) -> Result<(), std::io::Error> {
         use std::{u16, u32};
 
-        eprintln!(
-            "size: {}, len: {}, offset: {}",
-            table.size, table.len, table.offset
-        );
+        // eprintln!(
+        //     "size: {}, len: {}, offset: {}",
+        //     table.size, table.len, table.offset
+        // );
 
         for index in 0..table.size {
             let input_symbol = table.input_symbol(index).unwrap_or(u16::MAX);
@@ -70,10 +70,10 @@ impl ConvertFrom<hfst::TransitionTable> for thfst::TransitionTable {
     ) -> Result<(), std::io::Error> {
         use std::{u16, u32};
 
-        eprintln!(
-            "size: {}, len: {}, offset: {}",
-            table.size, table.len, table.offset
-        );
+        // eprintln!(
+        //     "size: {}, len: {}, offset: {}",
+        //     table.size, table.len, table.offset
+        // );
 
         for index in 0..table.size {
             let input_symbol = table.input_symbol(index).unwrap_or(u16::MAX);
