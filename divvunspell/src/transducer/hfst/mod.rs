@@ -18,11 +18,11 @@ use super::symbol_transition::SymbolTransition;
 use super::{Transducer, TransducerError};
 use crate::constants::{INDEX_TABLE_SIZE, TARGET_TABLE};
 use crate::types::{HeaderFlag, SymbolNumber, TransitionTableIndex, Weight};
-use crate::util::{self, Filesystem, ToMemmap};
+use crate::vfs::{self, Filesystem, ToMemmap};
 
 pub struct HfstTransducer<F>
 where
-    F: util::File + ToMemmap,
+    F: vfs::File + ToMemmap,
 {
     buf: Arc<Mmap>,
     header: TransducerHeader,
@@ -32,7 +32,7 @@ where
     _file: std::marker::PhantomData<F>,
 }
 
-impl<F: util::File + ToMemmap> fmt::Debug for HfstTransducer<F> {
+impl<F: vfs::File + ToMemmap> fmt::Debug for HfstTransducer<F> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "{:?}", self.header)?;
         writeln!(f, "{:?}", self.alphabet)?;
@@ -42,7 +42,7 @@ impl<F: util::File + ToMemmap> fmt::Debug for HfstTransducer<F> {
     }
 }
 
-impl<F: util::File + ToMemmap> HfstTransducer<F> {
+impl<F: vfs::File + ToMemmap> HfstTransducer<F> {
     #[inline(always)]
     pub fn from_mapped_memory(buf: Arc<Mmap>) -> HfstTransducer<F> {
         let header = TransducerHeader::new(&buf);
@@ -94,7 +94,7 @@ impl<F: util::File + ToMemmap> HfstTransducer<F> {
     }
 }
 
-impl<F: util::File + ToMemmap> Transducer<F> for HfstTransducer<F> {
+impl<F: vfs::File + ToMemmap> Transducer<F> for HfstTransducer<F> {
     const FILE_EXT: &'static str = "hfst";
 
     fn from_path<P, FS>(fs: &FS, path: P) -> Result<HfstTransducer<F>, TransducerError>

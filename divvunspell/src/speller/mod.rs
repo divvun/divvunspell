@@ -40,7 +40,7 @@ impl SpellerConfig {
 #[derive(Debug)]
 pub struct Speller<F, T: Transducer<F>, U: Transducer<F>>
 where
-    F: crate::util::File + crate::util::ToMemmap,
+    F: crate::vfs::File + crate::vfs::ToMemmap,
 {
     mutator: T,
     lexicon: U,
@@ -50,7 +50,7 @@ where
 
 impl<F, T, U> Speller<F, T, U>
 where
-    F: crate::util::File + crate::util::ToMemmap,
+    F: crate::vfs::File + crate::vfs::ToMemmap,
     T: Transducer<F>,
     U: Transducer<F>,
 {

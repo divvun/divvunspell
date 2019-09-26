@@ -9,7 +9,7 @@ use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 pub use self::alphabet::TransducerAlphabet;
 use self::symbol_transition::SymbolTransition;
 
-use crate::util::{self, Filesystem, ToMemmap};
+use crate::vfs::{self, Filesystem, ToMemmap};
 
 #[derive(Debug)]
 pub enum TransducerError {
@@ -30,7 +30,7 @@ impl TransducerError {
     }
 }
 
-pub trait Transducer<F: util::File + ToMemmap>: Sized {
+pub trait Transducer<F: vfs::File + ToMemmap>: Sized {
     const FILE_EXT: &'static str;
 
     fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
@@ -56,7 +56,7 @@ pub trait Transducer<F: util::File + ToMemmap>: Sized {
     fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight>;
 }
 
-pub trait TransitionTable<F: util::File + ToMemmap>: Sized {
+pub trait TransitionTable<F: vfs::File + ToMemmap>: Sized {
     fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
     where
         P: AsRef<std::path::Path>,
@@ -77,7 +77,7 @@ pub trait TransitionTable<F: util::File + ToMemmap>: Sized {
     }
 }
 
-pub trait IndexTable<F: util::File + ToMemmap>: Sized {
+pub trait IndexTable<F: vfs::File + ToMemmap>: Sized {
     fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
     where
         P: AsRef<std::path::Path>,

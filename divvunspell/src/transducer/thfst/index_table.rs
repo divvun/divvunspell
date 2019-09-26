@@ -4,7 +4,7 @@ use memmap::Mmap;
 
 use crate::transducer::TransducerError;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
-use crate::util::{self, Filesystem, ToMemmap};
+use crate::vfs::{self, Filesystem, ToMemmap};
 
 #[doc(hidden)]
 pub struct MemmapIndexTable<F> {
@@ -15,7 +15,7 @@ pub struct MemmapIndexTable<F> {
 
 const INDEX_TABLE_SIZE: usize = 8;
 
-impl<F: util::File + ToMemmap> MemmapIndexTable<F> {
+impl<F: vfs::File + ToMemmap> MemmapIndexTable<F> {
     pub fn from_path_partial<P, FS>(
         fs: &FS,
         path: P,
@@ -41,7 +41,7 @@ impl<F: util::File + ToMemmap> MemmapIndexTable<F> {
     }
 }
 
-impl<F: util::File + ToMemmap> crate::transducer::IndexTable<F> for MemmapIndexTable<F> {
+impl<F: vfs::File + ToMemmap> crate::transducer::IndexTable<F> for MemmapIndexTable<F> {
     fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
     where
         P: AsRef<std::path::Path>,
@@ -109,14 +109,14 @@ mod unix {
     use crate::transducer::IndexTable;
     use crate::transducer::TransducerError;
     use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
-    use crate::util::{self, Filesystem, ToMemmap};
+    use crate::vfs::{self, Filesystem, ToMemmap};
 
-    pub struct FileIndexTable<F: util::File> {
+    pub struct FileIndexTable<F: vfs::File> {
         file: F,
         size: u32,
     }
 
-    impl<F: util::File> FileIndexTable<F> {
+    impl<F: vfs::File> FileIndexTable<F> {
         #[inline(always)]
         fn read_u16_at(&self, index: u64) -> u16 {
             let mut buf = [0u8; 2];
@@ -136,7 +136,7 @@ mod unix {
         }
     }
 
-    impl<F: util::File + ToMemmap> IndexTable<F> for FileIndexTable<F> {
+    impl<F: vfs::File + ToMemmap> IndexTable<F> for FileIndexTable<F> {
         fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
         where
             P: AsRef<std::path::Path>,

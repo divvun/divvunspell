@@ -12,7 +12,7 @@ use divvunspell::transducer::{
     thfst::{FileThfstTransducer, MemmapThfstTransducer},
     Transducer,
 };
-use divvunspell::util;
+use divvunspell::vfs;
 
 trait OutputWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool);
@@ -79,7 +79,7 @@ impl OutputWriter for JsonWriter {
     }
 }
 
-fn run<F: util::File + util::ToMemmap, T: Transducer<F>, U: Transducer<F>>(
+fn run<F: vfs::File + vfs::ToMemmap, T: Transducer<F>, U: Transducer<F>>(
     speller: Arc<Speller<F, T, U>>,
     words: Vec<String>,
     writer: &mut dyn OutputWriter,
@@ -239,8 +239,8 @@ fn main() {
         );
     } else if let Some(bhfst_file) = matches.value_of("bhfst") {
         let archive: BoxSpellerArchive<
-            FileThfstTransducer<util::boxf::File>,
-            FileThfstTransducer<util::boxf::File>,
+            FileThfstTransducer<vfs::boxf::File>,
+            FileThfstTransducer<vfs::boxf::File>,
         > = match BoxSpellerArchive::open(bhfst_file) {
             Ok(v) => v,
             Err(e) => {
@@ -261,7 +261,7 @@ fn main() {
     } else {
         match (matches.value_of("acceptor"), matches.value_of("errmodel")) {
             (Some(acceptor_file), Some(errmodel_file)) => {
-                let fs = divvunspell::util::Fs;
+                let fs = divvunspell::vfs::Fs;
                 let acceptor = MemmapThfstTransducer::from_path(&fs, acceptor_file).unwrap();
                 let errmodel = MemmapThfstTransducer::from_path(&fs, errmodel_file).unwrap();
                 let speller = Speller::new(errmodel, acceptor);

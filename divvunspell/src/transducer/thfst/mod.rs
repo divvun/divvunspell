@@ -28,7 +28,7 @@ pub type FileThfstTransducer<F> = ThfstTransducer<
 >;
 
 use crate::transducer::{Transducer, TransducerAlphabet};
-use crate::util::{self, Filesystem, ToMemmap};
+use crate::vfs::{self, Filesystem, ToMemmap};
 
 #[repr(C)]
 pub union WeightOrTarget {
@@ -63,7 +63,7 @@ pub struct ThfstTransducer<I, T, F>
 where
     I: crate::transducer::IndexTable<F>,
     T: crate::transducer::TransitionTable<F>,
-    F: util::File + ToMemmap,
+    F: vfs::File + ToMemmap,
 {
     index_table: I,
     transition_table: T,
@@ -88,7 +88,7 @@ impl<I, T, F> Transducer<F> for ThfstTransducer<I, T, F>
 where
     I: crate::transducer::IndexTable<F>,
     T: crate::transducer::TransitionTable<F>,
-    F: util::File + ToMemmap,
+    F: vfs::File + ToMemmap,
 {
     const FILE_EXT: &'static str = "thfst";
 

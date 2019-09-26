@@ -25,7 +25,7 @@ fn speller_max_weight(config: &SpellerConfig) -> Weight {
 }
 
 pub struct SpellerWorker<
-    F: crate::util::File + crate::util::ToMemmap,
+    F: crate::vfs::File + crate::vfs::ToMemmap,
     T: Transducer<F>,
     U: Transducer<F>,
 > {
@@ -37,7 +37,7 @@ pub struct SpellerWorker<
 #[allow(clippy::too_many_arguments)]
 impl<'t, F, T: Transducer<F> + 't, U: Transducer<F> + 't> SpellerWorker<F, T, U>
 where
-    F: crate::util::File + crate::util::ToMemmap,
+    F: crate::vfs::File + crate::vfs::ToMemmap,
     T: Transducer<F>,
     U: Transducer<F>,
 {

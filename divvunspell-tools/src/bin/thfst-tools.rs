@@ -90,7 +90,7 @@ fn insert_thfst_files(boxfile: &mut BoxFileWriter, path: &Path) -> Result<(), st
 }
 
 fn convert_hfst_to_thfst(hfst_path: &Path) -> Result<(), std::io::Error> {
-    let fs = divvunspell::util::Fs;
+    let fs = divvunspell::vfs::Fs;
     let transducer = HfstTransducer::from_path(&fs, hfst_path).map_err(|e| e.into_io_error())?;
     println!(
         "Converting {:?} to {:?}...",
@@ -107,7 +107,7 @@ fn convert_thfsts_to_bhfst(
     errmodel_path: &Path,
     output_path: &Path,
 ) -> Result<(), std::io::Error> {
-    let fs = divvunspell::util::Fs;
+    let fs = divvunspell::vfs::Fs;
     let _acceptor_transducer =
         MemmapThfstTransducer::from_path(&fs, acceptor_path).map_err(|e| e.into_io_error())?;
     let _errmodel_transducer =

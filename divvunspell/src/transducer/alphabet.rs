@@ -66,7 +66,7 @@ impl TransducerAlphabet {
 
     pub fn create_translator_from<F, T>(&mut self, mutator: &T) -> Vec<SymbolNumber>
     where
-        F: crate::util::File + crate::util::ToMemmap,
+        F: crate::vfs::File + crate::vfs::ToMemmap,
         T: Transducer<F>,
     {
         let from = mutator.alphabet();

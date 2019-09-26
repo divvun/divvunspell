@@ -3,7 +3,7 @@ use std::{mem, ptr};
 use crate::transducer::TransducerError;
 use crate::transducer::TransitionTable;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
-use crate::util::{self, Filesystem, ToMemmap};
+use crate::vfs::{self, Filesystem, ToMemmap};
 use memmap::Mmap;
 
 #[doc(hidden)]
@@ -15,7 +15,7 @@ pub struct MemmapTransitionTable<F> {
 
 const TRANS_TABLE_SIZE: usize = 12;
 
-impl<F: util::File + ToMemmap> MemmapTransitionTable<F> {
+impl<F: vfs::File + ToMemmap> MemmapTransitionTable<F> {
     pub fn from_path_partial<P, FS>(
         fs: &FS,
         path: P,
@@ -51,7 +51,7 @@ impl<F: util::File + ToMemmap> MemmapTransitionTable<F> {
     }
 }
 
-impl<F: util::File + ToMemmap> TransitionTable<F> for MemmapTransitionTable<F> {
+impl<F: vfs::File + ToMemmap> TransitionTable<F> for MemmapTransitionTable<F> {
     fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
     where
         P: AsRef<std::path::Path>,
@@ -123,14 +123,14 @@ mod unix {
     use crate::transducer::TransducerError;
     use crate::transducer::TransitionTable;
     use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
-    use crate::util::{self, Filesystem, ToMemmap};
+    use crate::vfs::{self, Filesystem, ToMemmap};
 
-    pub struct FileTransitionTable<F: util::File + util::ToMemmap> {
+    pub struct FileTransitionTable<F: vfs::File + vfs::ToMemmap> {
         file: F,
         size: u32,
     }
 
-    impl<F: util::File + util::ToMemmap> FileTransitionTable<F> {
+    impl<F: vfs::File + vfs::ToMemmap> FileTransitionTable<F> {
         #[inline(always)]
         fn read_u16_at(&self, index: u64) -> u16 {
             let mut buf = [0u8; 2];
@@ -150,7 +150,7 @@ mod unix {
         }
     }
 
-    impl<F: util::File + ToMemmap> TransitionTable<F> for FileTransitionTable<F> {
+    impl<F: vfs::File + ToMemmap> TransitionTable<F> for FileTransitionTable<F> {
         fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
         where
             P: AsRef<std::path::Path>,
