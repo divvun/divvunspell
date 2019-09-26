@@ -16,9 +16,10 @@
 //! * <https://www.unicode.org/reports/tr29/#Word_Boundaries>
 //! * <https://www.unicode.org/reports/tr29/#Table_Word_Break_Property_Values>
 
+use unic_char_property::char_property;
 use unic_char_property::TotalCharProperty;
 
-unic_char_property::char_property! {
+char_property! {
     /// Represents the Unicode character
     /// [`Word_Break`](https://www.unicode.org/reports/tr44/#Word_Break)
     /// property.
@@ -343,6 +344,7 @@ impl Default for WordBreak {
 mod data {
     use super::long_names as WB;
     use unic_char_property::tables::CharDataTable;
+    use unic_char_range::chars;
     pub const WORD_BREAK_TABLE: CharDataTable<super::WordBreak> = include!("tables/word_break.rsv");
 }
 
