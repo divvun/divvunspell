@@ -37,4 +37,4 @@ jobs:
           components: clippy
       - uses: actions/checkout@v1
       - name: Clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy
