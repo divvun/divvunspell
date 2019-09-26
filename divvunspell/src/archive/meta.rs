@@ -38,11 +38,15 @@ pub struct SpellerMetadataErrmodel {
     pub description: String,
 }
 
-impl SpellerMetadata {
-    pub fn from_str(string: &str) -> Result<SpellerMetadata, Error> {
+impl std::str::FromStr for SpellerMetadata {
+    type Err = Error;
+
+    fn from_str(string: &str) -> Result<SpellerMetadata, Error> {
         SpellerMetadata::from_bytes(string.as_bytes())
     }
+}
 
+impl SpellerMetadata {
     pub fn from_bytes(bytes: &[u8]) -> Result<SpellerMetadata, Error> {
         let mut reader = ParserConfig::new()
             .trim_whitespace(true)

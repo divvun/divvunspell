@@ -315,7 +315,7 @@ impl TreeNode {
                 // the feature is negatively set to something else than this value
                 let f = self.flag_state[op.feature as usize];
 
-                if f == 0 || f == op.value || (f < 0 && f * -1 != op.value) {
+                if f == 0 || f == op.value || (f < 0 && -f != op.value) {
                     Some(self.update_flag(pool, op.feature, op.value, transition))
                 } else {
                     None

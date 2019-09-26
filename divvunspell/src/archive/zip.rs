@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use self::meta::SpellerMetadata;
 use crate::speller::Speller;
-use crate::transducer::{hfst::HfstTransducer};
+use crate::transducer::hfst::HfstTransducer;
 
 use super::*;
 

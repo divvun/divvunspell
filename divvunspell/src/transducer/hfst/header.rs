@@ -17,6 +17,7 @@ pub struct TransducerHeader {
     header_size: usize,
 }
 
+#[allow(clippy::len_without_is_empty)]
 impl TransducerHeader {
     pub fn new(buf: &[u8]) -> TransducerHeader {
         let mut rdr = Cursor::new(buf);

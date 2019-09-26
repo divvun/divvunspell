@@ -30,6 +30,7 @@ pub struct SpellerWorker<T: Transducer> {
     config: SpellerConfig,
 }
 
+#[allow(clippy::too_many_arguments)]
 impl<'t, T: Transducer + 't> SpellerWorker<T> {
     #[inline(always)]
     pub fn new(

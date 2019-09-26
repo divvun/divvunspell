@@ -1,4 +1,5 @@
-#![allow(clippy::cast_ptr_alignment)] // FIXME: This at least needs a comment
+// We manually ensure alignment of reads in this file.
+#![allow(clippy::cast_ptr_alignment)]
 
 use byteorder::{LittleEndian, ReadBytesExt};
 use memmap::Mmap;

@@ -3,10 +3,10 @@ use std::sync::Arc;
 use box_format::BoxFileReader;
 
 use self::meta::SpellerMetadata;
+use super::*;
 use crate::speller::Speller;
 use crate::transducer::{thfst::ThfstTransducer, Transducer};
 use crate::util::boxf::Filesystem;
-use super::*;
 
 pub struct BoxSpellerArchive<T: Transducer> {
     // metadata: SpellerMetadata,

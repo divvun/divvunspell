@@ -12,10 +12,7 @@ pub struct Suggestion {
 
 impl Suggestion {
     pub fn new(value: SmolStr, weight: Weight) -> Suggestion {
-        Suggestion {
-            value,
-            weight,
-        }
+        Suggestion { value, weight }
     }
 
     pub fn value(&self) -> &str {

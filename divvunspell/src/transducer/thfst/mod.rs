@@ -1,4 +1,5 @@
-#![allow(clippy::cast_ptr_alignment)] // FIXME: This at least needs a comment
+// We manually ensure alignment of reads in this file.
+#![allow(clippy::cast_ptr_alignment)]
 
 use std::path::Path;
 use std::{u16, u32};
@@ -99,7 +100,6 @@ impl ThfstTransducer {
 impl Transducer for ThfstTransducer {
     type Alphabet = TransducerAlphabet;
     const FILE_EXT: &'static str = "thfst";
-
 
     #[inline(always)]
     fn is_final(&self, i: TransitionTableIndex) -> bool {
