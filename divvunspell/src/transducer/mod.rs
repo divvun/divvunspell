@@ -56,28 +56,5 @@ pub trait Transducer: Sized {
     fn is_final(&self, i: TransitionTableIndex) -> bool;
     fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight>;
 }
-
-// pub trait Alphabet
-// where
-//     Self: Sized,
-// {
-//     // fn new(buf: &[u8], symbols: SymbolNumber) -> Self;
-//     fn key_table(&self) -> &Vec<SmolStr>;
-//     fn state_size(&self) -> SymbolNumber;
-//     fn operations(&self) -> &OperationsMap;
-//     fn string_to_symbol(&self) -> &HashMap<SmolStr, SymbolNumber>;
-//     fn is_flag(&self, symbol: SymbolNumber) -> bool;
-//     fn add_symbol(&mut self, string: &str);
-//     fn identity(&self) -> Option<SymbolNumber>;
-//     fn unknown(&self) -> Option<SymbolNumber>;
-//     fn initial_symbol_count(&self) -> SymbolNumber;
-//     fn len(&self) -> usize;
-//     fn is_empty(&self) -> bool;
-//     fn create_translator_from<T: Transducer<Alphabet = Self>>(
-//         &mut self,
-//         mutator: &T,
-//     ) -> Vec<SymbolNumber>;
-// }
-
 #[cfg(feature = "convert")]
 pub mod convert;

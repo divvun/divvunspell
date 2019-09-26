@@ -13,8 +13,7 @@ pub struct TempMmap {
     mmap: Arc<Mmap>,
 
     // Not really dead, needed to drop when TempMmap drops
-    #[allow(dead_code)]
-    tempdir: tempdir::TempDir,
+    _tempdir: tempdir::TempDir,
 }
 
 pub enum MmapRef {

@@ -9,7 +9,6 @@ use crate::transducer::{TransducerError, symbol_transition::SymbolTransition};
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use serde::{Deserialize, Serialize};
 
-mod alphabet;
 mod chunked;
 mod index_table;
 mod transition_table;

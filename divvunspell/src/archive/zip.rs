@@ -37,7 +37,7 @@ fn mmap_by_name<R: Read + Seek>(
         return match mmap {
             Ok(v) => Ok(MmapRef::Temp(TempMmap {
                 mmap: Arc::new(v),
-                tempdir,
+                _tempdir: tempdir,
             })),
             Err(err) => panic!(err),
         };

@@ -17,12 +17,6 @@ pub struct TransducerAlphabet {
     pub(crate) unknown_symbol: Option<SymbolNumber>,
 }
 
-// impl TransducerAlphabet {
-//     pub fn new(buf: &[u8], symbols: SymbolNumber) -> TransducerAlphabet {
-//         TransducerAlphabetParser::parse(buf, symbols)
-//     }
-// }
-
 impl TransducerAlphabet {
     pub fn key_table(&self) -> &Vec<SmolStr> {
         &self.key_table
