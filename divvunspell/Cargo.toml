@@ -23,7 +23,7 @@ parking_lot = "0.9.0"
 hashbrown = { version = "0.6", features = ["serde"] }
 tempdir = "0.3.7"
 lifeguard = "0.6"
-smol_str = { version = "0.1.12", features = ["serde"] }
+smol_str = { version = "0.1.13", features = ["serde"] }
 mimallocator = "0.1"
 box_format = { path = "../../box-compress/box-format" }
 

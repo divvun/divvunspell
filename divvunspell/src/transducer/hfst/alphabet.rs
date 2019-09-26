@@ -1,5 +1,7 @@
 use super::Transducer;
-use crate::types::{FlagDiacriticOperation, FlagDiacriticOperator, SymbolNumber, ValueNumber, OperationsMap};
+use crate::types::{
+    FlagDiacriticOperation, FlagDiacriticOperator, OperationsMap, SymbolNumber, ValueNumber,
+};
 use hashbrown::HashMap;
 use smol_str::SmolStr;
 
@@ -203,7 +205,10 @@ impl Alphabet for TransducerAlphabet {
         self.length == 0
     }
 
-    fn create_translator_from<T: Transducer<Alphabet = Self>>(&mut self, mutator: &T) -> Vec<SymbolNumber> {
+    fn create_translator_from<T: Transducer<Alphabet = Self>>(
+        &mut self,
+        mutator: &T,
+    ) -> Vec<SymbolNumber> {
         let from = mutator.alphabet();
         let from_keys = from.key_table();
 

@@ -1,8 +1,8 @@
 use std::io::{self, Read};
 
-use clap::{App, AppSettings, Arg, SubCommand};
+use clap::{App, AppSettings, Arg, ArgGroup};
 
-use divvunspell::archive::ZipSpellerArchive;
+use divvunspell::archive::{BoxSpellerArchive, ZipSpellerArchive};
 use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::{Speller, SpellerConfig};
 use divvunspell::tokenizer::Tokenize;
@@ -27,7 +27,7 @@ impl OutputWriter for StdoutWriter {
         );
     }
 
-    fn write_suggestions(&mut self, word: &str, suggestions: &[Suggestion]) {
+    fn write_suggestions(&mut self, _word: &str, suggestions: &[Suggestion]) {
         for sugg in suggestions {
             println!("{}\t\t{}", sugg.value, sugg.weight);
         }
@@ -65,13 +65,35 @@ impl OutputWriter for JsonWriter {
         });
     }
 
-    fn write_suggestions(&mut self, word: &str, suggestions: &[Suggestion]) {
+    fn write_suggestions(&mut self, _word: &str, suggestions: &[Suggestion]) {
         let i = self.results.len() - 1;
         self.results[i].suggestions = suggestions.to_vec();
     }
 
     fn finish(&mut self) {
         println!("{}", serde_json::to_string_pretty(self).unwrap());
+    }
+}
+
+use divvunspell::transducer::Transducer;
+use std::sync::Arc;
+
+fn run<T: Transducer>(
+    speller: Arc<Speller<T>>,
+    words: Vec<String>,
+    writer: &mut Box<dyn OutputWriter>,
+    is_suggesting: bool,
+    is_always_suggesting: bool,
+    suggest_cfg: &SpellerConfig
+) {
+    for word in words {
+        let is_correct = speller.clone().is_correct(&word);
+        writer.write_correction(&word, is_correct);
+
+        if is_suggesting && (is_always_suggesting || !is_correct) {
+            let suggestions = speller.clone().suggest_with_config(&word, &suggest_cfg);
+            writer.write_suggestions(&word, &suggestions);
+        }
     }
 }
 
@@ -85,8 +107,31 @@ fn main() {
                 .short("z")
                 .long("zhfst")
                 .value_name("ZHFST")
-                // .required(true)
                 .help("Use the given ZHFST file")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("bhfst")
+                .short("b")
+                .long("bhfst")
+                .value_name("BHFST")
+                .help("Use the given BHFST file")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("acceptor")
+                .long("acceptor")
+                .value_name("acceptor")
+                .requires("errmodel")
+                .help("Use the given acceptor file")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("errmodel")
+                .long("errmodel")
+                .value_name("errmodel")
+                .requires("acceptor")
+                .help("Use the given errmodel file")
                 .takes_value(true),
         )
         .arg(
@@ -127,6 +172,11 @@ fn main() {
                 .multiple(true)
                 .help("The words to be processed"),
         )
+        .group(
+            ArgGroup::with_name("archive")
+                .args(&["zhfst", "bhfst", "acceptor"])
+                .required(true),
+        )
         .get_matches();
 
     let is_always_suggesting = matches.is_present("always-suggest");
@@ -152,7 +202,7 @@ fn main() {
         }
     };
 
-    let mut writer: Box<OutputWriter> = if is_json {
+    let mut writer: Box<dyn OutputWriter> = if is_json {
         Box::new(JsonWriter::new())
     } else {
         Box::new(StdoutWriter)
@@ -178,14 +228,32 @@ fn main() {
         };
 
         let speller = archive.speller();
+        run(speller, words, &mut writer, is_suggesting, is_always_suggesting, &suggest_cfg);
+    } else if let Some(bhfst_file) = matches.value_of("bhfst") {
+        let archive = match BoxSpellerArchive::new(bhfst_file) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("{:?}", e);
+                std::process::exit(1);
+            }
+        };
 
-        for word in words {
-            let is_correct = speller.clone().is_correct(&word);
-            writer.write_correction(&word, is_correct);
+        let speller = archive.speller();
+        run(speller, words, &mut writer, is_suggesting, is_always_suggesting, &suggest_cfg);
+    } else {
+        use divvunspell::transducer::thfst::ThfstTransducer;
+        match (matches.value_of("acceptor"), matches.value_of("errmodel")) {
+            (Some(acceptor_file), Some(errmodel_file)) => {
+                let fs = divvunspell::util::Fs;
+                let acceptor = ThfstTransducer::from_path(&fs, acceptor_file).unwrap();
+                let errmodel = ThfstTransducer::from_path(&fs, errmodel_file).unwrap();
+                let speller = Speller::new(errmodel, acceptor);
 
-            if is_suggesting && (is_always_suggesting || !is_correct) {
-                let suggestions = speller.clone().suggest_with_config(&word, &suggest_cfg);
-                writer.write_suggestions(&word, &suggestions);
+                run(speller, words, &mut writer, is_suggesting, is_always_suggesting, &suggest_cfg);
+            }
+            _ => {
+                eprintln!("No acceptor or errmodel");
+                std::process::exit(1);
             }
         }
     }

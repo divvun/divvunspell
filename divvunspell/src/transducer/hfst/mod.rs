@@ -1,16 +1,16 @@
+pub mod alphabet;
 pub mod header;
 pub mod index_table;
-pub mod alphabet;
 pub mod transition_table;
 
-use memmap::{Mmap, MmapOptions};
+use memmap::Mmap;
 use std::fmt;
-use std::fs::File;
 use std::path::Path;
 use std::sync::Arc;
 
 use crate::constants::{INDEX_TABLE_SIZE, TARGET_TABLE, TRANS_TABLE_SIZE};
 use crate::types::{HeaderFlag, SymbolNumber, TransitionTableIndex, Weight};
+use crate::util::{self, Filesystem, ToMemmap};
 
 use self::alphabet::TransducerAlphabet;
 use self::header::TransducerHeader;
@@ -26,8 +26,8 @@ pub struct HfstTransducer {
     buf: Arc<Mmap>,
     header: TransducerHeader,
     alphabet: TransducerAlphabet,
-    index_table: IndexTable,
-    transition_table: TransitionTable,
+    pub(crate) index_table: IndexTable,
+    pub(crate) transition_table: TransitionTable,
 }
 
 impl fmt::Debug for HfstTransducer {
@@ -40,56 +40,19 @@ impl fmt::Debug for HfstTransducer {
     }
 }
 
-#[derive(Debug)]
-pub enum TransducerSerializeError {
-    InvalidChunkSize,
-}
+// #[derive(Debug)]
+// pub enum TransducerSerializeError {
+//     InvalidChunkSize,
+// }
 
-pub struct TransducerSerializeReport {
-    pub index_table_chunks: usize,
-    pub transition_table_chunks: usize,
-}
+// pub struct TransducerSerializeReport {
+//     pub index_table_chunks: usize,
+//     pub transition_table_chunks: usize,
+// }
 
 impl HfstTransducer {
-    pub fn from_path<P: AsRef<Path>>(path: P) -> Result<HfstTransducer, std::io::Error> {
-        let path = path.as_ref();
-        let file = File::open(path)?;
-        let mmap = unsafe { MmapOptions::new().map(&file) }?;
-        Ok(HfstTransducer::from_mapped_memory(Arc::new(mmap)))
-    }
-
     #[inline(always)]
-    pub fn buffer(&self) -> &[u8] {
-        &self.buf
-    }
-
-    #[inline(always)]
-    pub fn index_table(&self) -> &IndexTable {
-        &self.index_table
-    }
-
-    #[inline(always)]
-    pub fn transition_table(&self) -> &TransitionTable {
-        &self.transition_table
-    }
-
-    #[inline(always)]
-    pub fn is_weighted(&self) -> bool {
-        self.header.has_flag(HeaderFlag::Weighted)
-    }
-
-    #[inline(always)]
-    pub fn header(&self) -> &TransducerHeader {
-        &self.header
-    }
-}
-
-impl Transducer for HfstTransducer {
-    type Alphabet = TransducerAlphabet;
-    const FILE_EXT: &'static str = "hfst";
-
-    #[inline(always)]
-    fn from_mapped_memory(buf: Arc<Mmap>) -> HfstTransducer {
+    pub fn from_mapped_memory(buf: Arc<Mmap>) -> HfstTransducer {
         let header = TransducerHeader::new(&buf);
         let alphabet_offset = header.len();
         let alphabet =
@@ -121,6 +84,47 @@ impl Transducer for HfstTransducer {
             transition_table: trans_table,
         }
     }
+
+    pub fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<HfstTransducer, std::io::Error>
+    where
+        P: AsRef<Path>,
+        FS: Filesystem<File = F>,
+        F: util::File + ToMemmap,
+    {
+        let file = fs.open(path)?;
+        let mmap = unsafe { file.map() }?;
+        Ok(HfstTransducer::from_mapped_memory(Arc::new(mmap)))
+    }
+
+    #[inline(always)]
+    pub fn buffer(&self) -> &[u8] {
+        &self.buf
+    }
+
+    // #[inline(always)]
+    // pub fn index_table(&self) -> &IndexTable {
+    //     &self.index_table
+    // }
+
+    // #[inline(always)]
+    // pub fn transition_table(&self) -> &TransitionTable {
+    //     &self.transition_table
+    // }
+
+    #[inline(always)]
+    pub fn is_weighted(&self) -> bool {
+        self.header.has_flag(HeaderFlag::Weighted)
+    }
+
+    #[inline(always)]
+    pub fn header(&self) -> &TransducerHeader {
+        &self.header
+    }
+}
+
+impl Transducer for HfstTransducer {
+    type Alphabet = TransducerAlphabet;
+    const FILE_EXT: &'static str = "hfst";
 
     #[inline(always)]
     fn is_final(&self, i: TransitionTableIndex) -> bool {
@@ -226,7 +230,7 @@ impl Transducer for HfstTransducer {
 
     #[inline(always)]
     fn transition_input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
-        self.transition_table().input_symbol(i)
+        self.transition_table.input_symbol(i)
     }
 
     #[inline(always)]

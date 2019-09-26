@@ -1,3 +1,4 @@
+use crate::util::{self, Filesystem, ToMemmap};
 use std::ptr;
 
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
@@ -6,18 +7,23 @@ use memmap::Mmap;
 #[doc(hidden)]
 pub struct IndexTable {
     buf: Mmap,
-    size: u32,
+    pub(crate) size: u32,
 }
 
 const INDEX_TABLE_SIZE: usize = 8;
 
 impl IndexTable {
-    // pub fn from_path(path: &std::path::Path) -> Result<Self, std::io::Error> {
-    //     let file = File::open(path)?;
-    //     let buf = unsafe { Mmap::map(&file)? };
-    //     let size = (buf.len() / INDEX_TABLE_SIZE) as u32;
-    //     Ok(IndexTable { buf, size })
-    // }
+    pub fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<Self, std::io::Error>
+    where
+        P: AsRef<std::path::Path>,
+        FS: Filesystem<File = F>,
+        F: util::File + ToMemmap,
+    {
+        let file = fs.open(path)?;
+        let buf = unsafe { file.map()? };
+        let size = (buf.len() / INDEX_TABLE_SIZE) as u32;
+        Ok(IndexTable { buf, size })
+    }
 
     pub fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
         if i >= self.size {

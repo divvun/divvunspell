@@ -1,13 +1,13 @@
+use ::zip::{CompressionMethod, ZipArchive};
 use memmap::MmapOptions;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::Seek;
 use std::sync::Arc;
-use ::zip::{ZipArchive, CompressionMethod};
 
 use self::meta::SpellerMetadata;
 use crate::speller::Speller;
-use crate::transducer::{Transducer, hfst::HfstTransducer};
+use crate::transducer::{hfst::HfstTransducer};
 
 use super::*;
 
@@ -62,7 +62,7 @@ impl ZipSpellerArchive {
         let reader = std::io::BufReader::new(&file);
         let mut archive = ZipArchive::new(reader).expect("zip");
 
-        // Open file a second time to get around borrow checker
+        // // Open file a second time to get around borrow checker
         let mut file = File::open(file_path).map_err(SpellerArchiveError::OpenFileFailed)?;
 
         let metadata_mmap = mmap_by_name(&mut file, &mut archive, "index.xml")
@@ -81,6 +81,7 @@ impl ZipSpellerArchive {
         let speller = Speller::new(errmodel, acceptor);
 
         Ok(ZipSpellerArchive { metadata, speller })
+        // unimplemented!()
     }
 
     pub fn speller(&self) -> Arc<Speller<HfstTransducer>> {

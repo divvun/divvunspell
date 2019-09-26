@@ -1,5 +1,6 @@
 #![allow(clippy::cast_ptr_alignment)] // FIXME: This at least needs a comment
 
+use std::path::Path;
 use std::{u16, u32};
 
 use crate::constants::TARGET_TABLE;
@@ -8,14 +9,17 @@ use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use serde_derive::{Deserialize, Serialize};
 
 mod alphabet;
+mod chunked;
 mod index_table;
 mod transition_table;
 
+pub use self::chunked::ThfstChunkedTransducer;
 pub use self::index_table::IndexTable;
 pub use self::transition_table::TransitionTable;
 
 use self::alphabet::TransducerAlphabet;
 use crate::transducer::{Alphabet, Transducer};
+use crate::util::{self, Filesystem, ToMemmap};
 
 #[repr(C)]
 pub union WeightOrTarget {
@@ -46,94 +50,49 @@ pub struct MetaRecord {
     pub alphabet: TransducerAlphabet,
 }
 
-// impl MetaRecord {
-//     pub fn serialize(&self, target_dir: &std::path::Path) {
-//         use std::io::Write;
-
-//         let s = serde_json::to_string_pretty(self).unwrap();
-//         let mut f = std::fs::File::create(target_dir.join("meta")).unwrap();
-//         writeln!(f, "{}", s).unwrap();
-//     }
-// }
-
-/// Tromsø-Helsinki Finite State Transducer format
 pub struct ThfstTransducer {
-    // meta: MetaRecord,
-    index_tables: Vec<IndexTable>,
-    indexes_per_chunk: u32,
-    transition_tables: Vec<TransitionTable>,
-    transitions_per_chunk: u32,
+    index_table: IndexTable,
+    transition_table: TransitionTable,
     alphabet: TransducerAlphabet,
 }
 
+macro_rules! error {
+    ($path:path, $name:expr) => {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!(
+                "`{}` not found in transducer path, looked for {}",
+                $name,
+                $path.join($name).display()
+            ),
+        )
+    };
+}
+
 impl ThfstTransducer {
-    // pub fn from_path(path: &std::path::Path) -> Result<Self, std::io::Error> {
-    //     // Load meta
-    //     let meta_file = File::open(path.join("meta")).map_err(|_| {
-    //         std::io::Error::new(
-    //             std::io::ErrorKind::NotFound,
-    //             format!(
-    //                 "`meta` not found in transducer path, looked for {}",
-    //                 path.join("meta").display()
-    //             ),
-    //         )
-    //     })?;
-    //     let meta: MetaRecord = serde_json::from_reader(meta_file)?;
+    pub fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<Self, std::io::Error>
+    where
+        P: AsRef<Path>,
+        FS: Filesystem<File = F>,
+        F: util::File + ToMemmap,
+    {
+        let path = path.as_ref();
+        let alphabet_file = fs
+            .open(&path.join("alphabet"))
+            .map_err(|_| error!(path, "alphabet"))?;
 
-    //     let mut index_tables = vec![];
-    //     for i in 0..meta.index_table_count {
-    //         let filename = format!("index-{:02}", i);
-    //         let fpath = path.join(&filename);
-    //         let index_table = IndexTable::from_path(&fpath).map_err(|_| {
-    //             std::io::Error::new(
-    //                 std::io::ErrorKind::NotFound,
-    //                 &*format!("{} not found in transducer path", &filename),
-    //             )
-    //         })?;
-    //         index_tables.push(index_table);
-    //     }
+        let alphabet: TransducerAlphabet = serde_json::from_reader(alphabet_file)?;
 
-    //     let indexes_per_chunk = meta.chunk_size as u32 / 8u32;
+        let index_table =
+            IndexTable::from_path(fs, path.join("index")).map_err(|_| error!(path, "index"))?;
+        let transition_table = TransitionTable::from_path(fs, path.join("transition"))
+            .map_err(|_| error!(path, "transition"))?;
 
-    //     let mut transition_tables = vec![];
-    //     for i in 0..meta.transition_table_count {
-    //         let filename = format!("transition-{:02}", i);
-    //         let fpath = path.join(&filename);
-    //         let transition_table = TransitionTable::from_path(&fpath).map_err(|_| {
-    //             std::io::Error::new(
-    //                 std::io::ErrorKind::NotFound,
-    //                 &*format!("{} not found in transducer path", &filename),
-    //             )
-    //         })?;
-    //         transition_tables.push(transition_table);
-    //     }
-
-    //     let transitions_per_chunk = meta.chunk_size as u32 / 12u32;
-
-    //     let alphabet = TransducerAlphabetParser::parse(&meta.raw_alphabet);
-
-    //     Ok(ThfstTransducer {
-    //         // meta,
-    //         index_tables,
-    //         indexes_per_chunk,
-    //         transition_tables,
-    //         transitions_per_chunk,
-    //         alphabet,
-    //     })
-    // }
-
-    #[inline]
-    fn transition_rel_index(&self, x: TransitionTableIndex) -> (usize, TransitionTableIndex) {
-        let index_page = x / self.transitions_per_chunk;
-        let relative_index = x - (self.transitions_per_chunk * index_page);
-        (index_page as usize, relative_index)
-    }
-
-    #[inline]
-    fn index_rel_index(&self, x: TransitionTableIndex) -> (usize, TransitionTableIndex) {
-        let index_page = x / self.indexes_per_chunk;
-        let relative_index = x - (self.indexes_per_chunk * index_page);
-        (index_page as usize, relative_index)
+        Ok(ThfstTransducer {
+            index_table,
+            transition_table,
+            alphabet,
+        })
     }
 }
 
@@ -141,45 +100,22 @@ impl Transducer for ThfstTransducer {
     type Alphabet = TransducerAlphabet;
     const FILE_EXT: &'static str = "thfst";
 
-    fn from_mapped_memory(buf: std::sync::Arc<memmap::Mmap>) -> Self {
-        unimplemented!()
-    }
-
-    #[inline(always)]
-    fn alphabet(&self) -> &TransducerAlphabet {
-        &self.alphabet
-    }
-
-    #[inline(always)]
-    fn mut_alphabet(&mut self) -> &mut TransducerAlphabet {
-        &mut self.alphabet
-    }
-
-    #[inline(always)]
-    fn transition_input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
-        let (page, index) = self.transition_rel_index(i);
-        self.transition_tables[page].input_symbol(index)
-    }
 
     #[inline(always)]
     fn is_final(&self, i: TransitionTableIndex) -> bool {
         if i >= TARGET_TABLE {
-            let (page, index) = self.transition_rel_index(i - TARGET_TABLE);
-            self.transition_tables[page].is_final(index)
+            self.transition_table.is_final(i - TARGET_TABLE)
         } else {
-            let (page, index) = self.index_rel_index(i);
-            self.index_tables[page].is_final(index)
+            self.index_table.is_final(i)
         }
     }
 
     #[inline(always)]
     fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight> {
         if i >= TARGET_TABLE {
-            let (page, index) = self.transition_rel_index(i - TARGET_TABLE);
-            self.transition_tables[page].weight(index)
+            self.transition_table.weight(i - TARGET_TABLE)
         } else {
-            let (page, index) = self.index_rel_index(i);
-            self.index_tables[page].final_weight(index)
+            self.index_table.final_weight(i)
         }
     }
 
@@ -191,14 +127,12 @@ impl Transducer for ThfstTransducer {
         };
 
         if i >= TARGET_TABLE {
-            let (page, index) = self.transition_rel_index(i - TARGET_TABLE);
-            match self.transition_tables[page].input_symbol(index) {
+            match self.transition_table.input_symbol(i - TARGET_TABLE) {
                 Some(res) => sym == res,
                 None => false,
             }
         } else {
-            let (page, index) = self.index_rel_index(i + u32::from(sym));
-            match self.index_tables[page].input_symbol(index) {
+            match self.index_table.input_symbol(i + u32::from(sym)) {
                 Some(res) => sym == res,
                 None => false,
             }
@@ -208,27 +142,21 @@ impl Transducer for ThfstTransducer {
     #[inline(always)]
     fn has_epsilons_or_flags(&self, i: TransitionTableIndex) -> bool {
         if i >= TARGET_TABLE {
-            let (page, index) = self.transition_rel_index(i - TARGET_TABLE);
-            match self.transition_tables[page].input_symbol(index) {
+            match self.transition_table.input_symbol(i - TARGET_TABLE) {
                 Some(sym) => sym == 0 || self.alphabet.is_flag(sym),
                 None => false,
             }
+        } else if let Some(0) = self.index_table.input_symbol(i) {
+            true
         } else {
-            let (page, index) = self.index_rel_index(i);
-            if let Some(0) = self.index_tables[page].input_symbol(index) {
-                true
-            } else {
-                false
-            }
+            false
         }
     }
 
     #[inline(always)]
     fn take_epsilons(&self, i: TransitionTableIndex) -> Option<SymbolTransition> {
-        let (page, index) = self.transition_rel_index(i);
-
-        if let Some(0) = self.transition_tables[page].input_symbol(index) {
-            Some(self.transition_tables[page].symbol_transition(index))
+        if let Some(0) = self.transition_table.input_symbol(i) {
+            Some(self.transition_table.symbol_transition(i))
         } else {
             None
         }
@@ -236,13 +164,11 @@ impl Transducer for ThfstTransducer {
 
     #[inline(always)]
     fn take_epsilons_and_flags(&self, i: TransitionTableIndex) -> Option<SymbolTransition> {
-        let (page, index) = self.transition_rel_index(i);
-
-        if let Some(sym) = self.transition_tables[page].input_symbol(index) {
+        if let Some(sym) = self.transition_table.input_symbol(i) {
             if sym != 0 && !self.alphabet.is_flag(sym) {
                 None
             } else {
-                Some(self.transition_tables[page].symbol_transition(index))
+                Some(self.transition_table.symbol_transition(i))
             }
         } else {
             None
@@ -255,12 +181,11 @@ impl Transducer for ThfstTransducer {
         i: TransitionTableIndex,
         symbol: SymbolNumber,
     ) -> Option<SymbolTransition> {
-        let (page, index) = self.transition_rel_index(i);
-        if let Some(input_sym) = self.transition_tables[page].input_symbol(index) {
+        if let Some(input_sym) = self.transition_table.input_symbol(i) {
             if input_sym != symbol {
                 None
             } else {
-                Some(self.transition_tables[page].symbol_transition(index))
+                Some(self.transition_table.symbol_transition(i))
             }
         } else {
             None
@@ -271,32 +196,25 @@ impl Transducer for ThfstTransducer {
     fn next(&self, i: TransitionTableIndex, symbol: SymbolNumber) -> Option<TransitionTableIndex> {
         if i >= TARGET_TABLE {
             Some(i - TARGET_TABLE + 1)
+        } else if let Some(v) = self.index_table.target(i + 1 + u32::from(symbol)) {
+            Some(v - TARGET_TABLE)
         } else {
-            let (page, index) = self.index_rel_index(i + 1 + u32::from(symbol));
-
-            if let Some(v) = self.index_tables[page].target(index) {
-                Some(v - TARGET_TABLE)
-            } else {
-                None
-            }
+            None
         }
     }
+
+    #[inline(always)]
+    fn transition_input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
+        self.transition_table.input_symbol(i)
+    }
+
+    #[inline(always)]
+    fn alphabet(&self) -> &Self::Alphabet {
+        &self.alphabet
+    }
+
+    #[inline(always)]
+    fn mut_alphabet(&mut self) -> &mut Self::Alphabet {
+        &mut self.alphabet
+    }
 }
-
-// pub struct ThfstBundle {
-//     pub lexicon: ThfstTransducer,
-//     pub mutator: ThfstTransducer,
-// }
-
-// impl ThfstBundle {
-//     pub fn from_path(path: &std::path::Path) -> Result<Self, std::io::Error> {
-//         let lexicon = ThfstTransducer::from_path(&path.join("lexicon"))?;
-//         let mutator = ThfstTransducer::from_path(&path.join("mutator"))?;
-
-//         Ok(ThfstBundle { lexicon, mutator })
-//     }
-
-//     pub fn speller(self) -> Arc<Speller<ThfstTransducer>> {
-//         Speller::new(self.mutator, self.lexicon)
-//     }
-// }

@@ -3,11 +3,11 @@ pub mod meta;
 use memmap::Mmap;
 use std::sync::Arc;
 
+mod boxf;
 mod zip;
-// mod boxf;
 
+pub use self::boxf::BoxSpellerArchive;
 pub use self::zip::ZipSpellerArchive;
-// pub use self::boxf::BoxSpellerArchive;
 
 pub struct TempMmap {
     mmap: Arc<Mmap>,

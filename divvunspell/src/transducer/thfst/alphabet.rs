@@ -1,4 +1,4 @@
-use crate::types::{SymbolNumber, OperationsMap};
+use crate::types::{OperationsMap, SymbolNumber};
 use hashbrown::HashMap;
 use smol_str::SmolStr;
 
@@ -62,7 +62,10 @@ impl Alphabet for TransducerAlphabet {
     fn is_empty(&self) -> bool {
         self.length == 0
     }
-    fn create_translator_from<T: Transducer<Alphabet = Self>>(&mut self, mutator: &T) -> Vec<SymbolNumber> {
+    fn create_translator_from<T: Transducer<Alphabet = Self>>(
+        &mut self,
+        mutator: &T,
+    ) -> Vec<SymbolNumber> {
         let from = mutator.alphabet();
         let from_keys = from.key_table();
 

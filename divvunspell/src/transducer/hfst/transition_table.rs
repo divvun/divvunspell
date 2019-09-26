@@ -1,12 +1,12 @@
 #![allow(clippy::cast_ptr_alignment)] // FIXME: This at least needs a comment
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt};
 use memmap::Mmap;
 use std::fmt;
 use std::io::Cursor;
 use std::ptr;
 use std::sync::Arc;
-use std::{cmp, mem, u16, u32};
+use std::{mem, u16, u32};
 
 use crate::constants::TRANS_TABLE_SIZE;
 use crate::transducer::symbol_transition::SymbolTransition;

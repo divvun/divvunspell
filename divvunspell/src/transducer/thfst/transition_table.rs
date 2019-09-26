@@ -2,23 +2,29 @@ use std::{mem, ptr};
 
 use crate::transducer::symbol_transition::SymbolTransition;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
+use crate::util::{self, Filesystem, ToMemmap};
 use memmap::Mmap;
 
 #[doc(hidden)]
 pub struct TransitionTable {
     buf: Mmap,
-    size: u32,
+    pub(crate) size: u32,
 }
 
 const TRANS_TABLE_SIZE: usize = 12;
 
 impl TransitionTable {
-    // pub fn from_path(path: &std::path::Path) -> Result<Self, std::io::Error> {
-    //     let file = File::open(path)?;
-    //     let buf = unsafe { Mmap::map(&file)? };
-    //     let size = (buf.len() / TRANS_TABLE_SIZE) as u32;
-    //     Ok(TransitionTable { buf, size })
-    // }
+    pub fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<Self, std::io::Error>
+    where
+        P: AsRef<std::path::Path>,
+        FS: Filesystem<File = F>,
+        F: util::File + ToMemmap,
+    {
+        let file = fs.open(path)?;
+        let buf = unsafe { file.map()? };
+        let size = (buf.len() / TRANS_TABLE_SIZE) as u32;
+        Ok(TransitionTable { buf, size })
+    }
 
     #[inline]
     fn read_symbol_from_cursor(&self, index: usize) -> Option<SymbolNumber> {
@@ -70,7 +76,9 @@ impl TransitionTable {
             return None;
         }
 
-        let index = (TRANS_TABLE_SIZE * i as usize) + 8;
+        let index = (TRANS_TABLE_SIZE * i as usize)
+            + (2 * mem::size_of::<SymbolNumber>())
+            + mem::size_of::<TransitionTableIndex>();
 
         let x: Weight = unsafe { ptr::read(self.buf.as_ptr().add(index) as *const _) };
 

@@ -24,3 +24,4 @@ structopt = { version = "0.3.2"}
 csv = { version = "1.1" }
 rayon = { version = "1.2.0"}
 indicatif = { git = "https://github.com/mitsuhiko/indicatif", features = ["with_rayon"] }
+box_format = { path = "../../box-compress/box-format" }
