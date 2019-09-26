@@ -26,7 +26,7 @@ tempdir = "0.3.7"
 lifeguard = "0.6"
 smol_str = { version = "0.1.13", features = ["serde"] }
 mimallocator = "0.1"
-box_format = { path = "../../box-compress/box-format" }
+box_format = { git = "https://github.com/bbqsrc/box" }
 
 [features]
 compression = ["zip/deflate"]
