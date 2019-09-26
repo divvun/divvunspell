@@ -3,21 +3,22 @@ pub mod header;
 pub mod index_table;
 pub mod transition_table;
 
-use memmap::Mmap;
 use std::fmt;
 use std::path::Path;
 use std::sync::Arc;
 
-use self::alphabet::TransducerAlphabetParser;
-use self::header::TransducerHeader;
+use memmap::Mmap;
+
 pub use self::index_table::IndexTable;
 pub use self::transition_table::TransitionTable;
 use super::alphabet::TransducerAlphabet;
 use super::symbol_transition::SymbolTransition;
-use super::Transducer;
+use super::{Transducer, TransducerError};
 use crate::constants::{INDEX_TABLE_SIZE, TARGET_TABLE, TRANS_TABLE_SIZE};
 use crate::types::{HeaderFlag, SymbolNumber, TransitionTableIndex, Weight};
 use crate::util::{self, Filesystem, ToMemmap};
+use self::alphabet::TransducerAlphabetParser;
+use self::header::TransducerHeader;
 
 pub struct HfstTransducer {
     buf: Arc<Mmap>,
@@ -93,14 +94,14 @@ impl HfstTransducer {
 impl Transducer for HfstTransducer {
     const FILE_EXT: &'static str = "hfst";
 
-    fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<HfstTransducer, std::io::Error>
+    fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<HfstTransducer, TransducerError>
     where
         P: AsRef<Path>,
         FS: Filesystem<File = F>,
         F: util::File + ToMemmap,
     {
-        let file = fs.open(path)?;
-        let mmap = unsafe { file.map() }?;
+        let file = fs.open(path).map_err(|e| TransducerError::Io(e))?;
+        let mmap = unsafe { file.memory_map() }.map_err(|e| TransducerError::Memmap(e))?;
         Ok(HfstTransducer::from_mapped_memory(Arc::new(mmap)))
     }
 

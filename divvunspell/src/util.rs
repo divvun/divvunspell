@@ -9,15 +9,32 @@ pub trait Filesystem {
 }
 
 pub trait ToMemmap {
-    unsafe fn map(&self) -> Result<Mmap>;
+    unsafe fn memory_map(&self) -> Result<Mmap>;
+    unsafe fn partial_memory_map(&self, offset: u64, len: usize) -> Result<Mmap>;
 }
 
-pub trait File: Read {}
+pub trait File: Read {
+    fn len(&self) -> Result<u64>;
+    fn is_empty(&self) -> Result<bool>;
+}
 
-impl File for std::fs::File {}
+impl File for std::fs::File {
+    fn len(&self) -> Result<u64> {
+        self.metadata().map(|m| m.len())
+    }
+
+    fn is_empty(&self) -> Result<bool> {
+        self.len().map(|x| x == 0)
+    }
+}
+
 impl ToMemmap for std::fs::File {
-    unsafe fn map(&self) -> Result<Mmap> {
+    unsafe fn memory_map(&self) -> Result<Mmap> {
         MmapOptions::new().map(self)
+    }
+
+    unsafe fn partial_memory_map(&self, offset: u64, len: usize) -> Result<Mmap> {
+        MmapOptions::new().offset(offset).len(len).map(self)
     }
 }
 
@@ -51,15 +68,30 @@ pub(crate) mod boxf {
     }
 
     impl super::ToMemmap for File {
-        unsafe fn map(&self) -> Result<memmap::Mmap> {
+        unsafe fn memory_map(&self) -> Result<memmap::Mmap> {
             memmap::MmapOptions::new()
                 .offset(self.offset)
                 .len(self.len)
                 .map(&self.file)
         }
+
+        unsafe fn partial_memory_map(&self, offset: u64, len: usize) -> Result<memmap::Mmap> {
+            memmap::MmapOptions::new()
+                .offset(self.offset + offset)
+                .len(std::cmp::min(self.len - offset as usize, len))
+                .map(&self.file)
+        }
     }
 
-    impl<'a> super::File for File {}
+    impl<'a> super::File for File {
+        fn len(&self) -> Result<u64> {
+            Ok(self.len as u64)
+        }
+
+        fn is_empty(&self) -> Result<bool> {
+            Ok(self.len == 0)
+        }
+    }
 
     pub struct Filesystem<'a>(&'a BoxFileReader);
 

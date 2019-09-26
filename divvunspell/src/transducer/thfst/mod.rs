@@ -5,7 +5,7 @@ use std::path::Path;
 use std::{u16, u32};
 
 use crate::constants::TARGET_TABLE;
-use crate::transducer::symbol_transition::SymbolTransition;
+use crate::transducer::{TransducerError, symbol_transition::SymbolTransition};
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use serde::{Deserialize, Serialize};
 
@@ -58,13 +58,15 @@ pub struct ThfstTransducer {
 
 macro_rules! error {
     ($path:path, $name:expr) => {
-        std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!(
-                "`{}` not found in transducer path, looked for {}",
-                $name,
-                $path.join($name).display()
-            ),
+        TransducerError::Io(
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!(
+                    "`{}` not found in transducer path, looked for {}",
+                    $name,
+                    $path.join($name).display()
+                ),
+            )
         )
     };
 }
@@ -72,7 +74,7 @@ macro_rules! error {
 impl Transducer for ThfstTransducer {
     const FILE_EXT: &'static str = "thfst";
 
-    fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<Self, std::io::Error>
+    fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<Self, TransducerError>
     where
         P: AsRef<Path>,
         FS: Filesystem<File = F>,
@@ -83,10 +85,11 @@ impl Transducer for ThfstTransducer {
             .open(&path.join("alphabet"))
             .map_err(|_| error!(path, "alphabet"))?;
 
-        let alphabet: TransducerAlphabet = serde_json::from_reader(alphabet_file)?;
+        let alphabet: TransducerAlphabet = serde_json::from_reader(alphabet_file)
+            .map_err(|e| TransducerError::Alphabet(Box::new(e)))?;
 
-        let index_table =
-            IndexTable::from_path(fs, path.join("index")).map_err(|_| error!(path, "index"))?;
+        let index_table = IndexTable::from_path(fs, path.join("index"))
+            .map_err(|_| error!(path, "index"))?;
         let transition_table = TransitionTable::from_path(fs, path.join("transition"))
             .map_err(|_| error!(path, "transition"))?;
 

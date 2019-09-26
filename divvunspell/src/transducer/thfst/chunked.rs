@@ -6,7 +6,7 @@ use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 
 use super::index_table::IndexTable;
 use super::transition_table::TransitionTable;
-use crate::transducer::{Transducer, TransducerAlphabet};
+use crate::transducer::{Transducer, TransducerError, TransducerAlphabet};
 use crate::util::{self, Filesystem, ToMemmap};
 
 /// Tromsø-Helsinki Finite State Transducer format
@@ -37,13 +37,15 @@ macro_rules! index_rel_index {
 
 macro_rules! error {
     ($path:path, $name:expr) => {
-        std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!(
-                "`{}` not found in transducer path, looked for {}",
-                $name,
-                $path.join($name).display()
-            ),
+        TransducerError::Io(
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!(
+                    "`{}` not found in transducer path, looked for {}",
+                    $name,
+                    $path.join($name).display()
+                ),
+            )
         )
     };
 }
@@ -51,7 +53,7 @@ macro_rules! error {
 impl Transducer for ThfstChunkedTransducer {
     const FILE_EXT: &'static str = "thfst";
 
-    fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<Self, std::io::Error>
+    fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<Self, TransducerError>
     where
         P: AsRef<Path>,
         FS: Filesystem<File = F>,
@@ -62,18 +64,74 @@ impl Transducer for ThfstChunkedTransducer {
             .open(&path.join("alphabet"))
             .map_err(|_| error!(path, "alphabet"))?;
 
-        let alphabet: TransducerAlphabet = serde_json::from_reader(alphabet_file)?;
+        let alphabet: TransducerAlphabet = serde_json::from_reader(alphabet_file)
+            .map_err(|e| TransducerError::Alphabet(Box::new(e)))?;
 
-        let index_table =
-            IndexTable::from_path(fs, path.join("index")).map_err(|_| error!(path, "index"))?;
-        let transition_table = TransitionTable::from_path(fs, path.join("transition"))
-            .map_err(|_| error!(path, "transition"))?;
+        let mut index_chunk_count = 1;
+        let index_tables;
+
+        loop {
+            let index_path = path.join("index");
+            let indexes = (0..index_chunk_count).map(|i| {
+                IndexTable::from_path_partial(fs, &index_path, i, index_chunk_count)
+            }).collect::<Result<Vec<_>, _>>();
+
+            match indexes {
+                Ok(v) => {
+                    index_tables = v;
+                    break;
+                },
+                Err(TransducerError::Memmap(_)) => {
+                    index_chunk_count *= 2;
+
+                    if index_chunk_count > 8 {
+                        return Err(TransducerError::Memmap(
+                            std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                "Could not memory map index in 8 chunks")))
+                    }
+                },
+                Err(e) => {
+                    return Err(e)
+                }
+            }
+        }
+
+        let mut trans_chunk_count = 1;
+        let transition_tables;
+
+        loop {
+            let trans_path = path.join("transition");
+            let tables = (0..trans_chunk_count).map(|i| {
+                TransitionTable::from_path_partial(fs, &trans_path, i, trans_chunk_count)
+            }).collect::<Result<Vec<_>, _>>();
+
+            match tables {
+                Ok(v) => {
+                    transition_tables = v;
+                    break;
+                },
+                Err(TransducerError::Memmap(_)) => {
+                    trans_chunk_count *= 2;
+
+                    if trans_chunk_count > 8 {
+                        return Err(TransducerError::Memmap(
+                            std::io::Error::new(
+                                std::io::ErrorKind::Other,
+                                "Could not memory transition index in 8 chunks")))
+                    }
+                },
+                Err(e) => {
+                    return Err(e)
+                }
+            }
+        }
 
         Ok(ThfstChunkedTransducer {
-            indexes_per_chunk: index_table.size,
-            transitions_per_chunk: transition_table.size,
-            index_tables: vec![index_table],
-            transition_tables: vec![transition_table],
+            indexes_per_chunk: index_tables[0].size,
+            transitions_per_chunk: transition_tables[0].size,
+            index_tables,
+            transition_tables,
             alphabet,
         })
     }

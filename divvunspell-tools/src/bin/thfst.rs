@@ -49,7 +49,7 @@ const ALIGNMENT: NonZeroU64 = unsafe { std::num::NonZeroU64::new_unchecked(8) };
 
 fn convert_hfst_to_thfst(hfst_path: &Path) -> Result<(), std::io::Error> {
     let fs = divvunspell::util::Fs;
-    let transducer = HfstTransducer::from_path(&fs, hfst_path)?;
+    let transducer = HfstTransducer::from_path(&fs, hfst_path).map_err(|e| e.into_io_error())?;
     thfst::ThfstTransducer::convert_file(&transducer, hfst_path)?;
     Ok(())
 }
@@ -97,8 +97,8 @@ fn convert_thfsts_to_bhfst(
     output_path: &Path,
 ) -> Result<(), std::io::Error> {
     let fs = divvunspell::util::Fs;
-    let _acceptor_transducer = ThfstTransducer::from_path(&fs, acceptor_path)?;
-    let _errmodel_transducer = ThfstTransducer::from_path(&fs, errmodel_path)?;
+    let _acceptor_transducer = ThfstTransducer::from_path(&fs, acceptor_path).map_err(|e| e.into_io_error())?;
+    let _errmodel_transducer = ThfstTransducer::from_path(&fs, errmodel_path).map_err(|e| e.into_io_error())?;
 
     let mut boxfile: BoxFileWriter = BoxFileWriter::create_with_alignment(output_path, ALIGNMENT)?;
 

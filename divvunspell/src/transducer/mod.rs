@@ -11,10 +11,29 @@ use self::symbol_transition::SymbolTransition;
 
 use crate::util::{self, Filesystem, ToMemmap};
 
+#[derive(Debug)]
+pub enum TransducerError {
+    Memmap(std::io::Error),
+    Io(std::io::Error),
+    Alphabet(Box<dyn std::error::Error>),
+}
+
+impl TransducerError {
+    pub fn into_io_error(self) -> std::io::Error {
+        match self {
+            TransducerError::Memmap(v) => v,
+            TransducerError::Io(v) => v,
+            TransducerError::Alphabet(v) => {
+                std::io::Error::new(std::io::ErrorKind::Other, format!("{}", v))
+            }
+        }
+    }
+}
+
 pub trait Transducer: Sized {
     const FILE_EXT: &'static str;
 
-    fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<Self, std::io::Error>
+    fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<Self, TransducerError>
     where
         P: AsRef<std::path::Path>,
         FS: Filesystem<File = F>,

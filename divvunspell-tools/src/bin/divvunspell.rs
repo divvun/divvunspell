@@ -8,7 +8,7 @@ use divvunspell::archive::{BoxSpellerArchive, ZipSpellerArchive};
 use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::{Speller, SpellerConfig};
 use divvunspell::tokenizer::Tokenize;
-use divvunspell::transducer::{thfst::ThfstTransducer, Transducer};
+use divvunspell::transducer::{thfst::{ThfstTransducer, ThfstChunkedTransducer}, Transducer};
 
 trait OutputWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool);
@@ -234,7 +234,7 @@ fn main() {
             &suggest_cfg,
         );
     } else if let Some(bhfst_file) = matches.value_of("bhfst") {
-        let archive: BoxSpellerArchive<ThfstTransducer, ThfstTransducer> =
+        let archive: BoxSpellerArchive<ThfstChunkedTransducer, ThfstChunkedTransducer> =
             match BoxSpellerArchive::new(bhfst_file) {
                 Ok(v) => v,
                 Err(e) => {

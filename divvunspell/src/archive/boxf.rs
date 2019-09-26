@@ -15,13 +15,15 @@ pub struct BoxSpellerArchive<T: Transducer, U: Transducer> {
 
 impl<T: Transducer, U: Transducer> BoxSpellerArchive<T, U> {
     pub fn new(file_path: &str) -> Result<BoxSpellerArchive<T, U>, SpellerArchiveError> {
-        let archive =
-            BoxFileReader::open(file_path).map_err(SpellerArchiveError::OpenFileFailed)?;
+        let archive = BoxFileReader::open(file_path)
+            .map_err(SpellerArchiveError::File)?;
 
         let fs = Filesystem::new(&archive);
 
-        let errmodel = T::from_path(&fs, "errmodel.default.thfst").unwrap();
-        let acceptor = U::from_path(&fs, "acceptor.default.thfst").unwrap();
+        let errmodel = T::from_path(&fs, "errmodel.default.thfst")
+            .map_err(SpellerArchiveError::Transducer)?;
+        let acceptor = U::from_path(&fs, "acceptor.default.thfst")
+            .map_err(SpellerArchiveError::Transducer)?;
 
         let speller = Speller::new(errmodel, acceptor);
         Ok(BoxSpellerArchive { speller })
