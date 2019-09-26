@@ -3,11 +3,11 @@ extern crate divvunspell;
 use std::sync::Arc;
 use std::time::Instant;
 
-use divvunspell::archive::SpellerArchive;
+use divvunspell::archive::ZipSpellerArchive;
 
 use divvunspell::speller::{Speller, SpellerConfig};
 
-use divvunspell::transducer::HfstTransducer;
+use divvunspell::transducer::hfst::HfstTransducer;
 
 fn run(speller: Arc<Speller<HfstTransducer>>, line: &TestLine, cfg: &SpellerConfig) {
     let _ = speller.suggest_with_config(line.0, &cfg);
@@ -313,7 +313,7 @@ fn main() {
 
     // let words = ["vuovdinfállovuogiŧ", "eanavuoigatvuohtadutkamušas", "nannesivččii", "gárvanivččii", "gáibiđivččii"];
 
-    let unaligned = SpellerArchive::new("./unaligned-test.zhfst").unwrap();
+    let unaligned = ZipSpellerArchive::new("./unaligned-test.zhfst").unwrap();
     // let unaligned = ChfstBundle::from_path(&std::path::Path::new("./out.chfst")).unwrap();
     // let res = unaligned.speller().suggest_with_config("same", &cfg);
     // let aligned = SpellerArchive::new("./aligned-test.zhfst").unwrap();

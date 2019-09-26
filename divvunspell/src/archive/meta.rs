@@ -61,6 +61,8 @@ impl SpellerMetadata {
 
 #[test]
 fn test_xml_parse() {
+    use std::str::FromStr;
+    
     let xml_data = r##"
         <?xml version="1.0" encoding="UTF-8"?>
         <hfstspeller dtdversion="1.0" hfstversion="3">
