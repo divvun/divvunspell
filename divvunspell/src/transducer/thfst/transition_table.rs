@@ -42,8 +42,7 @@ impl TransitionTable {
         }
 
         let index = TRANS_TABLE_SIZE as usize * i as usize;
-        let sym = self.read_symbol_from_cursor(index);
-        sym
+        self.read_symbol_from_cursor(index)
     }
 
     pub fn output_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {

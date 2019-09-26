@@ -51,6 +51,7 @@ impl TransducerAlphabetParser {
     }
 
     fn handle_special_symbol(&mut self, i: SymbolNumber, key: &str) {
+        use std::str::FromStr;
         let mut chunks = key.split('.');
 
         let fdo = FlagDiacriticOperator::from_str(&chunks.next().unwrap()[1..]).unwrap();

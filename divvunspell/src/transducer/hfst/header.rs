@@ -40,9 +40,9 @@ impl TransducerHeader {
 
         let mut props = [false; 9];
 
-        for i in 0..props.len() {
+        for prop in props.iter_mut() {
             let v = rdr.read_u32::<LittleEndian>().unwrap();
-            props[i] = v != 0
+            *prop = v != 0
         }
 
         TransducerHeader {

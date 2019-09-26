@@ -16,7 +16,7 @@ pub struct ZipSpellerArchive {
     speller: Arc<Speller<HfstTransducer>>,
 }
 
-fn mmap_by_name<'a, R: Read + Seek>(
+fn mmap_by_name<R: Read + Seek>(
     zipfile: &mut File,
     archive: &mut ZipArchive<R>,
     name: &str,

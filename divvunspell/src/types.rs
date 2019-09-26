@@ -8,16 +8,18 @@ pub enum FlagDiacriticOperator {
     Unification,
 }
 
-impl FlagDiacriticOperator {
-    pub fn from_str(key: &str) -> Option<FlagDiacriticOperator> {
-        match key {
-            "P" => Some(FlagDiacriticOperator::PositiveSet),
-            "N" => Some(FlagDiacriticOperator::NegativeSet),
-            "R" => Some(FlagDiacriticOperator::Require),
-            "D" => Some(FlagDiacriticOperator::Disallow),
-            "C" => Some(FlagDiacriticOperator::Clear),
-            "U" => Some(FlagDiacriticOperator::Unification),
-            _ => None,
+impl std::str::FromStr for FlagDiacriticOperator {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "P" => Ok(FlagDiacriticOperator::PositiveSet),
+            "N" => Ok(FlagDiacriticOperator::NegativeSet),
+            "R" => Ok(FlagDiacriticOperator::Require),
+            "D" => Ok(FlagDiacriticOperator::Disallow),
+            "C" => Ok(FlagDiacriticOperator::Clear),
+            "U" => Ok(FlagDiacriticOperator::Unification),
+            _ => Err(()),
         }
     }
 }

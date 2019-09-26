@@ -31,7 +31,7 @@ impl OutputWriter for StdoutWriter {
         for sugg in suggestions {
             println!("{}\t\t{}", sugg.value, sugg.weight);
         }
-        println!("");
+        println!();
     }
 
     fn finish(&mut self) {}
@@ -81,7 +81,7 @@ use std::sync::Arc;
 fn run<T: Transducer>(
     speller: Arc<Speller<T>>,
     words: Vec<String>,
-    writer: &mut Box<dyn OutputWriter>,
+    writer: &mut dyn OutputWriter,
     is_suggesting: bool,
     is_always_suggesting: bool,
     suggest_cfg: &SpellerConfig
@@ -228,7 +228,7 @@ fn main() {
         };
 
         let speller = archive.speller();
-        run(speller, words, &mut writer, is_suggesting, is_always_suggesting, &suggest_cfg);
+        run(speller, words, &mut *writer, is_suggesting, is_always_suggesting, &suggest_cfg);
     } else if let Some(bhfst_file) = matches.value_of("bhfst") {
         let archive = match BoxSpellerArchive::new(bhfst_file) {
             Ok(v) => v,
@@ -239,7 +239,7 @@ fn main() {
         };
 
         let speller = archive.speller();
-        run(speller, words, &mut writer, is_suggesting, is_always_suggesting, &suggest_cfg);
+        run(speller, words, &mut *writer, is_suggesting, is_always_suggesting, &suggest_cfg);
     } else {
         use divvunspell::transducer::thfst::ThfstTransducer;
         match (matches.value_of("acceptor"), matches.value_of("errmodel")) {
@@ -249,7 +249,7 @@ fn main() {
                 let errmodel = ThfstTransducer::from_path(&fs, errmodel_file).unwrap();
                 let speller = Speller::new(errmodel, acceptor);
 
-                run(speller, words, &mut writer, is_suggesting, is_always_suggesting, &suggest_cfg);
+                run(speller, words, &mut *writer, is_suggesting, is_always_suggesting, &suggest_cfg);
             }
             _ => {
                 eprintln!("No acceptor or errmodel");

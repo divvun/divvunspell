@@ -39,11 +39,11 @@ impl std::cmp::PartialEq for TreeNode {
 impl std::cmp::Ord for TreeNode {
     fn cmp(&self, other: &Self) -> Ordering {
         if self.weight < other.weight {
-            return Ordering::Less;
+            Ordering::Less
         } else if self.weight > other.weight {
-            return Ordering::Greater;
+            Ordering::Greater
         } else {
-            return self.string.cmp(&other.string);
+            self.string.cmp(&other.string)
         }
     }
 }
@@ -281,7 +281,7 @@ impl TreeNode {
                 Some(self.update_flag(pool, op.feature, op.value, transition))
             }
             FlagDiacriticOperator::NegativeSet => {
-                Some(self.update_flag(pool, op.feature, -1 * op.value, transition))
+                Some(self.update_flag(pool, op.feature, -op.value, transition))
             }
             FlagDiacriticOperator::Require => {
                 let res = if op.value == 0 {

@@ -49,7 +49,7 @@ struct Time {
 
 impl std::fmt::Display for Time {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
-        let ms = self.secs * 1000 + (self.subsec_nanos as u64 / 1000000);
+        let ms = self.secs * 1000 + (self.subsec_nanos as u64 / 1_000_000);
         write!(f, "{}ms", ms)
     }
 }
@@ -123,7 +123,7 @@ impl Summary {
                 if position < 5 {
                     summary.top_five += 1;
                 }
-            } else if result.suggestions.len() == 0 {
+            } else if result.suggestions.is_empty() {
                 summary.no_suggestions += 1;
             } else {
                 summary.only_wrong += 1;
@@ -134,14 +134,12 @@ impl Summary {
             .iter()
             .max_by(|x, y| x.time.cmp(&y.time))
             .unwrap()
-            .time
-            .clone();
+            .time;
         summary.fastest_lookup = results
             .iter()
             .min_by(|x, y| x.time.cmp(&y.time))
             .unwrap()
-            .time
-            .clone();
+            .time;
 
         summary
     }
@@ -164,9 +162,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .help("The 'input -> expected' list in tab-delimited value file (TSV)"),
         )
         .arg(
-            Arg::with_name("zhfst")
-                .value_name("ZHFST")
-                .help("Use the given ZHFST file"),
+            Arg::with_name("bhfst")
+                .value_name("BHFST")
+                .help("Use the given BHFST file"),
         )
         .arg(
             Arg::with_name("json-output")

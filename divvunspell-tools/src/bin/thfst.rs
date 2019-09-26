@@ -3,7 +3,7 @@ use structopt::StructOpt;
 
 use divvunspell::transducer::{
     convert::ConvertFile,
-    hfst::{self, HfstTransducer},
+    hfst::HfstTransducer,
     thfst::{self, ThfstTransducer},
 };
 
@@ -100,14 +100,6 @@ fn convert_thfsts_to_bhfst(
     let _errmodel_transducer = ThfstTransducer::from_path(&fs, errmodel_path)?;
 
     let mut boxfile: BoxFileWriter = BoxFileWriter::create_with_alignment(output_path, ALIGNMENT)?;
-
-    // pub fn insert<R: Read>(
-    //     &mut self,
-    //     compression: Compression,
-    //     path: BoxPath,
-    //     value: &mut R,
-    //     attrs: HashMap<String, Vec<u8>>
-    //
 
     insert_thfst_files(&mut boxfile, acceptor_path)?;
     insert_thfst_files(&mut boxfile, errmodel_path)?;
