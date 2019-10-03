@@ -78,14 +78,16 @@ where
     }
 
     fn to_input_vec(&self, word: &str) -> Vec<SymbolNumber> {
-        let key_table = self.mutator().alphabet().key_table();
+        let alphabet = self.mutator().alphabet();
+        let key_table = alphabet.key_table();
 
         word.chars()
-            .filter_map(|ch| {
+            .map(|ch| {
                 let s = ch.to_string();
                 key_table.iter().position(|x| x == &s)
+                    .map(|x| x as u16)
+                    .unwrap_or_else(|| alphabet.unknown().unwrap_or(0u16))
             })
-            .map(|x| x as u16)
             .collect()
     }
 
