@@ -11,7 +11,7 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::Serialize;
 
 static CFG: SpellerConfig = SpellerConfig {
-    max_weight: Some(50000.0),
+    max_weight: Some(10000.0),
     n_best: Some(10),
     beam: None,
     pool_max: 128,

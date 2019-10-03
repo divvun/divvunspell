@@ -1,32 +1,21 @@
 use smol_str::SmolStr;
+use itertools::Itertools;
 
-fn trim_start(alphabet: &[SmolStr], word: &str) -> SmolStr {
-    word.trim_start_matches(|x: char| !alphabet.contains(&SmolStr::from(x.to_string())))
-        .into()
-}
-
-fn trim_end(alphabet: &[SmolStr], word: &str) -> SmolStr {
-    word.trim_end_matches(|x: char| !alphabet.contains(&SmolStr::from(x.to_string())))
-        .into()
-}
-
-fn trim_both(alphabet: &[SmolStr], word: &str) -> SmolStr {
-    word.trim_matches(|x: char| !alphabet.contains(&SmolStr::from(x.to_string())))
-        .into()
-}
-
+#[inline(always)]
 pub fn lower_case(s: &str) -> SmolStr {
     s.chars()
         .map(|c| c.to_lowercase().collect::<String>())
         .collect::<SmolStr>()
 }
 
+#[inline(always)]
 pub fn upper_case(s: &str) -> SmolStr {
     s.chars()
         .map(|c| c.to_uppercase().collect::<String>())
         .collect::<SmolStr>()
 }
 
+#[inline(always)]
 pub fn upper_first(s: &str) -> SmolStr {
     let mut c = s.chars();
     match c.next() {
@@ -35,47 +24,80 @@ pub fn upper_first(s: &str) -> SmolStr {
     }
 }
 
-static PUNCTUATION: &[&str] = &[
-    "!", "\"", "#", "$", "%", "&", "'", "(", ")", "*", "+", ",", "-", ".", "/", ":", ";", "<", "=",
-    ">", "?", "@", "[", "\\", "]", "^", "_", "`", "{", "|", "}", "~",
-];
-
-fn without_punctuation(alphabet: &[SmolStr]) -> Vec<SmolStr> {
-    let x = alphabet
-        .iter()
-        .filter(|x| !PUNCTUATION.contains(&x.as_str()))
-        .map(|x| x.to_owned());
-    x.collect::<Vec<_>>()
+#[inline(always)]
+pub fn lower_first(s: &str) -> SmolStr {
+    let mut c = s.chars();
+    match c.next() {
+        None => SmolStr::new(""),
+        Some(f) => SmolStr::from(f.to_lowercase().collect::<String>() + c.as_str()),
+    }
 }
 
-pub fn word_variants(alphabet: &[SmolStr], word: &str) -> Vec<SmolStr> {
-    let alphabet = without_punctuation(alphabet);
+#[inline(always)]
+pub fn contains_uncased_characters(s: &str) -> bool {
+    s.chars().any(|x| !x.is_lowercase() && !x.is_uppercase())
+}
 
-    let mut base = vec![
-        word.into(),
-        trim_start(&alphabet, word),
-        trim_end(&alphabet, word),
-        trim_both(&alphabet, word),
-    ];
+// static PUNCTUATION: &[&str] = &[
+//     "!", "\"", "#", "$", "%", "&", "'", "(", ")", "*", "+", ",", "-", ".", "/", ":", ";", "<", "=",
+//     ">", "?", "@", "[", "\\", "]", "^", "_", "`", "{", "|", "}", "~",
+// ];
 
-    base.append(
-        &mut base
-            .iter()
-            .filter(|x| is_all_caps(x))
-            .map(|x| upper_first(&lower_case(x)))
-            .collect(),
-    );
-    base.append(&mut base.iter().map(|x| lower_case(x)).collect());
+// fn without_punctuation(alphabet: &[SmolStr]) -> Vec<SmolStr> {
+//     let x = alphabet
+//         .iter()
+//         .filter(|x| !PUNCTUATION.contains(&x.as_str()))
+//         .map(|x| x.to_owned());
+//     x.collect::<Vec<_>>()
+// }
 
-    let mut ret = vec![];
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Case {
+    Upper,
+    Lower,
+    Neither
+}
 
-    for b in base.into_iter() {
-        if !ret.contains(&b) {
-            ret.push(b);
+impl Case {
+    #[inline(always)]
+    fn new(ch: char) -> Case {
+        if ch.is_lowercase() {
+            Case::Lower
+        } else if ch.is_uppercase() {
+            Case::Upper
+        } else {
+            Case::Neither
         }
     }
+}
 
-    ret
+pub fn is_mixed_case(word: &str) -> bool {
+    let mut chars = word.chars();
+    let mut last_case = match chars.next() {
+        Some(ch) => Case::new(ch),
+        None => return false
+    };
+
+    if last_case == Case::Neither {
+        return false;
+    }
+
+    let mut case_changes = 0;
+
+    for ch in chars {
+        let next_case = Case::new(ch);
+
+        match (last_case, next_case) {
+            (_, Case::Neither) => return false,
+            (Case::Lower, Case::Upper) => case_changes += 2,
+            (Case::Upper, Case::Lower) => case_changes += 1,
+            _ => {}
+        }
+
+        last_case = next_case;
+    }
+
+    case_changes > 1
 }
 
 pub fn is_all_caps(word: &str) -> bool {
@@ -86,19 +108,133 @@ pub fn is_first_caps(word: &str) -> bool {
     upper_first(word) == word
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum CaseMutation {
+    FirstCaps,
+    AllCaps,
+    None
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum CaseMode {
+    FirstResults,
+    MergeAll
+}
+
+pub struct CaseHandler {
+    pub mutation: CaseMutation,
+    pub mode: CaseMode,
+    pub words: Vec<SmolStr>
+}
+
+fn mixed_case_word_variants(word: &str) -> CaseHandler {
+    // The input string should be accepted IFF it is accepted exactly as given,
+    // or with the initial letter downcased, or all upper.
+    //
+    // Crucially, it should not be accepted if it is only accepted when all lowercased.
+    
+    let words = vec![
+        word.into(),
+        upper_first(word),
+        lower_first(word),
+        upper_case(word)
+    ].into_iter().unique().collect();
+
+    CaseHandler {
+        mutation: CaseMutation::None,
+        mode: CaseMode::FirstResults,
+        words
+    }
+}
+
+pub fn word_variants(word: &str) -> CaseHandler {
+    // if contains_uncased_characters(word) {
+    //     return CaseHandler {
+    //         mode: CaseMode::FirstResults,
+    //         mutation: CaseMutation::None,
+    //         words: vec![SmolStr::new(word)]
+    //     };
+    // }
+
+    if is_mixed_case(word) {
+        return mixed_case_word_variants(word);
+    }
+
+    let mut base = vec![
+        SmolStr::new(word),
+    ];
+
+    base.append(
+        &mut base
+            .iter()
+            .filter(|x| is_all_caps(x))
+            .map(|x| upper_first(&lower_case(x)))
+            .collect(),
+    );
+    
+    base.append(&mut base.iter().map(|x| lower_case(x)).collect());
+
+    let mut words = vec![];
+
+    for b in base.into_iter() {
+        if !words.contains(&b) {
+            words.push(b);
+        }
+    }
+
+    let (mutation, mut mode) = if is_first_caps(word) {
+        (CaseMutation::FirstCaps, CaseMode::MergeAll)
+    } else if is_all_caps(word) {
+        (CaseMutation::AllCaps, CaseMode::MergeAll)
+    } else {
+        (CaseMutation::None, CaseMode::MergeAll)
+    };
+
+    CaseHandler { mode, mutation, words }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn testsd() {
+    fn test() {
         let a = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
             .chars()
             .map(|c| SmolStr::from(c.to_string()))
             .collect::<Vec<SmolStr>>();
-        println!("{:?}", word_variants(&a, "FOO"));
-        println!("{:?}", word_variants(&a, "Giella"));
-        println!("{:?}", word_variants(&a, "abc"));
-        println!("{:?}", word_variants(&a, "$GIELLA$"));
+        // println!("{:?}", word_variants(&a, "FOO"));
+        // println!("{:?}", word_variants(&a, "Giella"));
+        // println!("{:?}", word_variants(&a, "abc"));
+        // println!("{:?}", word_variants(&a, "$GIELLA$"));
+    }
+
+    #[test]
+    fn mixed_case() {
+        assert_eq!(is_mixed_case("McDonald"), true);
+        assert_eq!(is_mixed_case("Mcdonald"), false);
+        assert_eq!(is_mixed_case("McDoNaLd"), true);
+        assert_eq!(is_mixed_case("MCDONALD"), false);
+        assert_eq!(is_mixed_case("mcDonald"), true);
+        assert_eq!(is_mixed_case("mcdonald"), false);
+
+        assert_eq!(is_mixed_case("ab"), false);
+        assert_eq!(is_mixed_case("aB"), true);
+        assert_eq!(is_mixed_case("Ab"), false);
+        assert_eq!(is_mixed_case("AB"), false);
+
+        assert_eq!(is_mixed_case("A"), false);
+        assert_eq!(is_mixed_case("a"), false);
+        assert_eq!(is_mixed_case("aS:"), false);
+        assert_eq!(is_mixed_case(":"), false);
+        
+
+
+        assert_eq!(is_mixed_case("SGPai"), false);
+        assert_eq!(is_mixed_case("SgPaI"), true);
+        assert_eq!(is_mixed_case("SGPaiSGP"), true);
+        assert_eq!(is_mixed_case("sgpAI"), true);
+
     }
 }

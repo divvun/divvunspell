@@ -157,7 +157,7 @@ dependencies = [
  "ansi_term",
  "atty",
  "bitflags",
- "strsim",
+ "strsim 0.8.0",
  "textwrap",
  "unicode-width",
  "vec_map",
@@ -322,6 +322,7 @@ dependencies = [
  "box_format",
  "byteorder",
  "hashbrown",
+ "itertools",
  "libc",
  "lifeguard",
  "memmap",
@@ -331,6 +332,7 @@ dependencies = [
  "serde-xml-rs",
  "serde_json",
  "smol_str",
+ "strsim 0.9.2",
  "tempdir",
  "unic-char-property",
  "unic-char-range",
@@ -438,6 +440,15 @@ dependencies = [
  "number_prefix",
  "rayon",
  "regex",
+]
+
+[[package]]
+name = "itertools"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b8467d9c1cebe26feb08c640139247fac215782d35371ade9a2136ed6085358"
+dependencies = [
+ "either",
 ]
 
 [[package]]
@@ -961,6 +972,12 @@ name = "strsim"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ea5119cdb4c55b55d432abb513a0429384878c15dde60cc77b1c99de1a95a6a"
+
+[[package]]
+name = "strsim"
+version = "0.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "032c03039aae92b350aad2e3779c352e104d919cb192ba2fabbd7b831ce4f0f6"
 
 [[package]]
 name = "structopt"

@@ -11,6 +11,7 @@ use self::worker::SpellerWorker;
 use crate::speller::suggestion::Suggestion;
 use crate::transducer::Transducer;
 use crate::types::{SymbolNumber, Weight};
+use crate::tokenizer::case_handling::CaseHandler;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SpellerConfig {
@@ -95,7 +96,7 @@ where
     pub fn is_correct(self: Arc<Self>, word: &str) -> bool {
         use crate::tokenizer::case_handling::*;
 
-        let words = word_variants(self.lexicon().alphabet().key_table(), word);
+        let words = word_variants(word).words;
 
         for word in words.into_iter() {
             let worker = SpellerWorker::new(
@@ -116,58 +117,97 @@ where
         self.suggest_with_config(word, &SpellerConfig::default())
     }
 
+    pub fn suggest_with_config(
+        self: Arc<Self>,
+        word: &str,
+        config: &SpellerConfig,
+    ) -> Vec<Suggestion> {
+        use crate::tokenizer::case_handling::*;
+
+        if config.case_handling {
+            let case_handler = word_variants(word);
+            
+            self.suggest_case(case_handler, config)
+        } else {
+            self.suggest_single(word, config)
+        }
+    }
+
     fn suggest_single(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
         let worker = SpellerWorker::new(self.clone(), self.to_input_vec(word), config.clone());
 
         worker.suggest()
     }
 
-    fn suggest_caps_merging(
-        self: Arc<Self>,
-        ref_word: &str,
-        words: Vec<SmolStr>,
-        config: &SpellerConfig,
-    ) -> Vec<Suggestion> {
+    fn suggest_case(self: Arc<Self>, case: CaseHandler, config: &SpellerConfig) -> Vec<Suggestion> {
+        use crate::tokenizer::case_handling::{CaseMutation, CaseMode};
         use crate::tokenizer::case_handling::*;
 
+        let CaseHandler { mutation, mode, words } = case;
         let mut best: HashMap<SmolStr, f32> = HashMap::new();
 
-        for word in words.into_iter() {
+        for (n, word) in words.iter().enumerate() {
             let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
+            let mut suggestions = worker.suggest();
 
-            let suggestions = worker.suggest();
-
-            if !suggestions.is_empty() {
-                let r = if is_all_caps(ref_word) {
+            match mutation {
+                CaseMutation::FirstCaps => {
                     suggestions
-                        .into_iter()
-                        .map(|mut x| {
-                            x.value = upper_case(x.value());
-                            x
-                        })
-                        .collect()
-                } else if is_first_caps(ref_word) {
-                    suggestions
-                        .into_iter()
-                        .map(|mut x| {
+                        .iter_mut()
+                        .for_each(|x| {
                             x.value = upper_first(x.value());
-                            x
-                        })
-                        .collect()
-                } else {
+                        });
+                }
+                CaseMutation::AllCaps => {
                     suggestions
-                };
+                        .iter_mut()
+                        .for_each(|x| {
+                            x.value = upper_case(x.value());
+                        });
+                }
+                _ => {}
+            }
 
-                for sugg in r.into_iter() {
-                    best.entry(sugg.value.clone())
-                        .and_modify(|entry| {
-                            if entry as &_ > &sugg.weight {
-                                *entry = sugg.weight
-                            }
-                        })
-                        .or_insert(sugg.weight);
+            static WEIGHT: f32 = 5f32;
+
+            match mode {
+                CaseMode::MergeAll => {
+                    for sugg in suggestions.into_iter() {
+                        let penalty_start = if !sugg.value().starts_with(word.chars().next().unwrap()) {
+                            WEIGHT * 2.0
+                        } else {
+                            0.0
+                        };
+                        let penalty_end = if !sugg.value().ends_with(word.chars().rev().next().unwrap()) {
+                            WEIGHT * 2.0
+                        } else {
+                            0.0
+                        };
+
+                        let distance = strsim::damerau_levenshtein(&word.as_str(), sugg.value());
+                        let penalty_middle = WEIGHT * distance as f32;
+                        let additional_weight = penalty_start + penalty_end + penalty_middle;
+
+                        best.entry(sugg.value.clone())
+                            .and_modify(|entry| {
+                                let weight = sugg.weight + additional_weight;
+                                if entry as &_ > &weight {
+                                    *entry = weight
+                                }
+                            })
+                            .or_insert(sugg.weight + additional_weight);
+                    }
+                }
+                CaseMode::FirstResults => {
+                    if !suggestions.is_empty() {
+                        return suggestions;
+                    }
                 }
             }
+        }
+
+        if best.is_empty() {
+            return vec![];
         }
 
         let mut out = best
@@ -182,65 +222,5 @@ where
             out.truncate(n_best);
         }
         out
-    }
-
-    fn suggest_caps(
-        self: Arc<Self>,
-        ref_word: &str,
-        words: Vec<SmolStr>,
-        config: &SpellerConfig,
-    ) -> Vec<Suggestion> {
-        use crate::tokenizer::case_handling::*;
-
-        for word in words.into_iter() {
-            let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
-
-            let suggestions = worker.suggest();
-
-            if !suggestions.is_empty() {
-                if is_all_caps(ref_word) {
-                    return suggestions
-                        .into_iter()
-                        .map(|mut x| {
-                            x.value = upper_case(x.value());
-                            x
-                        })
-                        .collect();
-                } else if is_first_caps(ref_word) {
-                    return suggestions
-                        .into_iter()
-                        .map(|mut x| {
-                            x.value = upper_first(x.value());
-                            x
-                        })
-                        .collect();
-                }
-
-                return suggestions;
-            }
-        }
-
-        vec![]
-    }
-
-    pub fn suggest_with_config(
-        self: Arc<Self>,
-        word: &str,
-        config: &SpellerConfig,
-    ) -> Vec<Suggestion> {
-        use crate::tokenizer::case_handling::*;
-
-        if config.case_handling {
-            let words = word_variants(self.lexicon().alphabet().key_table(), word);
-
-            // TODO: check for the actual caps patterns, this is rather naive
-            if words.len() == 2 || words.len() == 3 {
-                self.suggest_caps_merging(word, words, config)
-            } else {
-                self.suggest_caps(word, words, config)
-            }
-        } else {
-            self.suggest_single(word, config)
-        }
     }
 }

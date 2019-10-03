@@ -186,7 +186,8 @@ fn main() {
         .and_then(|v| v.parse::<usize>().ok());
     let max_weight = matches
         .value_of("weight")
-        .and_then(|v| v.parse::<f32>().ok());
+        .and_then(|v| v.parse::<f32>().ok().filter(|x| x > &0f32))
+        .unwrap_or(10000f32);
 
     let words: Vec<String> = match matches.values_of("WORDS") {
         Some(v) => v.map(|x| x.to_string()).collect(),
@@ -207,7 +208,7 @@ fn main() {
     };
 
     let suggest_cfg = SpellerConfig {
-        max_weight,
+        max_weight: Some(max_weight),
         n_best,
         beam: None,
         pool_max: 128,

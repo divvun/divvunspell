@@ -470,7 +470,7 @@ where
             };
         }
 
-        if c.n_best.is_some() {
+        if c.n_best.is_some() && suggestions.len() >= c.n_best.unwrap() {
             if let Some(sugg) = suggestions.last() {
                 return sugg.weight();
             }
