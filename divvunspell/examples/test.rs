@@ -297,7 +297,7 @@ fn main() {
         pool_max: 128,
         pool_start: 128,
         seen_node_sample_rate: 20,
-        with_caps: true,
+        case_handling: true,
     };
 
     // let res: Vec<Vec<Suggestion>> = human_rights.iter().map(|w| speller.suggest(w, &cfg)).collect();

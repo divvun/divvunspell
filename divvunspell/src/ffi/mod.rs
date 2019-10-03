@@ -127,7 +127,7 @@ pub extern "C" fn chfst_suggest(
             pool_max: 128,
             pool_start: 128,
             seen_node_sample_rate: 20,
-            with_caps: true,
+            case_handling: true,
         },
     );
 
@@ -193,7 +193,7 @@ pub extern "C" fn speller_suggest(
             pool_max: 128,
             pool_start: 128,
             seen_node_sample_rate: 20,
-            with_caps: true,
+            case_handling: true,
         },
     );
 

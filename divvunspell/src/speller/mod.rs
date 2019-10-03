@@ -17,7 +17,7 @@ pub struct SpellerConfig {
     pub n_best: Option<usize>,
     pub max_weight: Option<Weight>,
     pub beam: Option<Weight>,
-    pub with_caps: bool,
+    pub case_handling: bool,
     pub pool_start: usize,
     pub pool_max: usize,
     pub seen_node_sample_rate: u64,
@@ -29,7 +29,7 @@ impl SpellerConfig {
             n_best: None,
             max_weight: None,
             beam: None,
-            with_caps: true,
+            case_handling: true,
             pool_start: 128,
             pool_max: 128,
             seen_node_sample_rate: 20,
@@ -93,7 +93,7 @@ where
 
     #[allow(clippy::wrong_self_convention)]
     pub fn is_correct(self: Arc<Self>, word: &str) -> bool {
-        use crate::tokenizer::caps::*;
+        use crate::tokenizer::case_handling::*;
 
         let words = word_variants(self.lexicon().alphabet().key_table(), word);
 
@@ -128,7 +128,7 @@ where
         words: Vec<SmolStr>,
         config: &SpellerConfig,
     ) -> Vec<Suggestion> {
-        use crate::tokenizer::caps::*;
+        use crate::tokenizer::case_handling::*;
 
         let mut best: HashMap<SmolStr, f32> = HashMap::new();
 
@@ -190,7 +190,7 @@ where
         words: Vec<SmolStr>,
         config: &SpellerConfig,
     ) -> Vec<Suggestion> {
-        use crate::tokenizer::caps::*;
+        use crate::tokenizer::case_handling::*;
 
         for word in words.into_iter() {
             let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
@@ -228,9 +228,9 @@ where
         word: &str,
         config: &SpellerConfig,
     ) -> Vec<Suggestion> {
-        use crate::tokenizer::caps::*;
+        use crate::tokenizer::case_handling::*;
 
-        if config.with_caps {
+        if config.case_handling {
             let words = word_variants(self.lexicon().alphabet().key_table(), word);
 
             // TODO: check for the actual caps patterns, this is rather naive

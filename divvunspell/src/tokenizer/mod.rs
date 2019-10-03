@@ -1,6 +1,6 @@
 use word::{WordBoundIndices, Words};
 
-pub mod caps;
+pub mod case_handling;
 pub mod word;
 mod word_break;
 

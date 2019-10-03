@@ -17,7 +17,7 @@ static CFG: SpellerConfig = SpellerConfig {
     pool_max: 128,
     pool_start: 128,
     seen_node_sample_rate: 15,
-    with_caps: true,
+    case_handling: true,
 };
 
 fn load_words(
