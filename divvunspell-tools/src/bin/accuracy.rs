@@ -2,10 +2,9 @@ use std::error::Error;
 use std::time::{Instant, SystemTime};
 
 use clap::{App, AppSettings, Arg};
-use divvunspell::archive::{BoxSpellerArchive, ZipSpellerArchive};
+use divvunspell::archive::{ZipSpellerArchive};
 use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::{CaseHandlingConfig, SpellerConfig};
-use divvunspell::transducer::thfst::ThfstTransducer;
 use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::Serialize;

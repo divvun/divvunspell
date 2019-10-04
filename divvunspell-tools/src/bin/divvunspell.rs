@@ -194,7 +194,7 @@ fn main() {
     }
 
     if let Some(v) = matches.value_of("nbest") {
-        if let Some(v) = v.parse::<usize>().ok() {
+        if let Ok(v) = v.parse::<usize>() {
             if v == 0 {
                 suggest_cfg.n_best = None;
             } else {

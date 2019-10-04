@@ -37,6 +37,7 @@ impl std::cmp::PartialEq for TreeNode {
 }
 
 impl std::cmp::Ord for TreeNode {
+    #[allow(clippy::comparison_chain)]
     fn cmp(&self, other: &Self) -> Ordering {
         if self.weight < other.weight {
             Ordering::Less
