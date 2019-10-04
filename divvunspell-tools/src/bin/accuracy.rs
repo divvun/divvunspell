@@ -4,7 +4,7 @@ use std::time::{Instant, SystemTime};
 use clap::{App, AppSettings, Arg};
 use divvunspell::archive::{BoxSpellerArchive, ZipSpellerArchive};
 use divvunspell::speller::suggestion::Suggestion;
-use divvunspell::speller::SpellerConfig;
+use divvunspell::speller::{SpellerConfig, CaseHandlingConfig};
 use divvunspell::transducer::thfst::ThfstTransducer;
 use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
@@ -17,7 +17,7 @@ static CFG: SpellerConfig = SpellerConfig {
     pool_max: 128,
     pool_start: 128,
     seen_node_sample_rate: 15,
-    case_handling: true,
+    case_handling: Some(CaseHandlingConfig::default()),
 };
 
 fn load_words(

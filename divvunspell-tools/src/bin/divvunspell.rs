@@ -181,13 +181,27 @@ fn main() {
     let is_suggesting = matches.is_present("suggest") || is_always_suggesting;
     let is_json = matches.is_present("json");
 
-    let n_best = matches
-        .value_of("nbest")
-        .and_then(|v| v.parse::<usize>().ok());
-    let max_weight = matches
-        .value_of("weight")
-        .and_then(|v| v.parse::<f32>().ok().filter(|x| x > &0f32))
-        .unwrap_or(10000f32);
+    let mut suggest_cfg = SpellerConfig::default();
+
+    if let Some(v) = matches.value_of("nbest") {
+        if let Some(v) = v.parse::<usize>().ok() {
+            if v == 0 {
+                suggest_cfg.n_best = None;
+            } else {
+                suggest_cfg.n_best = Some(v);
+            }
+        }
+    }
+
+    if let Some(v) = matches.value_of("weight") {
+        if let Some(v) = v.parse::<f32>().ok().filter(|x| x >= &0.0) {
+            if v == 0.0 {
+                suggest_cfg.max_weight = None;
+            } else {
+                suggest_cfg.max_weight = Some(v);
+            }
+        }
+    }
 
     let words: Vec<String> = match matches.values_of("WORDS") {
         Some(v) => v.map(|x| x.to_string()).collect(),
@@ -205,16 +219,6 @@ fn main() {
         Box::new(JsonWriter::new())
     } else {
         Box::new(StdoutWriter)
-    };
-
-    let suggest_cfg = SpellerConfig {
-        max_weight: Some(max_weight),
-        n_best,
-        beam: None,
-        pool_max: 128,
-        pool_start: 128,
-        seen_node_sample_rate: 20,
-        case_handling: true,
     };
 
     if let Some(zhfst_file) = matches.value_of("zhfst") {

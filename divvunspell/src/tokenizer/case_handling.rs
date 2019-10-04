@@ -182,7 +182,7 @@ pub fn word_variants(word: &str) -> CaseHandler {
         }
     }
 
-    let (mutation, mut mode) = if is_first_caps(word) {
+    let (mutation, mode) = if is_first_caps(word) {
         (CaseMutation::FirstCaps, CaseMode::MergeAll)
     } else if is_all_caps(word) {
         (CaseMutation::AllCaps, CaseMode::MergeAll)

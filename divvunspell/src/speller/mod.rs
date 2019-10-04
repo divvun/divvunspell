@@ -13,27 +13,45 @@ use crate::transducer::Transducer;
 use crate::types::{SymbolNumber, Weight};
 use crate::tokenizer::case_handling::CaseHandler;
 
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CaseHandlingConfig {
+    start_penalty: f32,
+    end_penalty: f32,
+    mid_penalty: f32,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SpellerConfig {
     pub n_best: Option<usize>,
     pub max_weight: Option<Weight>,
     pub beam: Option<Weight>,
-    pub case_handling: bool,
+    pub case_handling: Option<CaseHandlingConfig>,
     pub pool_start: usize,
     pub pool_max: usize,
     pub seen_node_sample_rate: u64,
 }
 
 impl SpellerConfig {
-    pub fn default() -> SpellerConfig {
+    pub const fn default() -> SpellerConfig {
         SpellerConfig {
-            n_best: None,
-            max_weight: None,
+            n_best: Some(10),
+            max_weight: Some(10000.0),
             beam: None,
-            case_handling: true,
+            case_handling: Some(CaseHandlingConfig::default()),
             pool_start: 128,
             pool_max: 128,
             seen_node_sample_rate: 20,
+        }
+    }
+}
+
+impl CaseHandlingConfig {
+    pub const fn default() -> CaseHandlingConfig {
+        CaseHandlingConfig {
+            start_penalty: 10.0,
+            end_penalty: 10.0,
+            mid_penalty: 5.0
         }
     }
 }
@@ -124,10 +142,10 @@ where
     ) -> Vec<Suggestion> {
         use crate::tokenizer::case_handling::*;
 
-        if config.case_handling {
+        if let Some(case_handling) = config.case_handling.as_ref() {
             let case_handler = word_variants(word);
             
-            self.suggest_case(case_handler, config)
+            self.suggest_case(case_handler, config, case_handling)
         } else {
             self.suggest_single(word, config)
         }
@@ -139,14 +157,14 @@ where
         worker.suggest()
     }
 
-    fn suggest_case(self: Arc<Self>, case: CaseHandler, config: &SpellerConfig) -> Vec<Suggestion> {
+    fn suggest_case(self: Arc<Self>, case: CaseHandler, config: &SpellerConfig, case_handling: &CaseHandlingConfig) -> Vec<Suggestion> {
         use crate::tokenizer::case_handling::{CaseMutation, CaseMode};
         use crate::tokenizer::case_handling::*;
 
         let CaseHandler { mutation, mode, words } = case;
         let mut best: HashMap<SmolStr, f32> = HashMap::new();
 
-        for (n, word) in words.iter().enumerate() {
+        for word in words.into_iter() {
             let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
             let mut suggestions = worker.suggest();
 
@@ -168,24 +186,22 @@ where
                 _ => {}
             }
 
-            static WEIGHT: f32 = 5f32;
-
             match mode {
                 CaseMode::MergeAll => {
                     for sugg in suggestions.into_iter() {
                         let penalty_start = if !sugg.value().starts_with(word.chars().next().unwrap()) {
-                            WEIGHT * 2.0
+                            case_handling.start_penalty
                         } else {
                             0.0
                         };
                         let penalty_end = if !sugg.value().ends_with(word.chars().rev().next().unwrap()) {
-                            WEIGHT * 2.0
+                            case_handling.end_penalty
                         } else {
                             0.0
                         };
 
                         let distance = strsim::damerau_levenshtein(&word.as_str(), sugg.value());
-                        let penalty_middle = WEIGHT * distance as f32;
+                        let penalty_middle = case_handling.mid_penalty * distance as f32;
                         let additional_weight = penalty_start + penalty_end + penalty_middle;
 
                         best.entry(sugg.value.clone())
