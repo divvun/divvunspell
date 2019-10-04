@@ -161,6 +161,11 @@ fn main() {
                 .help("Maximum number of results for suggestions"),
         )
         .arg(
+            Arg::with_name("no-case-handling")
+                .long("no-case-handling")
+                .help("Disables case handling"),
+        )
+        .arg(
             Arg::with_name("json")
                 .long("json")
                 .help("Output results in JSON"),
@@ -180,8 +185,13 @@ fn main() {
     let is_always_suggesting = matches.is_present("always-suggest");
     let is_suggesting = matches.is_present("suggest") || is_always_suggesting;
     let is_json = matches.is_present("json");
+    let no_case_handling = matches.is_present("no-case-handling");
 
     let mut suggest_cfg = SpellerConfig::default();
+
+    if no_case_handling {
+        suggest_cfg.case_handling = None;
+    }
 
     if let Some(v) = matches.value_of("nbest") {
         if let Some(v) = v.parse::<usize>().ok() {

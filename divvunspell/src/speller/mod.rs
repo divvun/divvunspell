@@ -9,10 +9,9 @@ use std::sync::Arc;
 
 use self::worker::SpellerWorker;
 use crate::speller::suggestion::Suggestion;
+use crate::tokenizer::case_handling::CaseHandler;
 use crate::transducer::Transducer;
 use crate::types::{SymbolNumber, Weight};
-use crate::tokenizer::case_handling::CaseHandler;
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CaseHandlingConfig {
@@ -51,7 +50,7 @@ impl CaseHandlingConfig {
         CaseHandlingConfig {
             start_penalty: 10.0,
             end_penalty: 10.0,
-            mid_penalty: 5.0
+            mid_penalty: 5.0,
         }
     }
 }
@@ -103,7 +102,9 @@ where
         word.chars()
             .map(|ch| {
                 let s = ch.to_string();
-                key_table.iter().position(|x| x == &s)
+                key_table
+                    .iter()
+                    .position(|x| x == &s)
                     .map(|x| x as u16)
                     .unwrap_or_else(|| alphabet.unknown().unwrap_or(0u16))
             })
@@ -144,7 +145,7 @@ where
 
         if let Some(case_handling) = config.case_handling.as_ref() {
             let case_handler = word_variants(word);
-            
+
             self.suggest_case(case_handler, config, case_handling)
         } else {
             self.suggest_single(word, config)
@@ -157,11 +158,20 @@ where
         worker.suggest()
     }
 
-    fn suggest_case(self: Arc<Self>, case: CaseHandler, config: &SpellerConfig, case_handling: &CaseHandlingConfig) -> Vec<Suggestion> {
-        use crate::tokenizer::case_handling::{CaseMutation, CaseMode};
+    fn suggest_case(
+        self: Arc<Self>,
+        case: CaseHandler,
+        config: &SpellerConfig,
+        case_handling: &CaseHandlingConfig,
+    ) -> Vec<Suggestion> {
         use crate::tokenizer::case_handling::*;
+        use crate::tokenizer::case_handling::{CaseMode, CaseMutation};
 
-        let CaseHandler { mutation, mode, words } = case;
+        let CaseHandler {
+            mutation,
+            mode,
+            words,
+        } = case;
         let mut best: HashMap<SmolStr, f32> = HashMap::new();
 
         for word in words.into_iter() {
@@ -170,18 +180,14 @@ where
 
             match mutation {
                 CaseMutation::FirstCaps => {
-                    suggestions
-                        .iter_mut()
-                        .for_each(|x| {
-                            x.value = upper_first(x.value());
-                        });
+                    suggestions.iter_mut().for_each(|x| {
+                        x.value = upper_first(x.value());
+                    });
                 }
                 CaseMutation::AllCaps => {
-                    suggestions
-                        .iter_mut()
-                        .for_each(|x| {
-                            x.value = upper_case(x.value());
-                        });
+                    suggestions.iter_mut().for_each(|x| {
+                        x.value = upper_case(x.value());
+                    });
                 }
                 _ => {}
             }
@@ -189,16 +195,18 @@ where
             match mode {
                 CaseMode::MergeAll => {
                     for sugg in suggestions.into_iter() {
-                        let penalty_start = if !sugg.value().starts_with(word.chars().next().unwrap()) {
-                            case_handling.start_penalty
-                        } else {
-                            0.0
-                        };
-                        let penalty_end = if !sugg.value().ends_with(word.chars().rev().next().unwrap()) {
-                            case_handling.end_penalty
-                        } else {
-                            0.0
-                        };
+                        let penalty_start =
+                            if !sugg.value().starts_with(word.chars().next().unwrap()) {
+                                case_handling.start_penalty
+                            } else {
+                                0.0
+                            };
+                        let penalty_end =
+                            if !sugg.value().ends_with(word.chars().rev().next().unwrap()) {
+                                case_handling.end_penalty
+                            } else {
+                                0.0
+                            };
 
                         let distance = strsim::damerau_levenshtein(&word.as_str(), sugg.value());
                         let penalty_middle = case_handling.mid_penalty * distance as f32;

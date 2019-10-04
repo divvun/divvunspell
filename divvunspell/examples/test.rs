@@ -290,15 +290,7 @@ fn main() {
     //     "leat", "dego", "vieljačagat"];
 
     // let correct: Vec<bool> = human_rights.iter().map(|w| speller.is_correct(w)).collect();
-    let mut cfg = SpellerConfig {
-        max_weight: Some(100.0),
-        n_best: Some(5),
-        beam: None,
-        pool_max: 128,
-        pool_start: 128,
-        seen_node_sample_rate: 20,
-        case_handling: true,
-    };
+    let mut cfg = SpellerConfig::default();
 
     // let res: Vec<Vec<Suggestion>> = human_rights.iter().map(|w| speller.suggest(w, &cfg)).collect();
 
