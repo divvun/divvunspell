@@ -2,7 +2,7 @@ use std::error::Error;
 use std::time::{Instant, SystemTime};
 
 use clap::{App, AppSettings, Arg};
-use divvunspell::archive::{ZipSpellerArchive};
+use divvunspell::archive::ZipSpellerArchive;
 use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::{CaseHandlingConfig, SpellerConfig};
 use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};

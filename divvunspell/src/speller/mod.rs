@@ -174,7 +174,7 @@ where
         } = case;
         let mut best: HashMap<SmolStr, f32> = HashMap::new();
 
-        for word in words.into_iter() {
+        for word in words.iter() {
             let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
             let mut suggestions = worker.suggest();
 
@@ -208,7 +208,9 @@ where
                                 0.0
                             };
 
-                        let distance = strsim::damerau_levenshtein(&word.as_str(), sugg.value());
+                        let distance =
+                            strsim::damerau_levenshtein(&words[0].as_str(), &word.as_str())
+                                + strsim::damerau_levenshtein(&word.as_str(), sugg.value());
                         let penalty_middle = case_handling.mid_penalty * distance as f32;
                         let additional_weight = penalty_start + penalty_end + penalty_middle;
 
