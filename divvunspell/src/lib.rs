@@ -1,6 +1,3 @@
-#[global_allocator]
-static GLOBAL: mimallocator::Mimalloc = mimallocator::Mimalloc;
-
 pub mod archive;
 pub mod constants;
 

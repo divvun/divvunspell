@@ -2,15 +2,8 @@ ifdef CARGO_FEATURES
 FLAGS += --features $(CARGO_FEATURES)
 endif
 
-ifdef CARGO_BIN
-FLAGS += --bin $(CARGO_BIN)
-else
-FLAGS += --lib
-endif
-
-ifeq "$(CONFIGURATION)" "Release"
+# Always want a release build for Divvunspell
 FLAGS += --release
-endif
 
 xcode:
 	$(CARGO_HOME)/bin/cargo build $(FLAGS)

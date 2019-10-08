@@ -457,7 +457,6 @@ dependencies = [
  "lifeguard",
  "log",
  "memmap",
- "mimallocator",
  "parking_lot",
  "serde",
  "serde-xml-rs",
@@ -746,25 +745,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce6075db033bbbb7ee5a0bbd3a3186bbae616f57fb001c485c7ff77955f8177f"
 dependencies = [
  "rustc_version",
-]
-
-[[package]]
-name = "mimalloc-sys"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4aa3cefb626f6ae3d0b2f71c5378c89d2b1d4d7bc246b0ca9a7ee61a4daad291"
-dependencies = [
- "cc",
- "libc",
-]
-
-[[package]]
-name = "mimallocator"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d44fe4ebf6b538fcf39d9975c2b90bb3232d1ba8e8bffeacd004f27b20c577a"
-dependencies = [
- "mimalloc-sys",
 ]
 
 [[package]]
