@@ -411,48 +411,12 @@ pub(crate) mod ffi {
         suggestions.len()
     }
 
-    #[cthulhu::invoke(return_marshaler = "cursed::StrMarshaler")]
+    #[cthulhu::invoke(return_marshaler = "cursed::StringMarshaler")]
     pub extern fn divvun_vec_suggestion_get_value(
         #[marshal(SuggestionVecRefMarshaler)]
         suggestions: &[Suggestion],
         index: usize
-    ) -> &str {
-        suggestions[index].value()
+    ) -> String {
+        suggestions[index].value().to_string()
     }
-
-    // #[no_mangle]
-    // pub extern "C" fn divvun_vec_suggestion_get_value(
-    //     suggestions: <SuggestionVecRefMarshaler as ::cursed::InputType>::Foreign,//*const ::std::ffi::c_void,
-    //     index: usize,
-    //     __exception: ::cursed::ErrCallback,
-    //     __return: ::cursed::RetCallback<<cursed::StrMarshaler as ::cursed::ReturnType>::Foreign>,
-    // ) {
-    //     let suggestions: &[Suggestion] =
-    //         match SuggestionVecRefMarshaler::from_foreign(suggestions) {
-    //             Ok(v) => v,
-    //             Err(e) => {
-    //                 if let Some(callback) = __exception {
-    //                     let s = std::ffi::CString::new("<unknown>".to_string()).unwrap();
-    //                     callback(s.as_ptr().cast());
-    //                 }
-    //                 return;
-    //             }
-    //         };
-    //     #[inline(always)]
-    //     fn divvun_vec_suggestion_get_value(suggestions: &[Suggestion], index: usize) -> &str {
-    //         suggestions[index].value()
-    //     }
-    //     let result = divvun_vec_suggestion_get_value(suggestions, index);
-    //     if let Some(__return) = __return {
-    //         match cursed::StrMarshaler::to_foreign(result) {
-    //             Ok(v) => __return(v),
-    //             Err(e) => {
-    //                 if let Some(callback) = __exception {
-    //                     let s = std::ffi::CString::new("<unknown>".to_string()).unwrap();
-    //                     callback(s.as_ptr().cast());
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
 }
