@@ -46,12 +46,12 @@ where
         speller: Arc<Speller<F, T, U>>,
         input: Vec<SymbolNumber>,
         config: SpellerConfig,
-    ) -> Arc<SpellerWorker<F, T, U>> {
-        Arc::new(SpellerWorker {
+    ) -> SpellerWorker<F, T, U> {
+        SpellerWorker {
             speller,
             input,
             config,
-        })
+        }
     }
 
     #[inline(always)]
@@ -211,6 +211,8 @@ where
         let lexicon = self.speller.lexicon();
         let identity = lexicon.alphabet().identity();
         let mut next = lexicon.next(next_node.lexicon_state, input_sym).unwrap();
+
+        // TODO: Potential infinite loop!
 
         while let Some(noneps_trans) = lexicon.take_non_epsilons(next, input_sym) {
             if let Some(mut sym) = noneps_trans.symbol() {
@@ -508,16 +510,32 @@ where
         false
     }
 
-    pub fn suggest(self: Arc<Self>) -> Vec<Suggestion> {
+    pub fn suggest(&self) -> Vec<Suggestion> {
         let pool = Pool::with_size_and_max(self.config.pool_start, self.config.pool_max);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
         let mut corrections = HashMap::new();
         let mut suggestions: Vec<Suggestion> = vec![];
         let mut best_weight = self.config.max_weight.unwrap_or(f32::MAX);
-        let key_table = self.speller.lexicon().alphabet().key_table();
+        let key_table = self.speller.mutator().alphabet().key_table();
+
+        let mut iteration_count = 0usize;
 
         while let Some(next_node) = nodes.pop() {
+            iteration_count += 1;
+
             let max_weight = self.update_weight_limit(best_weight, &suggestions);
+
+            if iteration_count >= 10_000_000 {
+                let name: SmolStr = self
+                    .input
+                    .iter()
+                    .map(|s| &*key_table[*s as usize])
+                    .collect();
+                log::warn!("{}: iteration count at {}", name, iteration_count);
+                log::warn!("Node count: {}", nodes.len());
+                log::warn!("Node weight: {}", next_node.weight());
+                break;
+            }
 
             if !self.is_under_weight_limit(max_weight, next_node.weight()) {
                 continue;
@@ -552,11 +570,12 @@ where
             if !self.is_under_weight_limit(max_weight, weight) {
                 continue;
             }
-            let string: SmolStr = next_node
-                .string
-                .iter()
-                .map(|s| &*key_table[*s as usize])
-                .collect();
+
+            let string = self
+                .speller
+                .lexicon()
+                .alphabet()
+                .string_from_symbols(&next_node.string);
 
             if weight < best_weight {
                 best_weight = weight;

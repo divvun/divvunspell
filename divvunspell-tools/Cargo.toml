@@ -17,7 +17,7 @@ name = "thfst-tools"
 [dependencies]
 serde = "1.0.101"
 serde_derive = "1.0.101"
-serde_json = "1.0.40"
+serde_json = "1.0.41"
 divvunspell = { path = "../divvunspell", features = ["convert", "compression"] }
 clap = { version = "2.33.0" }
 structopt = { version = "0.3.2"}
@@ -26,3 +26,4 @@ rayon = { version = "1.2.0"}
 indicatif = { git = "https://github.com/mitsuhiko/indicatif", features = ["with_rayon"] }
 box_format = { git = "https://github.com/bbqsrc/box" }
 tempdir = "0.3.7"
+pretty_env_logger = "0.3.1"

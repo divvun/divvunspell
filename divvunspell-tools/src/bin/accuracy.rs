@@ -10,8 +10,8 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::Serialize;
 
 static CFG: SpellerConfig = SpellerConfig {
-    max_weight: Some(10000.0),
-    n_best: Some(10),
+    max_weight: Some(500000.0),
+    n_best: None,
     beam: None,
     pool_max: 128,
     pool_start: 128,
@@ -146,6 +146,8 @@ impl Summary {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    pretty_env_logger::init();
+    
     let matches = App::new("divvunspell-accuracy")
         .setting(AppSettings::ArgRequiredElseHelp)
         .version(env!("CARGO_PKG_VERSION"))

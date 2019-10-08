@@ -96,6 +96,8 @@ fn run<F: vfs::File + vfs::ToMemmap, T: Transducer<F>, U: Transducer<F>>(
 }
 
 fn main() {
+    pretty_env_logger::init();
+    
     let matches = App::new("divvunspell")
         .setting(AppSettings::ArgRequiredElseHelp)
         .version(env!("CARGO_PKG_VERSION"))

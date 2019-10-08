@@ -25,6 +25,8 @@ where
     _file: std::marker::PhantomData<F>,
 }
 
+pub type MemmapThfstChunkedTransducer<F> = ThfstChunkedTransducer<F>;
+
 macro_rules! transition_rel_index {
     ($self:expr, $x:expr) => {{
         let index_page = $x / $self.transitions_per_chunk;

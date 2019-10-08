@@ -56,3 +56,137 @@ where
         self.metadata.as_ref()
     }
 }
+
+#[cfg(feature = "ffi")]
+pub(crate) mod ffi {
+    use super::*;
+    use std::error::Error;
+    use cursed::{FromForeign, ReturnType, InputType, ToForeign};
+    use std::ffi::c_void;
+    use crate::transducer::thfst::MemmapThfstChunkedTransducer;
+
+    pub type ThfstChunkedBoxSpeller = Speller<
+        crate::vfs::boxf::File,
+        MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
+        MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
+    >;
+
+    pub type ThfstBoxSpeller = Speller<
+        crate::vfs::boxf::File,
+        MemmapThfstTransducer<crate::vfs::boxf::File>,
+        MemmapThfstTransducer<crate::vfs::boxf::File>,
+    >;
+
+
+    pub type ThfstChunkedBoxSpellerArchive = BoxSpellerArchive<
+        MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
+        MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
+    >;
+
+    
+    pub struct ThfstBoxSpellerArchiveMarshaler;
+
+    impl InputType for ThfstBoxSpellerArchiveMarshaler {
+        type Foreign = *const c_void;
+    }
+
+    impl ReturnType for ThfstBoxSpellerArchiveMarshaler {
+        type Foreign = *const c_void;
+
+        fn foreign_default() -> Self::Foreign {
+            std::ptr::null()
+        }
+    }
+
+    impl ToForeign<Result<ThfstBoxSpellerArchive, SpellerArchiveError>, *const c_void>
+        for ThfstBoxSpellerArchiveMarshaler
+    {
+        type Error = SpellerArchiveError;
+
+        fn to_foreign(
+            result: Result<ThfstBoxSpellerArchive, SpellerArchiveError>,
+        ) -> Result<*const c_void, Self::Error> {
+            result.map(|x| Box::into_raw(Box::new(x)) as *const _)
+        }
+    }
+
+    impl<'a> FromForeign<*const c_void, &'a ThfstBoxSpellerArchive> for ThfstBoxSpellerArchiveMarshaler {
+        type Error = Box<dyn Error>;
+        
+        fn from_foreign(ptr: *const c_void) -> Result<&'a ThfstBoxSpellerArchive, Self::Error> {
+            if ptr.is_null() {
+                panic!();
+            }
+
+            Ok(unsafe { &*ptr.cast() })
+        }
+    }
+
+    pub struct ThfstChunkedBoxSpellerArchiveMarshaler;
+
+    impl InputType for ThfstChunkedBoxSpellerArchiveMarshaler {
+        type Foreign = *const c_void;
+    }
+
+    impl ReturnType for ThfstChunkedBoxSpellerArchiveMarshaler {
+        type Foreign = *const c_void;
+
+        fn foreign_default() -> Self::Foreign {
+            std::ptr::null()
+        }
+    }
+
+    impl ToForeign<Result<ThfstChunkedBoxSpellerArchive, SpellerArchiveError>, *const c_void>
+        for ThfstChunkedBoxSpellerArchiveMarshaler
+    {
+        type Error = SpellerArchiveError;
+
+        fn to_foreign(
+            result: Result<ThfstChunkedBoxSpellerArchive, SpellerArchiveError>,
+        ) -> Result<*const c_void, Self::Error> {
+            result.map(|x| Box::into_raw(Box::new(x)) as *const _)
+        }
+    }
+
+    impl<'a> FromForeign<*const c_void, &'a ThfstChunkedBoxSpellerArchive> for ThfstChunkedBoxSpellerArchiveMarshaler {
+        type Error = Box<dyn Error>;
+        
+        fn from_foreign(ptr: *const c_void) -> Result<&'a ThfstChunkedBoxSpellerArchive, Self::Error> {
+            if ptr.is_null() {
+                panic!();
+            }
+
+            Ok(unsafe { &*ptr.cast() })
+        }
+    }
+
+    #[cthulhu::invoke(return_marshaler = "ThfstBoxSpellerArchiveMarshaler")]
+    pub extern "C" fn divvun_thfst_box_speller_archive_open(
+        #[marshal(cursed::PathMarshaler)]
+        path: &std::path::Path,
+    ) -> Result<ThfstBoxSpellerArchive, SpellerArchiveError> {
+        ThfstBoxSpellerArchive::open(path)
+    }
+
+    #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler")]
+    pub extern "C" fn divvun_thfst_box_speller_archive_speller(
+        #[marshal(ThfstBoxSpellerArchiveMarshaler)] handle: &ThfstBoxSpellerArchive,
+    ) -> Arc<ThfstBoxSpeller> {
+        handle.speller()
+    }
+
+    #[cthulhu::invoke(return_marshaler = "ThfstChunkedBoxSpellerArchiveMarshaler")]
+    pub extern "C" fn divvun_thfst_chunked_box_speller_archive_open(
+        #[marshal(cursed::PathMarshaler)]
+        path: &std::path::Path,
+    ) -> Result<ThfstChunkedBoxSpellerArchive, SpellerArchiveError> {
+        ThfstChunkedBoxSpellerArchive::open(path)
+    }
+
+    #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler")]
+    pub extern "C" fn divvun_thfst_chunked_box_speller_archive_speller(
+        #[marshal(ThfstChunkedBoxSpellerArchiveMarshaler)] handle: &ThfstChunkedBoxSpellerArchive,
+    ) -> Arc<ThfstChunkedBoxSpeller> {
+        handle.speller()
+    }
+}
