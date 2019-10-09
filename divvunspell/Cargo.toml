@@ -29,9 +29,8 @@ box_format = { git = "https://github.com/bbqsrc/box", branch = "feature/ffi", de
 itertools = "0.8.0"
 strsim = "0.9.2"
 log = { version = "0.4.8" }
-cthulhu = { path = "/Users/brendan/git/cthulhu/cthulhu" }
-cursed = { path = "/Users/brendan/git/cthulhu/cursed"}
-
+cthulhu = { git = "https://github.com/bbqsrc/cthulhu", branch = "feature/callback" }
+cursed = { git = "https://github.com/bbqsrc/cthulhu", branch = "feature/callback" }
 
 [features]
 compression = ["zip/deflate"]
