@@ -1,10 +1,10 @@
 // #![allow(clippy::not_unsafe_ptr_arg_deref)]
 
-// use libc::{c_char, size_t};
-// use std::ffi::{CStr, CString};
-// use std::path::Path;
-// use std::ptr::null;
-// use std::sync::Arc;
+use libc::{c_char, size_t};
+use std::ffi::{CStr, CString};
+use std::path::Path;
+use std::ptr::null;
+use std::sync::Arc;
 
 // use crate::archive::ZipSpellerArchive;
 // use crate::speller::suggestion::Suggestion;
@@ -247,51 +247,51 @@
 
 // // Tokenizer
 
-// use crate::tokenizer::word::WordBoundIndices;
-// use crate::tokenizer::Tokenize;
+use crate::tokenizer::word::WordBoundIndices;
+use crate::tokenizer::Tokenize;
 
-// pub struct CWordBoundIndices {
-//     string: String,
-//     iterator: WordBoundIndices<'static>,
-// }
+pub struct CWordBoundIndices {
+    string: String,
+    iterator: WordBoundIndices<'static>,
+}
 
-// #[no_mangle]
-// pub extern "C" fn word_bound_indices(utf8_string: *const c_char) -> *mut CWordBoundIndices {
-//     let c_str = unsafe { CStr::from_ptr(utf8_string) };
-//     let string = c_str.to_str().unwrap().to_string();
+#[no_mangle]
+pub extern "C" fn word_bound_indices(utf8_string: *const c_char) -> *mut CWordBoundIndices {
+    let c_str = unsafe { CStr::from_ptr(utf8_string) };
+    let string = c_str.to_str().unwrap().to_string();
 
-//     let mut thing = CWordBoundIndices {
-//         string,
-//         iterator: unsafe { std::mem::uninitialized() },
-//     };
+    let mut thing = CWordBoundIndices {
+        string,
+        iterator: unsafe { std::mem::uninitialized() },
+    };
 
-//     thing.iterator = unsafe { std::mem::transmute(thing.string.word_bound_indices()) };
-//     Box::into_raw(Box::new(thing))
-// }
+    thing.iterator = unsafe { std::mem::transmute(thing.string.word_bound_indices()) };
+    Box::into_raw(Box::new(thing))
+}
 
-// #[no_mangle]
-// pub extern "C" fn word_bound_indices_next(
-//     handle: *mut CWordBoundIndices,
-//     out_index: *mut u64,
-//     out_string: *mut *mut c_char,
-// ) -> bool {
-//     let handle = unsafe { &mut *handle };
+#[no_mangle]
+pub extern "C" fn word_bound_indices_next(
+    handle: *mut CWordBoundIndices,
+    out_index: *mut u64,
+    out_string: *mut *mut c_char,
+) -> u8 {
+    let handle = unsafe { &mut *handle };
 
-//     match handle.iterator.next() {
-//         Some((index, word)) => {
-//             unsafe { *out_index = index as u64 };
-//             let c_word = CString::new(word).unwrap();
-//             unsafe { *out_string = c_word.into_raw() };
-//             true
-//         }
-//         None => false,
-//     }
-// }
+    match handle.iterator.next() {
+        Some((index, word)) => {
+            unsafe { *out_index = index as u64 };
+            let c_word = CString::new(word).unwrap();
+            unsafe { *out_string = c_word.into_raw() };
+            1
+        }
+        None => 0,
+    }
+}
 
-// #[no_mangle]
-// pub extern "C" fn word_bound_indices_free(handle: *mut CWordBoundIndices) {
-//     unsafe { Box::from_raw(handle) };
-// }
+#[no_mangle]
+pub extern "C" fn word_bound_indices_free(handle: *mut CWordBoundIndices) {
+    unsafe { Box::from_raw(handle) };
+}
 
 // // #[no_mangle]
 // // pub extern fn speller_tokenize<'a>(raw_string: *const c_char) -> *mut Tokenizer<'a> {
