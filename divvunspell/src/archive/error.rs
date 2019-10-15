@@ -7,6 +7,7 @@ pub enum SpellerArchiveError {
     File(Error),
     Io(Error),
     Transducer(TransducerError),
+    NoMetadata,
     UnsupportedCompressed,
     Unknown(u8),
 }
@@ -17,6 +18,9 @@ impl SpellerArchiveError {
             SpellerArchiveError::File(e) => e,
             SpellerArchiveError::Io(e) => e,
             SpellerArchiveError::Transducer(e) => e.into_io_error(),
+            SpellerArchiveError::NoMetadata => {
+                Error::new(std::io::ErrorKind::Other, "missing metadata")
+            }
             SpellerArchiveError::UnsupportedCompressed => {
                 Error::new(std::io::ErrorKind::Other, "unsupported compression")
             }

@@ -160,4 +160,14 @@ pub(crate) mod ffi {
     ) -> Arc<HfstZipSpeller> {
         handle.speller()
     }
+
+    #[cthulhu::invoke(return_marshaler = "cursed::StringMarshaler")]
+    pub extern "C" fn divvun_hfst_zip_speller_archive_locale(
+        #[marshal(ZipSpellerArchiveMarshaler)] handle: &ZipSpellerArchive,
+    ) -> Result<String, SpellerArchiveError> {
+        match handle.metadata() {
+            Some(v) => Ok(v.info.locale.to_string()),
+            None => Err(SpellerArchiveError::NoMetadata),
+        }
+    }
 }

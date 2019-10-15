@@ -178,6 +178,16 @@ pub(crate) mod ffi {
         handle.speller()
     }
 
+    #[cthulhu::invoke(return_marshaler = "cursed::StringMarshaler")]
+    pub extern "C" fn divvun_thfst_box_speller_archive_locale(
+        #[marshal(ThfstBoxSpellerArchiveMarshaler)] handle: &ThfstBoxSpellerArchive,
+    ) -> Result<String, SpellerArchiveError> {
+        match handle.metadata() {
+            Some(v) => Ok(v.info.locale.to_string()),
+            None => Err(SpellerArchiveError::NoMetadata),
+        }
+    }
+
     #[cthulhu::invoke(return_marshaler = "ThfstChunkedBoxSpellerArchiveMarshaler")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_archive_open(
         #[marshal(cursed::PathMarshaler)] path: &std::path::Path,
@@ -190,5 +200,15 @@ pub(crate) mod ffi {
         #[marshal(ThfstChunkedBoxSpellerArchiveMarshaler)] handle: &ThfstChunkedBoxSpellerArchive,
     ) -> Arc<ThfstChunkedBoxSpeller> {
         handle.speller()
+    }
+
+    #[cthulhu::invoke(return_marshaler = "cursed::StringMarshaler")]
+    pub extern "C" fn divvun_thfst_chunked_box_speller_archive_locale(
+        #[marshal(ThfstChunkedBoxSpellerArchiveMarshaler)] handle: &ThfstChunkedBoxSpellerArchive,
+    ) -> Result<String, SpellerArchiveError> {
+        match handle.metadata() {
+            Some(v) => Ok(v.info.locale.to_string()),
+            None => Err(SpellerArchiveError::NoMetadata),
+        }
     }
 }
