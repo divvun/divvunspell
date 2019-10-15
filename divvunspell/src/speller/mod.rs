@@ -253,7 +253,8 @@ pub(crate) mod ffi {
     use cursed::{FromForeign, ToForeign};
     use std::convert::Infallible;
     use std::ffi::c_void;
-    use crate::archive::boxf::ffi::ThfstBoxSpeller;
+    use crate::archive::boxf::ffi::{ThfstBoxSpeller, ThfstChunkedBoxSpeller};
+    use crate::archive::zip::ffi::HfstZipSpeller;
 
     pub type SuggestionVecMarshaler = cursed::VecMarshaler<Suggestion>;
     pub type SuggestionVecRefMarshaler = cursed::VecRefMarshaler<Suggestion>;
@@ -370,8 +371,6 @@ pub(crate) mod ffi {
         speller.suggest_with_config(word, &config)
     }
 
-    use crate::archive::boxf::ffi::ThfstChunkedBoxSpeller;
-
     #[cthulhu::invoke]
     pub extern "C" fn divvun_thfst_chunked_box_speller_is_correct(
         #[marshal(cursed::ArcMarshaler)] speller: Arc<ThfstChunkedBoxSpeller>,
@@ -399,6 +398,33 @@ pub(crate) mod ffi {
         speller.suggest_with_config(word, &config)
     }
 
+    #[cthulhu::invoke]
+    pub extern "C" fn divvun_hfst_zip_speller_is_correct(
+        #[marshal(cursed::ArcMarshaler)] speller: Arc<HfstZipSpeller>,
+        #[marshal(cursed::StrMarshaler)] word: &str,
+    ) -> bool {
+        speller.is_correct(word)
+    }
+
+    #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
+    pub extern "C" fn divvun_hfst_zip_speller_suggest(
+        #[marshal(cursed::ArcMarshaler)] speller: Arc<HfstZipSpeller>,
+        #[marshal(cursed::StrMarshaler)] word: &str,
+    ) -> Vec<Suggestion> {
+        let suggestions = speller.suggest(word);
+        println!("{:?} {:?}", &suggestions, &suggestions as *const _);
+        suggestions
+    }
+
+    #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
+    pub extern "C" fn divvun_hfst_zip_speller_suggest_with_config(
+        #[marshal(cursed::ArcMarshaler)] speller: Arc<HfstZipSpeller>,
+        #[marshal(cursed::StrMarshaler)] word: &str,
+        #[marshal(SpellerConfigMarshaler)] config: SpellerConfig,
+    ) -> Vec<Suggestion> {
+        speller.suggest_with_config(word, &config)
+    }
+
     // Suggestions vec
 
     #[cthulhu::invoke]
@@ -414,5 +440,12 @@ pub(crate) mod ffi {
         index: usize,
     ) -> String {
         suggestions[index].value().to_string()
+    }
+
+    #[no_mangle]
+    pub extern "C" fn divvun_vec_suggestion_value_free(ptr: *mut c_void) {
+        if !ptr.is_null() {
+            cursed::StringMarshaler::from_foreign(ptr).unwrap();
+        }
     }
 }

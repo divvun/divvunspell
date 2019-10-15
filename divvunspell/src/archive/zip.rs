@@ -97,3 +97,67 @@ impl ZipSpellerArchive {
         Some(&self.metadata)
     }
 }
+
+#[cfg(feature = "ffi")]
+pub(crate) mod ffi {
+    use super::*;
+    use cursed::{FromForeign, InputType, ReturnType, ToForeign};
+    use std::error::Error;
+    use std::ffi::c_void;
+
+    pub type HfstZipSpeller = Speller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>;
+
+    pub struct ZipSpellerArchiveMarshaler;
+
+    impl InputType for ZipSpellerArchiveMarshaler {
+        type Foreign = *const c_void;
+    }
+
+    impl ReturnType for ZipSpellerArchiveMarshaler {
+        type Foreign = *const c_void;
+
+        fn foreign_default() -> Self::Foreign {
+            std::ptr::null()
+        }
+    }
+
+    impl ToForeign<Result<ZipSpellerArchive, SpellerArchiveError>, *const c_void>
+        for ZipSpellerArchiveMarshaler
+    {
+        type Error = SpellerArchiveError;
+
+        fn to_foreign(
+            result: Result<ZipSpellerArchive, SpellerArchiveError>,
+        ) -> Result<*const c_void, Self::Error> {
+            result.map(|x| Box::into_raw(Box::new(x)) as *const _)
+        }
+    }
+
+    impl<'a> FromForeign<*const c_void, &'a ZipSpellerArchive>
+        for ZipSpellerArchiveMarshaler
+    {
+        type Error = Box<dyn Error>;
+
+        fn from_foreign(ptr: *const c_void) -> Result<&'a ZipSpellerArchive, Self::Error> {
+            if ptr.is_null() {
+                panic!();
+            }
+
+            Ok(unsafe { &*ptr.cast() })
+        }
+    }
+
+    #[cthulhu::invoke(return_marshaler = "ZipSpellerArchiveMarshaler")]
+    pub extern "C" fn divvun_hfst_zip_speller_archive_open(
+        #[marshal(cursed::PathMarshaler)] path: &std::path::Path,
+    ) -> Result<ZipSpellerArchive, SpellerArchiveError> {
+        ZipSpellerArchive::open(path)
+    }
+
+    #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler")]
+    pub extern "C" fn divvun_hfst_zip_speller_archive_speller(
+        #[marshal(ZipSpellerArchiveMarshaler)] handle: &ZipSpellerArchive,
+    ) -> Arc<HfstZipSpeller> {
+        handle.speller()
+    }
+}
