@@ -314,8 +314,7 @@ fn main() {
         for line in tuples.iter() {
             // let mut ncfg = cfg.clone();
             // cfg.seen_node_sample_rate = i;
-            cfg.pool_max = 128;
-            cfg.pool_start = 128;
+            cfg.node_pool_size = 128;
             // println!("{}",
             run(Arc::clone(&speller), &line, &cfg);
             // );

@@ -13,10 +13,8 @@ static CFG: SpellerConfig = SpellerConfig {
     max_weight: Some(500000.0),
     n_best: None,
     beam: None,
-    pool_max: 128,
-    pool_start: 128,
-    seen_node_sample_rate: 15,
     case_handling: Some(CaseHandlingConfig::default()),
+    node_pool_size: 128,
 };
 
 fn load_words(
