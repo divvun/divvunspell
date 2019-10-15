@@ -443,7 +443,7 @@ pub(crate) mod ffi {
     }
 
     #[no_mangle]
-    pub extern "C" fn divvun_vec_suggestion_value_free(ptr: *mut c_void) {
+    pub extern "C" fn divvun_string_free(ptr: *mut c_void) {
         if !ptr.is_null() {
             cursed::StringMarshaler::from_foreign(ptr).unwrap();
         }
