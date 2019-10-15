@@ -60,10 +60,10 @@ where
 #[cfg(feature = "ffi")]
 pub(crate) mod ffi {
     use super::*;
-    use std::error::Error;
-    use cursed::{FromForeign, ReturnType, InputType, ToForeign};
-    use std::ffi::c_void;
     use crate::transducer::thfst::MemmapThfstChunkedTransducer;
+    use cursed::{FromForeign, InputType, ReturnType, ToForeign};
+    use std::error::Error;
+    use std::ffi::c_void;
 
     pub type ThfstChunkedBoxSpeller = Speller<
         crate::vfs::boxf::File,
@@ -77,13 +77,11 @@ pub(crate) mod ffi {
         MemmapThfstTransducer<crate::vfs::boxf::File>,
     >;
 
-
     pub type ThfstChunkedBoxSpellerArchive = BoxSpellerArchive<
         MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
         MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
     >;
 
-    
     pub struct ThfstBoxSpellerArchiveMarshaler;
 
     impl InputType for ThfstBoxSpellerArchiveMarshaler {
@@ -110,9 +108,11 @@ pub(crate) mod ffi {
         }
     }
 
-    impl<'a> FromForeign<*const c_void, &'a ThfstBoxSpellerArchive> for ThfstBoxSpellerArchiveMarshaler {
+    impl<'a> FromForeign<*const c_void, &'a ThfstBoxSpellerArchive>
+        for ThfstBoxSpellerArchiveMarshaler
+    {
         type Error = Box<dyn Error>;
-        
+
         fn from_foreign(ptr: *const c_void) -> Result<&'a ThfstBoxSpellerArchive, Self::Error> {
             if ptr.is_null() {
                 panic!();
@@ -148,10 +148,14 @@ pub(crate) mod ffi {
         }
     }
 
-    impl<'a> FromForeign<*const c_void, &'a ThfstChunkedBoxSpellerArchive> for ThfstChunkedBoxSpellerArchiveMarshaler {
+    impl<'a> FromForeign<*const c_void, &'a ThfstChunkedBoxSpellerArchive>
+        for ThfstChunkedBoxSpellerArchiveMarshaler
+    {
         type Error = Box<dyn Error>;
-        
-        fn from_foreign(ptr: *const c_void) -> Result<&'a ThfstChunkedBoxSpellerArchive, Self::Error> {
+
+        fn from_foreign(
+            ptr: *const c_void,
+        ) -> Result<&'a ThfstChunkedBoxSpellerArchive, Self::Error> {
             if ptr.is_null() {
                 panic!();
             }
@@ -162,8 +166,7 @@ pub(crate) mod ffi {
 
     #[cthulhu::invoke(return_marshaler = "ThfstBoxSpellerArchiveMarshaler")]
     pub extern "C" fn divvun_thfst_box_speller_archive_open(
-        #[marshal(cursed::PathMarshaler)]
-        path: &std::path::Path,
+        #[marshal(cursed::PathMarshaler)] path: &std::path::Path,
     ) -> Result<ThfstBoxSpellerArchive, SpellerArchiveError> {
         ThfstBoxSpellerArchive::open(path)
     }
@@ -177,8 +180,7 @@ pub(crate) mod ffi {
 
     #[cthulhu::invoke(return_marshaler = "ThfstChunkedBoxSpellerArchiveMarshaler")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_archive_open(
-        #[marshal(cursed::PathMarshaler)]
-        path: &std::path::Path,
+        #[marshal(cursed::PathMarshaler)] path: &std::path::Path,
     ) -> Result<ThfstChunkedBoxSpellerArchive, SpellerArchiveError> {
         ThfstChunkedBoxSpellerArchive::open(path)
     }

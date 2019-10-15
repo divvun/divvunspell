@@ -147,7 +147,7 @@ impl Summary {
 
 fn main() -> Result<(), Box<dyn Error>> {
     pretty_env_logger::init();
-    
+
     let matches = App::new("divvunspell-accuracy")
         .setting(AppSettings::ArgRequiredElseHelp)
         .version(env!("CARGO_PKG_VERSION"))

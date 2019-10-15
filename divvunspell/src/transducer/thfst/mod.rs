@@ -13,7 +13,7 @@ mod chunked;
 mod index_table;
 mod transition_table;
 
-pub use self::chunked::{ThfstChunkedTransducer, MemmapThfstChunkedTransducer};
+pub use self::chunked::{MemmapThfstChunkedTransducer, ThfstChunkedTransducer};
 pub use self::index_table::MemmapIndexTable;
 pub use self::transition_table::MemmapTransitionTable;
 

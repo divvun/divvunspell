@@ -511,7 +511,7 @@ where
     }
 
     pub fn suggest(&self) -> Vec<Suggestion> {
-        let pool = Pool::with_size_and_max(self.config.pool_start, self.config.pool_max);
+        let pool = Pool::with_size_and_max(self.config.node_pool_size, self.config.node_pool_size);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
         let mut corrections = HashMap::new();
         let mut suggestions: Vec<Suggestion> = vec![];

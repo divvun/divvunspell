@@ -26,9 +26,7 @@ pub struct SpellerConfig {
     pub max_weight: Option<Weight>,
     pub beam: Option<Weight>,
     pub case_handling: Option<CaseHandlingConfig>,
-    pub pool_start: usize,
-    pub pool_max: usize,
-    pub seen_node_sample_rate: u64,
+    pub node_pool_size: usize,
 }
 
 impl SpellerConfig {
@@ -38,9 +36,7 @@ impl SpellerConfig {
             max_weight: Some(10000.0),
             beam: None,
             case_handling: Some(CaseHandlingConfig::default()),
-            pool_start: 128,
-            pool_max: 128,
-            seen_node_sample_rate: 20,
+            node_pool_size: 128,
         }
     }
 }
@@ -254,14 +250,15 @@ where
 #[cfg(feature = "ffi")]
 pub(crate) mod ffi {
     use super::*;
-    use std::ffi::c_void;
+    use cursed::{FromForeign, ToForeign};
     use std::convert::Infallible;
-    use cursed::{ToForeign, FromForeign};
+    use std::ffi::c_void;
+    use crate::archive::boxf::ffi::ThfstBoxSpeller;
 
     pub type SuggestionVecMarshaler = cursed::VecMarshaler<Suggestion>;
     pub type SuggestionVecRefMarshaler = cursed::VecRefMarshaler<Suggestion>;
 
-    #[derive(Clone, Copy)]
+    #[derive(Clone, Copy, Default, PartialEq)]
     #[repr(C)]
     pub struct FfiCaseHandlingConfig {
         start_penalty: f32,
@@ -272,13 +269,11 @@ pub(crate) mod ffi {
     #[derive(Clone, Copy)]
     #[repr(C)]
     pub struct FfiSpellerConfig {
-        pub n_best: Option<usize>,
-        pub max_weight: Option<Weight>,
-        pub beam: Option<Weight>,
-        pub case_handling: Option<FfiCaseHandlingConfig>,
-        pub pool_start: usize,
-        pub pool_max: usize,
-        pub seen_node_sample_rate: u64,
+        pub n_best: usize,
+        pub max_weight: Weight,
+        pub beam: Weight,
+        pub case_handling: FfiCaseHandlingConfig,
+        pub node_pool_size: usize,
     }
 
     pub struct SpellerConfigMarshaler;
@@ -290,27 +285,27 @@ pub(crate) mod ffi {
     impl cursed::ReturnType for SpellerConfigMarshaler {
         type Foreign = *const c_void;
 
-        fn foreign_default() -> Self::Foreign { std::ptr::null() }
+        fn foreign_default() -> Self::Foreign {
+            std::ptr::null()
+        }
     }
 
     impl ToForeign<SpellerConfig, *const c_void> for SpellerConfigMarshaler {
         type Error = Infallible;
 
         fn to_foreign(config: SpellerConfig) -> Result<*const c_void, Self::Error> {
+            let case_handling = config.case_handling.map(|c| FfiCaseHandlingConfig {
+                start_penalty: c.start_penalty,
+                end_penalty: c.end_penalty,
+                mid_penalty: c.mid_penalty,
+            }).unwrap_or_else(|| FfiCaseHandlingConfig::default());
+
             let out = FfiSpellerConfig {
-                n_best: config.n_best,
-                max_weight: config.max_weight,
-                beam: config.beam,
-                case_handling: config.case_handling.map(|c| {
-                    FfiCaseHandlingConfig {
-                        start_penalty: c.start_penalty,
-                        end_penalty: c.end_penalty,
-                        mid_penalty: c.mid_penalty
-                    }
-                }),
-                pool_start: config.pool_start,
-                pool_max: config.pool_max,
-                seen_node_sample_rate: config.seen_node_sample_rate,
+                n_best: config.n_best.unwrap_or(0),
+                max_weight: config.max_weight.unwrap_or(0.0),
+                beam: config.beam.unwrap_or(0.0),
+                case_handling,
+                node_pool_size: config.node_pool_size,
             };
 
             Ok(Box::into_raw(Box::new(out)) as *const _)
@@ -326,50 +321,51 @@ pub(crate) mod ffi {
             }
 
             let config: &FfiSpellerConfig = unsafe { &*ptr.cast() };
-            
+
+            let case_handling = if config.case_handling == FfiCaseHandlingConfig::default() {
+                None
+            } else {
+                let c = config.case_handling;
+                Some(CaseHandlingConfig {
+                    start_penalty: c.start_penalty,
+                    end_penalty: c.end_penalty,
+                    mid_penalty: c.mid_penalty,
+                })
+            };
+
             let out = SpellerConfig {
-                n_best: config.n_best,
-                max_weight: config.max_weight,
-                beam: config.beam,
-                case_handling: config.case_handling.map(|c| {
-                    CaseHandlingConfig {
-                        start_penalty: c.start_penalty,
-                        end_penalty: c.end_penalty,
-                        mid_penalty: c.mid_penalty
-                    }
-                }),
-                pool_start: config.pool_start,
-                pool_max: config.pool_max,
-                seen_node_sample_rate: config.seen_node_sample_rate,
+                n_best: if config.n_best > 0 { Some(config.n_best) } else { None },
+                max_weight: if config.max_weight > 0.0 { Some(config.max_weight) } else { None },
+                beam: if config.beam > 0.0 { Some(config.beam) } else { None },
+                case_handling,
+                node_pool_size: config.node_pool_size,
             };
 
             Ok(out)
         }
     }
 
-    use crate::archive::boxf::ffi::ThfstBoxSpeller;
-    
     #[cthulhu::invoke]
-    pub extern fn divvun_thfst_box_speller_is_correct(
+    pub extern "C" fn divvun_thfst_box_speller_is_correct(
         #[marshal(cursed::ArcMarshaler)] speller: Arc<ThfstBoxSpeller>,
-        #[marshal(cursed::StrMarshaler)] word: &str
+        #[marshal(cursed::StrMarshaler)] word: &str,
     ) -> bool {
         speller.is_correct(word)
     }
 
     #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
-    pub extern fn divvun_thfst_box_speller_suggest(
+    pub extern "C" fn divvun_thfst_box_speller_suggest(
         #[marshal(cursed::ArcMarshaler)] speller: Arc<ThfstBoxSpeller>,
-        #[marshal(cursed::StrMarshaler)] word: &str
+        #[marshal(cursed::StrMarshaler)] word: &str,
     ) -> Vec<Suggestion> {
         speller.suggest(word)
     }
 
     #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
-    pub extern fn divvun_thfst_box_speller_suggest_with_config(
+    pub extern "C" fn divvun_thfst_box_speller_suggest_with_config(
         #[marshal(cursed::ArcMarshaler)] speller: Arc<ThfstBoxSpeller>,
         #[marshal(cursed::StrMarshaler)] word: &str,
-        #[marshal(SpellerConfigMarshaler)] config: SpellerConfig
+        #[marshal(SpellerConfigMarshaler)] config: SpellerConfig,
     ) -> Vec<Suggestion> {
         speller.suggest_with_config(word, &config)
     }
@@ -377,26 +373,28 @@ pub(crate) mod ffi {
     use crate::archive::boxf::ffi::ThfstChunkedBoxSpeller;
 
     #[cthulhu::invoke]
-    pub extern fn divvun_thfst_chunked_box_speller_is_correct(
+    pub extern "C" fn divvun_thfst_chunked_box_speller_is_correct(
         #[marshal(cursed::ArcMarshaler)] speller: Arc<ThfstChunkedBoxSpeller>,
-        #[marshal(cursed::StrMarshaler)] word: &str
+        #[marshal(cursed::StrMarshaler)] word: &str,
     ) -> bool {
         speller.is_correct(word)
     }
 
     #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
-    pub extern fn divvun_thfst_chunked_box_speller_suggest(
+    pub extern "C" fn divvun_thfst_chunked_box_speller_suggest(
         #[marshal(cursed::ArcMarshaler)] speller: Arc<ThfstChunkedBoxSpeller>,
-        #[marshal(cursed::StrMarshaler)] word: &str
+        #[marshal(cursed::StrMarshaler)] word: &str,
     ) -> Vec<Suggestion> {
-        speller.suggest(word)
+        let suggestions = speller.suggest(word);
+        println!("{:?} {:?}", &suggestions, &suggestions as *const _);
+        suggestions
     }
 
     #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
-    pub extern fn divvun_thfst_chunked_box_speller_suggest_with_config(
+    pub extern "C" fn divvun_thfst_chunked_box_speller_suggest_with_config(
         #[marshal(cursed::ArcMarshaler)] speller: Arc<ThfstChunkedBoxSpeller>,
         #[marshal(cursed::StrMarshaler)] word: &str,
-        #[marshal(SpellerConfigMarshaler)] config: SpellerConfig
+        #[marshal(SpellerConfigMarshaler)] config: SpellerConfig,
     ) -> Vec<Suggestion> {
         speller.suggest_with_config(word, &config)
     }
@@ -404,18 +402,16 @@ pub(crate) mod ffi {
     // Suggestions vec
 
     #[cthulhu::invoke]
-    pub extern fn divvun_vec_suggestion_len(
-        #[marshal(SuggestionVecRefMarshaler)]
-        suggestions: &[Suggestion]
+    pub extern "C" fn divvun_vec_suggestion_len(
+        #[marshal(SuggestionVecRefMarshaler)] suggestions: &[Suggestion],
     ) -> usize {
         suggestions.len()
     }
 
     #[cthulhu::invoke(return_marshaler = "cursed::StringMarshaler")]
-    pub extern fn divvun_vec_suggestion_get_value(
-        #[marshal(SuggestionVecRefMarshaler)]
-        suggestions: &[Suggestion],
-        index: usize
+    pub extern "C" fn divvun_vec_suggestion_get_value(
+        #[marshal(SuggestionVecRefMarshaler)] suggestions: &[Suggestion],
+        index: usize,
     ) -> String {
         suggestions[index].value().to_string()
     }
