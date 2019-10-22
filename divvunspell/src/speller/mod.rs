@@ -348,81 +348,81 @@ pub(crate) mod ffi {
 
     #[cthulhu::invoke]
     pub extern "C" fn divvun_thfst_box_speller_is_correct(
-        #[marshal(cursed::ArcMarshaler)] speller: Arc<ThfstBoxSpeller>,
+        #[marshal(cursed::ArcRefMarshaler::<ThfstBoxSpeller>)] speller: &Arc<ThfstBoxSpeller>,
         #[marshal(cursed::StrMarshaler)] word: &str,
     ) -> bool {
-        speller.is_correct(word)
+        Arc::clone(speller).is_correct(word)
     }
 
     #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_thfst_box_speller_suggest(
-        #[marshal(cursed::ArcMarshaler)] speller: Arc<ThfstBoxSpeller>,
+        #[marshal(cursed::ArcRefMarshaler::<ThfstBoxSpeller>)] speller: &Arc<ThfstBoxSpeller>,
         #[marshal(cursed::StrMarshaler)] word: &str,
     ) -> Vec<Suggestion> {
-        speller.suggest(word)
+        Arc::clone(speller).suggest(word)
     }
 
     #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_thfst_box_speller_suggest_with_config(
-        #[marshal(cursed::ArcMarshaler)] speller: Arc<ThfstBoxSpeller>,
+        #[marshal(cursed::ArcRefMarshaler::<ThfstBoxSpeller>)] speller: &Arc<ThfstBoxSpeller>,
         #[marshal(cursed::StrMarshaler)] word: &str,
         #[marshal(SpellerConfigMarshaler)] config: SpellerConfig,
     ) -> Vec<Suggestion> {
-        speller.suggest_with_config(word, &config)
+        Arc::clone(speller).suggest_with_config(word, &config)
     }
 
     #[cthulhu::invoke]
     pub extern "C" fn divvun_thfst_chunked_box_speller_is_correct(
-        #[marshal(cursed::ArcMarshaler)] speller: Arc<ThfstChunkedBoxSpeller>,
+        #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: &Arc<ThfstChunkedBoxSpeller>,
         #[marshal(cursed::StrMarshaler)] word: &str,
     ) -> bool {
-        speller.is_correct(word)
+        Arc::clone(speller).is_correct(word)
     }
 
     #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_suggest(
-        #[marshal(cursed::ArcMarshaler)] speller: Arc<ThfstChunkedBoxSpeller>,
+        #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: &Arc<ThfstChunkedBoxSpeller>,
         #[marshal(cursed::StrMarshaler)] word: &str,
     ) -> Vec<Suggestion> {
-        let suggestions = speller.suggest(word);
+        let suggestions = Arc::clone(speller).suggest(word);
         println!("{:?} {:?}", &suggestions, &suggestions as *const _);
         suggestions
     }
 
     #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_suggest_with_config(
-        #[marshal(cursed::ArcMarshaler)] speller: Arc<ThfstChunkedBoxSpeller>,
+        #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: &Arc<ThfstChunkedBoxSpeller>,
         #[marshal(cursed::StrMarshaler)] word: &str,
         #[marshal(SpellerConfigMarshaler)] config: SpellerConfig,
     ) -> Vec<Suggestion> {
-        speller.suggest_with_config(word, &config)
+        Arc::clone(speller).suggest_with_config(word, &config)
     }
 
     #[cthulhu::invoke]
     pub extern "C" fn divvun_hfst_zip_speller_is_correct(
-        #[marshal(cursed::ArcMarshaler)] speller: Arc<HfstZipSpeller>,
+        #[marshal(cursed::ArcRefMarshaler::<HfstZipSpeller>)] speller: &Arc<HfstZipSpeller>,
         #[marshal(cursed::StrMarshaler)] word: &str,
     ) -> bool {
-        speller.is_correct(word)
+        Arc::clone(speller).is_correct(word)
     }
 
     #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_hfst_zip_speller_suggest(
-        #[marshal(cursed::ArcMarshaler)] speller: Arc<HfstZipSpeller>,
+        #[marshal(cursed::ArcRefMarshaler::<HfstZipSpeller>)] speller: &Arc<HfstZipSpeller>,
         #[marshal(cursed::StrMarshaler)] word: &str,
     ) -> Vec<Suggestion> {
-        let suggestions = speller.suggest(word);
+        let suggestions = Arc::clone(speller).suggest(word);
         println!("{:?} {:?}", &suggestions, &suggestions as *const _);
         suggestions
     }
 
     #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_hfst_zip_speller_suggest_with_config(
-        #[marshal(cursed::ArcMarshaler)] speller: Arc<HfstZipSpeller>,
+        #[marshal(cursed::ArcRefMarshaler::<HfstZipSpeller>)] speller: &Arc<HfstZipSpeller>,
         #[marshal(cursed::StrMarshaler)] word: &str,
         #[marshal(SpellerConfigMarshaler)] config: SpellerConfig,
     ) -> Vec<Suggestion> {
-        speller.suggest_with_config(word, &config)
+        Arc::clone(speller).suggest_with_config(word, &config)
     }
 
     // Suggestions vec
@@ -443,7 +443,7 @@ pub(crate) mod ffi {
     }
 
     #[no_mangle]
-    pub extern "C" fn divvun_string_free(ptr: *mut c_void) {
+    pub extern "C" fn divvun_string_free(ptr: *mut libc::c_char) {
         if !ptr.is_null() {
             cursed::StringMarshaler::from_foreign(ptr).unwrap();
         }

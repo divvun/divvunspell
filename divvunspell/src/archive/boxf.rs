@@ -171,7 +171,7 @@ pub(crate) mod ffi {
         ThfstBoxSpellerArchive::open(path)
     }
 
-    #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler")]
+    #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler::<ThfstBoxSpeller>")]
     pub extern "C" fn divvun_thfst_box_speller_archive_speller(
         #[marshal(ThfstBoxSpellerArchiveMarshaler)] handle: &ThfstBoxSpellerArchive,
     ) -> Arc<ThfstBoxSpeller> {
@@ -181,10 +181,10 @@ pub(crate) mod ffi {
     #[cthulhu::invoke(return_marshaler = "cursed::StringMarshaler")]
     pub extern "C" fn divvun_thfst_box_speller_archive_locale(
         #[marshal(ThfstBoxSpellerArchiveMarshaler)] handle: &ThfstBoxSpellerArchive,
-    ) -> Result<String, SpellerArchiveError> {
+    ) -> Result<String, Box<dyn Error>> {
         match handle.metadata() {
             Some(v) => Ok(v.info.locale.to_string()),
-            None => Err(SpellerArchiveError::NoMetadata),
+            None => Err(Box::new(SpellerArchiveError::NoMetadata) as _),
         }
     }
 
@@ -195,7 +195,7 @@ pub(crate) mod ffi {
         ThfstChunkedBoxSpellerArchive::open(path)
     }
 
-    #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler")]
+    #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler::<ThfstChunkedBoxSpeller>")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_archive_speller(
         #[marshal(ThfstChunkedBoxSpellerArchiveMarshaler)] handle: &ThfstChunkedBoxSpellerArchive,
     ) -> Arc<ThfstChunkedBoxSpeller> {
@@ -205,10 +205,10 @@ pub(crate) mod ffi {
     #[cthulhu::invoke(return_marshaler = "cursed::StringMarshaler")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_archive_locale(
         #[marshal(ThfstChunkedBoxSpellerArchiveMarshaler)] handle: &ThfstChunkedBoxSpellerArchive,
-    ) -> Result<String, SpellerArchiveError> {
+    ) -> Result<String, Box<dyn Error>> {
         match handle.metadata() {
             Some(v) => Ok(v.info.locale.to_string()),
-            None => Err(SpellerArchiveError::NoMetadata),
+            None => Err(Box::new(SpellerArchiveError::NoMetadata) as _),
         }
     }
 }

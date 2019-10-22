@@ -154,7 +154,7 @@ pub(crate) mod ffi {
         ZipSpellerArchive::open(path)
     }
 
-    #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler")]
+    #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler::<HfstZipSpeller>")]
     pub extern "C" fn divvun_hfst_zip_speller_archive_speller(
         #[marshal(ZipSpellerArchiveMarshaler)] handle: &ZipSpellerArchive,
     ) -> Arc<HfstZipSpeller> {
@@ -164,10 +164,10 @@ pub(crate) mod ffi {
     #[cthulhu::invoke(return_marshaler = "cursed::StringMarshaler")]
     pub extern "C" fn divvun_hfst_zip_speller_archive_locale(
         #[marshal(ZipSpellerArchiveMarshaler)] handle: &ZipSpellerArchive,
-    ) -> Result<String, SpellerArchiveError> {
+    ) -> Result<String, Box<dyn Error>> {
         match handle.metadata() {
             Some(v) => Ok(v.info.locale.to_string()),
-            None => Err(SpellerArchiveError::NoMetadata),
+            None => Err(Box::new(SpellerArchiveError::NoMetadata) as _),
         }
     }
 }

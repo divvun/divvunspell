@@ -38,3 +38,4 @@ cursed = { git = "https://github.com/cthulhu-rs/cthulhu", branch = "feature/call
 compression = ["zip/deflate"]
 convert = []
 ffi = []
+
