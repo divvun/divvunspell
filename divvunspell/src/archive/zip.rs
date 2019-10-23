@@ -125,7 +125,7 @@ pub(crate) mod ffi {
 
     #[cthulhu::invoke(return_marshaler = "cursed::StringMarshaler")]
     pub extern "C" fn divvun_hfst_zip_speller_archive_locale(
-        #[marshal(cursed::ArcRefMarshaler::<ZipSpellerArchive>)] handle: &ZipSpellerArchive,
+        #[marshal(cursed::ArcRefMarshaler::<ZipSpellerArchive>)] handle: &Arc<ZipSpellerArchive>,
     ) -> Result<String, Box<dyn Error>> {
         match handle.metadata() {
             Some(v) => Ok(v.info.locale.to_string()),
