@@ -111,6 +111,10 @@ where
     pub fn is_correct(self: Arc<Self>, word: &str) -> bool {
         use crate::tokenizer::case_handling::*;
 
+        if word.len() == 0 {
+            return true;
+        }
+
         let words = word_variants(word).words;
 
         for word in words.into_iter() {
@@ -138,6 +142,10 @@ where
         config: &SpellerConfig,
     ) -> Vec<Suggestion> {
         use crate::tokenizer::case_handling::*;
+
+        if word.len() == 0 {
+            return vec![];
+        }
 
         if let Some(case_handling) = config.case_handling.as_ref() {
             let case_handler = word_variants(word);
