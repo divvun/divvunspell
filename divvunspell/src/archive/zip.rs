@@ -11,10 +11,11 @@ use super::{MmapRef, TempMmap};
 use crate::speller::Speller;
 use crate::transducer::hfst::HfstTransducer;
 
+pub type HfstZipSpeller = Speller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>;
+
 pub struct ZipSpellerArchive {
     metadata: SpellerMetadata,
-    speller:
-        Arc<Speller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>>,
+    speller: Arc<HfstZipSpeller>,
 }
 
 fn mmap_by_name<R: Read + Seek>(
@@ -104,8 +105,6 @@ pub(crate) mod ffi {
     use cursed::{FromForeign, InputType, ReturnType, ToForeign};
     use std::error::Error;
     use std::ffi::c_void;
-
-    pub type HfstZipSpeller = Speller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>;
 
     #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler::<ZipSpellerArchive>")]
     pub extern "C" fn divvun_hfst_zip_speller_archive_open(
