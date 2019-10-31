@@ -5,13 +5,33 @@ use box_format::BoxFileReader;
 use super::error::SpellerArchiveError;
 use super::meta::SpellerMetadata;
 use crate::speller::Speller;
-use crate::transducer::{thfst::MemmapThfstTransducer, Transducer};
+use crate::transducer::{
+    thfst::{MemmapThfstChunkedTransducer, MemmapThfstTransducer},
+    Transducer,
+};
 use crate::vfs::boxf::Filesystem as BoxFilesystem;
 use crate::vfs::Filesystem;
 
 pub type ThfstBoxSpellerArchive = BoxSpellerArchive<
     MemmapThfstTransducer<crate::vfs::boxf::File>,
     MemmapThfstTransducer<crate::vfs::boxf::File>,
+>;
+
+pub type ThfstChunkedBoxSpeller = Speller<
+    crate::vfs::boxf::File,
+    MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
+    MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
+>;
+
+pub type ThfstBoxSpeller = Speller<
+    crate::vfs::boxf::File,
+    MemmapThfstTransducer<crate::vfs::boxf::File>,
+    MemmapThfstTransducer<crate::vfs::boxf::File>,
+>;
+
+pub type ThfstChunkedBoxSpellerArchive = BoxSpellerArchive<
+    MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
+    MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
 >;
 
 pub struct BoxSpellerArchive<T, U>
@@ -60,27 +80,9 @@ where
 #[cfg(feature = "ffi")]
 pub(crate) mod ffi {
     use super::*;
-    use crate::transducer::thfst::MemmapThfstChunkedTransducer;
     use cursed::{FromForeign, InputType, ReturnType, ToForeign};
     use std::error::Error;
     use std::ffi::c_void;
-
-    pub type ThfstChunkedBoxSpeller = Speller<
-        crate::vfs::boxf::File,
-        MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
-        MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
-    >;
-
-    pub type ThfstBoxSpeller = Speller<
-        crate::vfs::boxf::File,
-        MemmapThfstTransducer<crate::vfs::boxf::File>,
-        MemmapThfstTransducer<crate::vfs::boxf::File>,
-    >;
-
-    pub type ThfstChunkedBoxSpellerArchive = BoxSpellerArchive<
-        MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
-        MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
-    >;
 
     #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler::<ThfstBoxSpellerArchive>")]
     pub extern "C" fn divvun_thfst_box_speller_archive_open(
@@ -93,14 +95,18 @@ pub(crate) mod ffi {
 
     #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler::<ThfstBoxSpeller>")]
     pub extern "C" fn divvun_thfst_box_speller_archive_speller(
-        #[marshal(cursed::ArcRefMarshaler::<ThfstBoxSpellerArchive>)] handle: &Arc<ThfstBoxSpellerArchive>,
+        #[marshal(cursed::ArcRefMarshaler::<ThfstBoxSpellerArchive>)] handle: &Arc<
+            ThfstBoxSpellerArchive,
+        >,
     ) -> Arc<ThfstBoxSpeller> {
         handle.speller()
     }
 
     #[cthulhu::invoke(return_marshaler = "cursed::StringMarshaler")]
     pub extern "C" fn divvun_thfst_box_speller_archive_locale(
-        #[marshal(cursed::ArcRefMarshaler::<ThfstBoxSpellerArchive>)] handle: &Arc<ThfstBoxSpellerArchive>,
+        #[marshal(cursed::ArcRefMarshaler::<ThfstBoxSpellerArchive>)] handle: &Arc<
+            ThfstBoxSpellerArchive,
+        >,
     ) -> Result<String, Box<dyn Error>> {
         match handle.metadata() {
             Some(v) => Ok(v.info.locale.to_string()),
@@ -119,14 +125,18 @@ pub(crate) mod ffi {
 
     #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler::<ThfstChunkedBoxSpeller>")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_archive_speller(
-        #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpellerArchive>)] handle: &Arc<ThfstChunkedBoxSpellerArchive>,
+        #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpellerArchive>)] handle: &Arc<
+            ThfstChunkedBoxSpellerArchive,
+        >,
     ) -> Arc<ThfstChunkedBoxSpeller> {
         handle.speller()
     }
 
     #[cthulhu::invoke(return_marshaler = "cursed::StringMarshaler")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_archive_locale(
-        #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpellerArchive>)] handle: &Arc<ThfstChunkedBoxSpellerArchive>,
+        #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpellerArchive>)] handle: &Arc<
+            ThfstChunkedBoxSpellerArchive,
+        >,
     ) -> Result<String, Box<dyn Error>> {
         match handle.metadata() {
             Some(v) => Ok(v.info.locale.to_string()),

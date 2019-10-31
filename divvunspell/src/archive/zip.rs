@@ -11,7 +11,8 @@ use super::{MmapRef, TempMmap};
 use crate::speller::Speller;
 use crate::transducer::hfst::HfstTransducer;
 
-pub type HfstZipSpeller = Speller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>;
+pub type HfstZipSpeller =
+    Speller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>;
 
 pub struct ZipSpellerArchive {
     metadata: SpellerMetadata,

@@ -258,11 +258,11 @@ where
 #[cfg(feature = "ffi")]
 pub(crate) mod ffi {
     use super::*;
+    use crate::archive::boxf::{ThfstBoxSpeller, ThfstChunkedBoxSpeller};
+    use crate::archive::zip::HfstZipSpeller;
     use cursed::{FromForeign, ToForeign};
     use std::convert::Infallible;
     use std::ffi::c_void;
-    use crate::archive::boxf::ffi::{ThfstBoxSpeller, ThfstChunkedBoxSpeller};
-    use crate::archive::zip::HfstZipSpeller;
 
     pub type SuggestionVecMarshaler = cursed::VecMarshaler<Suggestion>;
     pub type SuggestionVecRefMarshaler = cursed::VecRefMarshaler<Suggestion>;
@@ -303,11 +303,14 @@ pub(crate) mod ffi {
         type Error = Infallible;
 
         fn to_foreign(config: SpellerConfig) -> Result<*const c_void, Self::Error> {
-            let case_handling = config.case_handling.map(|c| FfiCaseHandlingConfig {
-                start_penalty: c.start_penalty,
-                end_penalty: c.end_penalty,
-                mid_penalty: c.mid_penalty,
-            }).unwrap_or_else(|| FfiCaseHandlingConfig::default());
+            let case_handling = config
+                .case_handling
+                .map(|c| FfiCaseHandlingConfig {
+                    start_penalty: c.start_penalty,
+                    end_penalty: c.end_penalty,
+                    mid_penalty: c.mid_penalty,
+                })
+                .unwrap_or_else(|| FfiCaseHandlingConfig::default());
 
             let out = FfiSpellerConfig {
                 n_best: config.n_best.unwrap_or(0),
@@ -343,9 +346,21 @@ pub(crate) mod ffi {
             };
 
             let out = SpellerConfig {
-                n_best: if config.n_best > 0 { Some(config.n_best) } else { None },
-                max_weight: if config.max_weight > 0.0 { Some(config.max_weight) } else { None },
-                beam: if config.beam > 0.0 { Some(config.beam) } else { None },
+                n_best: if config.n_best > 0 {
+                    Some(config.n_best)
+                } else {
+                    None
+                },
+                max_weight: if config.max_weight > 0.0 {
+                    Some(config.max_weight)
+                } else {
+                    None
+                },
+                beam: if config.beam > 0.0 {
+                    Some(config.beam)
+                } else {
+                    None
+                },
                 case_handling,
                 node_pool_size: config.node_pool_size,
             };
@@ -381,7 +396,9 @@ pub(crate) mod ffi {
 
     #[cthulhu::invoke]
     pub extern "C" fn divvun_thfst_chunked_box_speller_is_correct(
-        #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: &Arc<ThfstChunkedBoxSpeller>,
+        #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: &Arc<
+            ThfstChunkedBoxSpeller,
+        >,
         #[marshal(cursed::StrMarshaler)] word: &str,
     ) -> bool {
         Arc::clone(speller).is_correct(word)
@@ -389,7 +406,9 @@ pub(crate) mod ffi {
 
     #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_suggest(
-        #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: &Arc<ThfstChunkedBoxSpeller>,
+        #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: &Arc<
+            ThfstChunkedBoxSpeller,
+        >,
         #[marshal(cursed::StrMarshaler)] word: &str,
     ) -> Vec<Suggestion> {
         let suggestions = Arc::clone(speller).suggest(word);
@@ -399,7 +418,9 @@ pub(crate) mod ffi {
 
     #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_suggest_with_config(
-        #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: &Arc<ThfstChunkedBoxSpeller>,
+        #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: &Arc<
+            ThfstChunkedBoxSpeller,
+        >,
         #[marshal(cursed::StrMarshaler)] word: &str,
         #[marshal(SpellerConfigMarshaler)] config: SpellerConfig,
     ) -> Vec<Suggestion> {
