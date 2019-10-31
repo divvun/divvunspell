@@ -262,7 +262,7 @@ pub(crate) mod ffi {
     use std::convert::Infallible;
     use std::ffi::c_void;
     use crate::archive::boxf::ffi::{ThfstBoxSpeller, ThfstChunkedBoxSpeller};
-    use crate::archive::zip::ffi::HfstZipSpeller;
+    use crate::archive::zip::HfstZipSpeller;
 
     pub type SuggestionVecMarshaler = cursed::VecMarshaler<Suggestion>;
     pub type SuggestionVecRefMarshaler = cursed::VecRefMarshaler<Suggestion>;
