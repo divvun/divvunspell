@@ -89,10 +89,10 @@ impl<F: crate::vfs::File + crate::vfs::ToMemmap> Transducer<F> for ThfstChunkedT
                 Err(TransducerError::Memmap(_)) => {
                     index_chunk_count *= 2;
 
-                    if index_chunk_count > 8 {
+                    if index_chunk_count > 16 {
                         return Err(TransducerError::Memmap(std::io::Error::new(
                             std::io::ErrorKind::Other,
-                            "Could not memory map index in 8 chunks",
+                            "Could not memory map index table in 16 chunks",
                         )));
                     }
                 }
@@ -119,10 +119,10 @@ impl<F: crate::vfs::File + crate::vfs::ToMemmap> Transducer<F> for ThfstChunkedT
                 Err(TransducerError::Memmap(_)) => {
                     trans_chunk_count *= 2;
 
-                    if trans_chunk_count > 8 {
+                    if trans_chunk_count > 16 {
                         return Err(TransducerError::Memmap(std::io::Error::new(
                             std::io::ErrorKind::Other,
-                            "Could not memory transition index in 8 chunks",
+                            "Could not memory map transition table in 16 chunks",
                         )));
                     }
                 }
