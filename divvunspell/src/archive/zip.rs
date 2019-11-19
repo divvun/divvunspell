@@ -24,7 +24,7 @@ fn mmap_by_name<R: Read + Seek>(
     archive: &mut ZipArchive<R>,
     name: &str,
 ) -> Result<MmapRef, std::io::Error> {
-    let mut index = archive.by_name(name).unwrap();
+    let mut index = archive.by_name(name)?;
 
     if index.compression() != CompressionMethod::Stored {
         let tempdir = tempdir::TempDir::new("divvunspell")?;
