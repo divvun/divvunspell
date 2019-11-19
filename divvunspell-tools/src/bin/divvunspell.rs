@@ -7,7 +7,6 @@ use serde::Serialize;
 use divvunspell::archive::{boxf::ThfstBoxSpellerArchive, BoxSpellerArchive, ZipSpellerArchive};
 use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::{Speller, SpellerConfig};
-use divvunspell::tokenizer::Tokenize;
 use divvunspell::transducer::{thfst::MemmapThfstTransducer, Transducer};
 use divvunspell::vfs;
 
@@ -215,6 +214,12 @@ fn main() {
         }
     }
 
+    let mut writer: Box<dyn OutputWriter> = if is_json {
+        Box::new(JsonWriter::new())
+    } else {
+        Box::new(StdoutWriter)
+    };
+
     let words: Vec<String> = match matches.values_of("WORDS") {
         Some(v) => v.map(|x| x.to_string()).collect(),
         None => {
@@ -223,14 +228,8 @@ fn main() {
             io::stdin()
                 .read_to_string(&mut buffer)
                 .expect("reading stdin");
-            buffer.words().map(|x| x.to_string()).collect()
+            buffer.split(" ").map(|x| x.trim().to_string()).collect()
         }
-    };
-
-    let mut writer: Box<dyn OutputWriter> = if is_json {
-        Box::new(JsonWriter::new())
-    } else {
-        Box::new(StdoutWriter)
     };
 
     if let Some(zhfst_file) = matches.value_of("zhfst") {
