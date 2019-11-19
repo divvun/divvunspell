@@ -109,23 +109,23 @@ pub(crate) mod ffi {
 
     #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler::<ZipSpellerArchive>")]
     pub extern "C" fn divvun_hfst_zip_speller_archive_open(
-        #[marshal(cursed::PathMarshaler)] path: &std::path::Path,
+        #[marshal(cursed::PathMarshaler)] path: std::path::PathBuf,
     ) -> Result<Arc<ZipSpellerArchive>, Box<dyn Error>> {
-        ZipSpellerArchive::open(path)
+        ZipSpellerArchive::open(&path)
             .map(|x| Arc::new(x))
             .map_err(|e| Box::new(e) as _)
     }
 
     #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler::<HfstZipSpeller>")]
     pub extern "C" fn divvun_hfst_zip_speller_archive_speller(
-        #[marshal(cursed::ArcRefMarshaler::<ZipSpellerArchive>)] handle: &Arc<ZipSpellerArchive>,
+        #[marshal(cursed::ArcRefMarshaler::<ZipSpellerArchive>)] handle: Arc<ZipSpellerArchive>,
     ) -> Arc<HfstZipSpeller> {
         handle.speller()
     }
 
     #[cthulhu::invoke(return_marshaler = "cursed::StringMarshaler")]
     pub extern "C" fn divvun_hfst_zip_speller_archive_locale(
-        #[marshal(cursed::ArcRefMarshaler::<ZipSpellerArchive>)] handle: &Arc<ZipSpellerArchive>,
+        #[marshal(cursed::ArcRefMarshaler::<ZipSpellerArchive>)] handle: Arc<ZipSpellerArchive>,
     ) -> Result<String, Box<dyn Error>> {
         match handle.metadata() {
             Some(v) => Ok(v.info.locale.to_string()),

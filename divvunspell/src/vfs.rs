@@ -64,7 +64,7 @@ impl Filesystem for Fs {
 
     #[inline(always)]
     fn open<P: AsRef<Path>>(&self, path: P) -> Result<Self::File> {
-        std::fs::File::open(path)
+        std::fs::File::open(&path)
     }
 }
 
