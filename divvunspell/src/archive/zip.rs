@@ -42,7 +42,7 @@ fn mmap_by_name<R: Read + Seek>(
                 mmap: Arc::new(v),
                 _tempdir: tempdir,
             })),
-            Err(err) => panic!(err),
+            Err(err) => return Err(err),
         };
     }
 
@@ -55,7 +55,7 @@ fn mmap_by_name<R: Read + Seek>(
 
     match mmap {
         Ok(v) => Ok(MmapRef::Direct(Arc::new(v))),
-        Err(err) => panic!(err),
+        Err(err) => Err(err)
     }
 }
 
