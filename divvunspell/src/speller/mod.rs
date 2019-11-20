@@ -1,17 +1,19 @@
-pub mod suggestion;
-pub mod worker;
+use std::f32;
+use std::sync::Arc;
 
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
-use std::f32;
-use std::sync::Arc;
+use unic_ucd_category::GeneralCategory;
 
 use self::worker::SpellerWorker;
 use crate::speller::suggestion::Suggestion;
 use crate::tokenizer::case_handling::CaseHandler;
 use crate::transducer::Transducer;
 use crate::types::{SymbolNumber, Weight};
+
+pub mod suggestion;
+pub mod worker;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CaseHandlingConfig {
@@ -112,6 +114,12 @@ where
         use crate::tokenizer::case_handling::*;
 
         if word.len() == 0 {
+            return true;
+        }
+
+        // Check if there are zero letters in the word according to 
+        // Unicode letter category
+        if word.chars().all(|c| !GeneralCategory::of(c).is_letter()) {
             return true;
         }
 
