@@ -8,7 +8,9 @@ use crate::tokenizer::word::WordBoundIndices;
 use crate::tokenizer::Tokenize;
 
 #[no_mangle]
-pub extern "C" fn divvun_word_bound_indices(utf8_string: *const c_char) -> *mut WordBoundIndices<'static> {
+pub extern "C" fn divvun_word_bound_indices(
+    utf8_string: *const c_char,
+) -> *mut WordBoundIndices<'static> {
     let c_str = unsafe { CStr::from_ptr(utf8_string) };
     let string = c_str.to_str().unwrap();
     let iterator = string.word_bound_indices();

@@ -117,7 +117,7 @@ where
             return true;
         }
 
-        // Check if there are zero letters in the word according to 
+        // Check if there are zero letters in the word according to
         // Unicode letter category
         if word.chars().all(|c| !GeneralCategory::of(c).is_letter()) {
             return true;

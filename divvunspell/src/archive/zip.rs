@@ -55,7 +55,7 @@ fn mmap_by_name<R: Read + Seek>(
 
     match mmap {
         Ok(v) => Ok(MmapRef::Direct(Arc::new(v))),
-        Err(err) => Err(err)
+        Err(err) => Err(err),
     }
 }
 
