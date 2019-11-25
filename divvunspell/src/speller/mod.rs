@@ -419,9 +419,7 @@ pub(crate) mod ffi {
         >,
         #[marshal(cursed::StrMarshaler)] word: &str,
     ) -> Vec<Suggestion> {
-        let suggestions = speller.suggest(word);
-        println!("{:?} {:?}", &suggestions, &suggestions as *const _);
-        suggestions
+        speller.suggest(word)
     }
 
     #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
@@ -448,9 +446,7 @@ pub(crate) mod ffi {
         #[marshal(cursed::ArcRefMarshaler::<HfstZipSpeller>)] speller: Arc<HfstZipSpeller>,
         #[marshal(cursed::StrMarshaler)] word: &str,
     ) -> Vec<Suggestion> {
-        let suggestions = speller.suggest(word);
-        println!("{:?} {:?}", &suggestions, &suggestions as *const _);
-        suggestions
+        speller.suggest(word)
     }
 
     #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
