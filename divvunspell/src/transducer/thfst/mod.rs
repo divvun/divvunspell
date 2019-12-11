@@ -31,7 +31,7 @@ use crate::transducer::{Transducer, TransducerAlphabet};
 use crate::vfs::{self, Filesystem};
 
 #[repr(C)]
-pub union WeightOrTarget {
+pub(crate) union WeightOrTarget {
     target: u32,
     weight: f32,
 }

@@ -33,24 +33,6 @@ pub fn lower_first(s: &str) -> SmolStr {
     }
 }
 
-#[inline(always)]
-pub fn contains_uncased_characters(s: &str) -> bool {
-    s.chars().any(|x| !x.is_lowercase() && !x.is_uppercase())
-}
-
-// static PUNCTUATION: &[&str] = &[
-//     "!", "\"", "#", "$", "%", "&", "'", "(", ")", "*", "+", ",", "-", ".", "/", ":", ";", "<", "=",
-//     ">", "?", "@", "[", "\\", "]", "^", "_", "`", "{", "|", "}", "~",
-// ];
-
-// fn without_punctuation(alphabet: &[SmolStr]) -> Vec<SmolStr> {
-//     let x = alphabet
-//         .iter()
-//         .filter(|x| !PUNCTUATION.contains(&x.as_str()))
-//         .map(|x| x.to_owned());
-//     x.collect::<Vec<_>>()
-// }
-
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 enum Case {
     Upper,
@@ -151,14 +133,6 @@ fn mixed_case_word_variants(word: &str) -> CaseHandler {
 }
 
 pub fn word_variants(word: &str) -> CaseHandler {
-    // if contains_uncased_characters(word) {
-    //     return CaseHandler {
-    //         mode: CaseMode::FirstResults,
-    //         mutation: CaseMutation::None,
-    //         words: vec![SmolStr::new(word)]
-    //     };
-    // }
-
     if is_mixed_case(word) {
         return mixed_case_word_variants(word);
     }
