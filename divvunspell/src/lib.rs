@@ -1,5 +1,5 @@
 pub mod archive;
-#[cfg(feature = "ffi")]
+#[cfg(feature = "internal_ffi")]
 pub mod ffi;
 
 pub mod speller;

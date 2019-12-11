@@ -263,7 +263,7 @@ where
     }
 }
 
-#[cfg(feature = "ffi")]
+#[cfg(feature = "internal_ffi")]
 pub(crate) mod ffi {
     use super::*;
     use crate::archive::boxf::{ThfstBoxSpeller, ThfstChunkedBoxSpeller};

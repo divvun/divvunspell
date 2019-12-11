@@ -100,7 +100,7 @@ impl ZipSpellerArchive {
     }
 }
 
-#[cfg(feature = "ffi")]
+#[cfg(feature = "internal_ffi")]
 pub(crate) mod ffi {
     use super::*;
     use cursed::{FromForeign, InputType, ReturnType, ToForeign};

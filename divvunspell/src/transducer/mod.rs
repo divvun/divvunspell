@@ -92,5 +92,5 @@ pub trait IndexTable<F: vfs::File>: Sized {
     }
 }
 
-#[cfg(feature = "convert")]
+#[cfg(feature = "internal_convert")]
 pub mod convert;

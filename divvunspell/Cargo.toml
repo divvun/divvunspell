@@ -35,5 +35,7 @@ cursed = { git = "https://github.com/cthulhu-rs/cthulhu", branch = "master" }
 
 [features]
 compression = ["zip/deflate"]
-convert = []
-ffi = []
+
+# Internal features: unstable, not for external use!
+internal_convert = []
+internal_ffi = []
