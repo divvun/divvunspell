@@ -10,8 +10,8 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::Serialize;
 
 static CFG: SpellerConfig = SpellerConfig {
-    max_weight: Some(500000.0),
-    n_best: None,
+    n_best: Some(10),
+    max_weight: Some(10000.0),
     beam: None,
     case_handling: Some(CaseHandlingConfig::default()),
     node_pool_size: 128,
