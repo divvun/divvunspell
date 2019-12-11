@@ -4,9 +4,8 @@ use memmap::Mmap;
 
 use crate::transducer::TransducerError;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
-use crate::vfs::{self, Filesystem, ToMemmap};
+use crate::vfs::{self, Filesystem};
 
-#[doc(hidden)]
 pub struct MemmapIndexTable<F> {
     buf: Mmap,
     pub(crate) size: u32,
@@ -15,7 +14,7 @@ pub struct MemmapIndexTable<F> {
 
 const INDEX_TABLE_SIZE: usize = 8;
 
-impl<F: vfs::File + ToMemmap> MemmapIndexTable<F> {
+impl<F: vfs::File> MemmapIndexTable<F> {
     pub fn from_path_partial<P, FS>(
         fs: &FS,
         path: P,
@@ -41,7 +40,7 @@ impl<F: vfs::File + ToMemmap> MemmapIndexTable<F> {
     }
 }
 
-impl<F: vfs::File + ToMemmap> crate::transducer::IndexTable<F> for MemmapIndexTable<F> {
+impl<F: vfs::File> crate::transducer::IndexTable<F> for MemmapIndexTable<F> {
     fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
     where
         P: AsRef<std::path::Path>,
@@ -109,7 +108,7 @@ mod unix {
     use crate::transducer::IndexTable;
     use crate::transducer::TransducerError;
     use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
-    use crate::vfs::{self, Filesystem, ToMemmap};
+    use crate::vfs::{self, Filesystem};
 
     pub struct FileIndexTable<F: vfs::File> {
         file: F,
@@ -136,7 +135,7 @@ mod unix {
         }
     }
 
-    impl<F: vfs::File + ToMemmap> IndexTable<F> for FileIndexTable<F> {
+    impl<F: vfs::File> IndexTable<F> for FileIndexTable<F> {
         fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
         where
             P: AsRef<std::path::Path>,

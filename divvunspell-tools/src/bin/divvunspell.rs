@@ -75,7 +75,7 @@ impl OutputWriter for JsonWriter {
     }
 }
 
-fn run<F: vfs::File + vfs::ToMemmap, T: Transducer<F>, U: Transducer<F>>(
+fn run<F: vfs::File, T: Transducer<F>, U: Transducer<F>>(
     speller: Arc<Speller<F, T, U>>,
     words: Vec<String>,
     writer: &mut dyn OutputWriter,

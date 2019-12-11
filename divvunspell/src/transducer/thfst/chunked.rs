@@ -7,14 +7,14 @@ use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use super::index_table::MemmapIndexTable;
 use super::transition_table::MemmapTransitionTable;
 use crate::transducer::{Transducer, TransducerAlphabet, TransducerError};
-use crate::vfs::{self, Filesystem, ToMemmap};
+use crate::vfs::{self, Filesystem};
 
 use crate::transducer::{IndexTable, TransitionTable};
 
 /// Tromsø-Helsinki Finite State Transducer format
 pub struct ThfstChunkedTransducer<F>
 where
-    F: vfs::File + ToMemmap,
+    F: vfs::File,
 {
     // meta: MetaRecord,
     index_tables: Vec<MemmapIndexTable<F>>,
@@ -56,7 +56,7 @@ macro_rules! error {
     };
 }
 
-impl<F: crate::vfs::File + crate::vfs::ToMemmap> Transducer<F> for ThfstChunkedTransducer<F> {
+impl<F: crate::vfs::File> Transducer<F> for ThfstChunkedTransducer<F> {
     const FILE_EXT: &'static str = "thfst";
 
     fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>

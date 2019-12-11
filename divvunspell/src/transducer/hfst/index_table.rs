@@ -13,7 +13,6 @@ use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use memmap::Mmap;
 use std::sync::Arc;
 
-#[doc(hidden)]
 pub struct MappedIndexTable {
     pub(crate) size: TransitionTableIndex,
     pub(crate) mmap: Arc<Mmap>,

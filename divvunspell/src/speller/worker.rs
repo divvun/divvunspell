@@ -25,7 +25,7 @@ fn speller_max_weight(config: &SpellerConfig) -> Weight {
 }
 
 pub struct SpellerWorker<
-    F: crate::vfs::File + crate::vfs::ToMemmap,
+    F: crate::vfs::File,
     T: Transducer<F>,
     U: Transducer<F>,
 > {
@@ -37,12 +37,12 @@ pub struct SpellerWorker<
 #[allow(clippy::too_many_arguments)]
 impl<'t, F, T: Transducer<F> + 't, U: Transducer<F> + 't> SpellerWorker<F, T, U>
 where
-    F: crate::vfs::File + crate::vfs::ToMemmap,
+    F: crate::vfs::File,
     T: Transducer<F>,
     U: Transducer<F>,
 {
     #[inline(always)]
-    pub fn new(
+    pub(crate) fn new(
         speller: Arc<Speller<F, T, U>>,
         input: Vec<SymbolNumber>,
         config: SpellerConfig,
@@ -197,7 +197,7 @@ where
     }
 
     #[inline(always)]
-    pub fn queue_lexicon_arcs<'a>(
+    fn queue_lexicon_arcs<'a>(
         &self,
         pool: &'a Pool<TreeNode>,
         max_weight: Weight,
@@ -491,7 +491,7 @@ where
         self.speller.lexicon().alphabet().state_size() as usize
     }
 
-    pub fn is_correct(&self) -> bool {
+    pub(crate) fn is_correct(&self) -> bool {
         let max_weight = speller_max_weight(&self.config);
         let pool = Pool::with_size_and_max(0, 0);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
@@ -510,7 +510,7 @@ where
         false
     }
 
-    pub fn suggest(&self) -> Vec<Suggestion> {
+    pub(crate) fn suggest(&self) -> Vec<Suggestion> {
         let pool = Pool::with_size_and_max(self.config.node_pool_size, self.config.node_pool_size);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
         let mut corrections = HashMap::new();

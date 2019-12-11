@@ -9,14 +9,14 @@ pub mod zip;
 pub use self::boxf::BoxSpellerArchive;
 pub use self::zip::ZipSpellerArchive;
 
-pub struct TempMmap {
+pub(crate) struct TempMmap {
     mmap: Arc<Mmap>,
 
     // Not really dead, needed to drop when TempMmap drops
     _tempdir: tempdir::TempDir,
 }
 
-pub enum MmapRef {
+pub(crate) enum MmapRef {
     Direct(Arc<Mmap>),
     Temp(TempMmap),
 }

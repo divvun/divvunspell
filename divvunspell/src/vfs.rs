@@ -11,11 +11,6 @@ pub trait Filesystem {
     fn open<P: AsRef<Path>>(&self, path: P) -> Result<Self::File>;
 }
 
-pub trait ToMemmap {
-    unsafe fn memory_map(&self) -> Result<Mmap>;
-    unsafe fn partial_memory_map(&self, offset: u64, len: usize) -> Result<Mmap>;
-}
-
 pub trait File: Read {
     fn len(&self) -> Result<u64>;
     fn is_empty(&self) -> Result<bool>;
@@ -23,6 +18,8 @@ pub trait File: Read {
     fn read_at(&self, buf: &mut [u8], offset: u64) -> Result<usize>;
     #[cfg(unix)]
     fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> Result<()>;
+    unsafe fn memory_map(&self) -> Result<Mmap>;
+    unsafe fn partial_memory_map(&self, offset: u64, len: usize) -> Result<Mmap>;
 }
 
 impl File for std::fs::File {
@@ -45,9 +42,7 @@ impl File for std::fs::File {
     fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> Result<()> {
         FileExt::read_exact_at(self, buf, offset)
     }
-}
-
-impl ToMemmap for std::fs::File {
+    
     unsafe fn memory_map(&self) -> Result<Mmap> {
         MmapOptions::new().map(self)
     }
@@ -86,22 +81,6 @@ pub mod boxf {
         }
     }
 
-    impl super::ToMemmap for File {
-        unsafe fn memory_map(&self) -> Result<memmap::Mmap> {
-            memmap::MmapOptions::new()
-                .offset(self.offset)
-                .len(self.len)
-                .map(&self.file)
-        }
-
-        unsafe fn partial_memory_map(&self, offset: u64, len: usize) -> Result<memmap::Mmap> {
-            memmap::MmapOptions::new()
-                .offset(self.offset + offset)
-                .len(std::cmp::min(self.len - offset as usize, len))
-                .map(&self.file)
-        }
-    }
-
     impl<'a> super::File for File {
         fn len(&self) -> Result<u64> {
             Ok(self.len as u64)
@@ -121,6 +100,20 @@ pub mod boxf {
         #[inline(always)]
         fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> Result<()> {
             self.file.read_exact_at(buf, self.offset + offset)
+        }
+
+        unsafe fn memory_map(&self) -> Result<memmap::Mmap> {
+            memmap::MmapOptions::new()
+                .offset(self.offset)
+                .len(self.len)
+                .map(&self.file)
+        }
+
+        unsafe fn partial_memory_map(&self, offset: u64, len: usize) -> Result<memmap::Mmap> {
+            memmap::MmapOptions::new()
+                .offset(self.offset + offset)
+                .len(std::cmp::min(self.len - offset as usize, len))
+                .map(&self.file)
         }
     }
 

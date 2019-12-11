@@ -13,7 +13,6 @@ use crate::constants::TRANS_TABLE_SIZE;
 use crate::transducer::symbol_transition::SymbolTransition;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 
-#[doc(hidden)]
 pub struct MappedTransitionTable {
     pub(crate) size: TransitionTableIndex,
     pub(crate) mmap: Arc<Mmap>,

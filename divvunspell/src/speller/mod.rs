@@ -13,7 +13,7 @@ use crate::transducer::Transducer;
 use crate::types::{SymbolNumber, Weight};
 
 pub mod suggestion;
-pub mod worker;
+mod worker;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CaseHandlingConfig {
@@ -56,7 +56,7 @@ impl CaseHandlingConfig {
 #[derive(Debug)]
 pub struct Speller<F, T: Transducer<F>, U: Transducer<F>>
 where
-    F: crate::vfs::File + crate::vfs::ToMemmap,
+    F: crate::vfs::File,
 {
     mutator: T,
     lexicon: U,
@@ -66,7 +66,7 @@ where
 
 impl<F, T, U> Speller<F, T, U>
 where
-    F: crate::vfs::File + crate::vfs::ToMemmap,
+    F: crate::vfs::File,
     T: Transducer<F>,
     U: Transducer<F>,
 {

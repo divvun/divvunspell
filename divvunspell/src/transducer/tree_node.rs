@@ -18,13 +18,6 @@ pub struct TreeNode {
     pub string: Vec<SymbolNumber>,
 }
 
-impl TreeNode {
-    #[inline(always)]
-    pub fn key(&self) -> TreeNode {
-        self.clone()
-    }
-}
-
 impl std::cmp::PartialEq for TreeNode {
     fn eq(&self, other: &TreeNode) -> bool {
         self.lexicon_state == other.lexicon_state
@@ -123,11 +116,6 @@ impl TreeNode {
     #[inline(always)]
     pub fn weight(&self) -> Weight {
         self.weight
-    }
-
-    #[inline(always)]
-    pub fn flag_state(&self) -> &FlagDiacriticState {
-        &self.flag_state
     }
 
     #[inline(always)]
