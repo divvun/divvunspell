@@ -335,7 +335,7 @@ pub(crate) mod ffi {
     impl FromForeign<*const c_void, SpellerConfig> for SpellerConfigMarshaler {
         type Error = Infallible;
 
-        fn from_foreign(ptr: *const c_void) -> Result<SpellerConfig, Self::Error> {
+        unsafe fn from_foreign(ptr: *const c_void) -> Result<SpellerConfig, Self::Error> {
             if ptr.is_null() {
                 return Ok(SpellerConfig::default());
             }
@@ -473,12 +473,5 @@ pub(crate) mod ffi {
         index: usize,
     ) -> String {
         suggestions[index].value().to_string()
-    }
-
-    #[no_mangle]
-    pub extern "C" fn divvun_string_free(ptr: *mut libc::c_char) {
-        if !ptr.is_null() {
-            cursed::StringMarshaler::from_foreign(ptr).unwrap();
-        }
     }
 }

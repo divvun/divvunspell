@@ -42,7 +42,7 @@ impl File for std::fs::File {
     fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> Result<()> {
         FileExt::read_exact_at(self, buf, offset)
     }
-    
+
     unsafe fn memory_map(&self) -> Result<Mmap> {
         MmapOptions::new().map(self)
     }

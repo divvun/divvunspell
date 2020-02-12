@@ -24,11 +24,7 @@ fn speller_max_weight(config: &SpellerConfig) -> Weight {
     config.max_weight.unwrap_or(f32::MAX)
 }
 
-pub struct SpellerWorker<
-    F: crate::vfs::File,
-    T: Transducer<F>,
-    U: Transducer<F>,
-> {
+pub struct SpellerWorker<F: crate::vfs::File, T: Transducer<F>, U: Transducer<F>> {
     speller: Arc<Speller<F, T, U>>,
     input: Vec<SymbolNumber>,
     config: SpellerConfig,

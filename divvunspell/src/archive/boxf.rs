@@ -86,7 +86,7 @@ pub(crate) mod ffi {
 
     #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler::<ThfstBoxSpellerArchive>")]
     pub extern "C" fn divvun_thfst_box_speller_archive_open(
-        #[marshal(cursed::PathMarshaler)] path: std::path::PathBuf,
+        #[marshal(cursed::PathBufMarshaler)] path: std::path::PathBuf,
     ) -> Result<Arc<ThfstBoxSpellerArchive>, Box<dyn Error>> {
         ThfstBoxSpellerArchive::open(&path)
             .map(|x| Arc::new(x))
@@ -116,7 +116,7 @@ pub(crate) mod ffi {
 
     #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler::<ThfstChunkedBoxSpellerArchive>")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_archive_open(
-        #[marshal(cursed::PathMarshaler)] path: std::path::PathBuf,
+        #[marshal(cursed::PathBufMarshaler)] path: std::path::PathBuf,
     ) -> Result<Arc<ThfstChunkedBoxSpellerArchive>, Box<dyn Error>> {
         ThfstChunkedBoxSpellerArchive::open(&path)
             .map(|x| Arc::new(x))

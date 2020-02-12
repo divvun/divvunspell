@@ -109,7 +109,7 @@ pub(crate) mod ffi {
 
     #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler::<ZipSpellerArchive>")]
     pub extern "C" fn divvun_hfst_zip_speller_archive_open(
-        #[marshal(cursed::PathMarshaler)] path: std::path::PathBuf,
+        #[marshal(cursed::PathBufMarshaler)] path: std::path::PathBuf,
     ) -> Result<Arc<ZipSpellerArchive>, Box<dyn Error>> {
         ZipSpellerArchive::open(&path)
             .map(|x| Arc::new(x))

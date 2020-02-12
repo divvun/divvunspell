@@ -7,6 +7,8 @@ use std::sync::Arc;
 use crate::tokenizer::word::WordBoundIndices;
 use crate::tokenizer::Tokenize;
 
+pub(crate) mod fbs;
+
 #[no_mangle]
 pub extern "C" fn divvun_word_bound_indices(
     utf8_string: *const c_char,
@@ -41,4 +43,36 @@ pub extern "C" fn divvun_word_bound_indices_next(
 #[no_mangle]
 pub extern "C" fn divvun_word_bound_indices_free(handle: *mut WordBoundIndices) {
     unsafe { Box::from_raw(handle) };
+}
+
+use std::convert::Infallible;
+use cursed::{ToForeign, FromForeign, Slice};
+use crate::ffi::fbs::IntoFlatbuffer;
+use crate::tokenizer::{cursor_context, WordContext};
+
+pub struct FbsMarshaler;
+
+impl cursed::ReturnType for FbsMarshaler {
+    type Foreign = Slice<u8>;
+
+    fn foreign_default() -> Self::Foreign {
+        Slice::default()
+    }
+}
+
+impl<T: IntoFlatbuffer> ToForeign<T, Slice<u8>> for FbsMarshaler {
+    type Error = Infallible;
+
+    fn to_foreign(bufferable: T) -> Result<Slice<u8>, Self::Error> {
+        let vec = bufferable.into_flatbuffer();
+        cursed::VecMarshaler::to_foreign(vec)
+    }
+}
+
+#[cthulhu::invoke(return_marshaler = "FbsMarshaler")]
+pub extern "C" fn divvun_cursor_context(
+    #[marshal(cursed::StrMarshaler)] first_half: &str,
+    #[marshal(cursed::StrMarshaler)] second_half: &str
+) -> WordContext {
+    crate::tokenizer::cursor_context(first_half, second_half)
 }
