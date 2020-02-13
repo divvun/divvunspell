@@ -132,7 +132,7 @@ mod tests {
             msg.word_bound_indices()
                 .rev()
                 .collect::<Vec<(usize, &str)>>(),
-            vec![]
+            vec![(8, "life"), (7, " "), (5, "is"), (4, " "), (0, "this")]
         );
     }
 
