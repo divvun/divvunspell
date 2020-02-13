@@ -27,6 +27,10 @@ pub extern "C" fn divvun_word_bound_indices_next(
 ) -> u8 {
     let iterator = unsafe { &mut *iterator };
 
+    if !out_string.is_null() {
+        unsafe { CString::from_raw(*out_string as _) };
+    }
+
     match iterator.next() {
         Some((index, word)) => {
             let c_word = CString::new(word).unwrap();
@@ -67,6 +71,11 @@ impl<T: IntoFlatbuffer> ToForeign<T, Slice<u8>> for FbsMarshaler {
         let vec = bufferable.into_flatbuffer();
         cursed::VecMarshaler::to_foreign(vec)
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn divvun_fbs_free(slice: Slice<u8>) {
+    cursed::VecMarshaler::from_foreign(slice);
 }
 
 #[cthulhu::invoke(return_marshaler = "FbsMarshaler")]
