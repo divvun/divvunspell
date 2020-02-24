@@ -1,0 +1,91 @@
+name: Release Tools
+on:
+  push:
+    branches:
+      - release
+  repository_dispatch:
+    types: release
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, windows-latest, macOS-latest]
+
+    steps:
+      - uses: hecrj/setup-rust-action@v1
+        with:
+          rust-version: stable
+      - uses: actions/checkout@v1
+      - name: Build Tools
+        run: cargo build -p divvunspell-tools --release
+      - name: Publish Binary
+        if: matrix.os != 'windows-latest'
+        uses: actions/upload-artifact@v1
+        with:
+          name: ${{ matrix.os }}
+          path: target/release/thfst-tools
+      - name: Publish Binary
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v1
+        with:
+          name: ${{ matrix.os }}
+          path: target/release/thfst-tools.exe
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - name: Get Package Version
+        run: echo ::set-env name=PACKAGE_VERSION::$(cargo metadata --no-deps --format-version=1 | jq -r '.packages[] | select(.name == "divvunspell-tools") | .version')
+      - name: Download Linux Binary
+        uses: actions/download-artifact@v1
+        with:
+          name: ubuntu-latest
+      - name: Download Windows Binary
+        uses: actions/download-artifact@v1
+        with:
+          name: windows-latest
+      - name: Download macOS Binary
+        uses: actions/download-artifact@v1
+        with:
+          name: macOS-latest
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ format('v{0}', env.PACKAGE_VERSION) }}
+          release_name: Release ${{ env.PACKAGE_VERSION }}
+          draft: true
+      - name: Upload artifact Linux
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./ubuntu-latest/thfst-tools
+          asset_name: thfst-tools_lin
+          asset_content_type: application/octet-stream
+      - name: Upload artifact Windows
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./windows-latest/thfst-tools.exe
+          asset_name: thfst-tools_win.exe
+          asset_content_type: application/octet-stream
+      - name: Upload artifact macOS
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./macOS-latest/thfst-tools
+          asset_name: thfst-tools_macOS
+          asset_content_type: application/octet-stream
