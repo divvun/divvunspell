@@ -131,13 +131,11 @@ pub mod boxf {
         #[inline(always)]
         fn open<P: AsRef<Path>>(&self, path: P) -> Result<Self::File> {
             let boxpath = BoxPath::new(path).map_err(|e| e.as_io_error())?;
-            let record = self.0.metadata().records().iter().find_map(|r| {
-                if r.path() == &boxpath {
-                    r.as_file()
-                } else {
-                    None
-                }
-            });
+            let meta = self.0.metadata();
+            let record = meta
+                .inode(&boxpath)
+                .and_then(|x| meta.record(x))
+                .and_then(|r| r.as_file());
 
             let file = std::fs::File::open(self.0.path())?;
 

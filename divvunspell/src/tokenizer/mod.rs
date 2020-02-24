@@ -52,17 +52,20 @@ impl crate::ffi::fbs::IntoFlatbuffer for WordContext {
         macro_rules! add_indexed_word {
             ($fbb:expr, $data:expr) => {{
                 use $crate::ffi::fbs::tokenizer::*;
-        
+
                 if let Some((index, word)) = $data {
                     let s = $fbb.create_string(&word);
-                    Some(IndexedWord::create(&mut $fbb, &IndexedWordArgs {
-                        index: index as u64,
-                        value: Some(s)
-                    }))
+                    Some(IndexedWord::create(
+                        &mut $fbb,
+                        &IndexedWordArgs {
+                            index: index as u64,
+                            value: Some(s),
+                        },
+                    ))
                 } else {
                     None
                 }
-            }}
+            }};
         }
 
         let mut builder = flatbuffers::FlatBufferBuilder::new_with_capacity(1024);
@@ -71,9 +74,16 @@ impl crate::ffi::fbs::IntoFlatbuffer for WordContext {
         let second_before = add_indexed_word!(builder, self.second_before);
         let first_after = add_indexed_word!(builder, self.first_after);
         let second_after = add_indexed_word!(builder, self.second_after);
-        let mut word_context = WordContext::create(&mut builder, &WordContextArgs {
-            current, first_before, second_before, first_after, second_after
-        });
+        let mut word_context = WordContext::create(
+            &mut builder,
+            &WordContextArgs {
+                current,
+                first_before,
+                second_before,
+                first_after,
+                second_after,
+            },
+        );
         builder.finish(word_context, None);
         builder.finished_data().to_vec()
     }

@@ -49,10 +49,10 @@ pub extern "C" fn divvun_word_bound_indices_free(handle: *mut WordBoundIndices) 
     unsafe { Box::from_raw(handle) };
 }
 
-use std::convert::Infallible;
-use cursed::{ToForeign, FromForeign, Slice};
 use crate::ffi::fbs::IntoFlatbuffer;
 use crate::tokenizer::{cursor_context, WordContext};
+use cursed::{FromForeign, Slice, ToForeign};
+use std::convert::Infallible;
 
 pub struct FbsMarshaler;
 
@@ -81,7 +81,28 @@ pub unsafe extern "C" fn divvun_fbs_free(slice: Slice<u8>) {
 #[cthulhu::invoke(return_marshaler = "FbsMarshaler")]
 pub extern "C" fn divvun_cursor_context(
     #[marshal(cursed::StrMarshaler)] first_half: &str,
-    #[marshal(cursed::StrMarshaler)] second_half: &str
+    #[marshal(cursed::StrMarshaler)] second_half: &str,
 ) -> WordContext {
     crate::tokenizer::cursor_context(first_half, second_half)
+}
+
+#[cfg(all(test, feature = "internal_ffi"))]
+mod tests {
+    use crate::ffi::fbs::IntoFlatbuffer;
+
+    #[test]
+    fn fbs() {
+        let word_context = crate::tokenizer::cursor_context("this is some", " text");
+        println!("{:?}", &word_context);
+
+        let buf = word_context.into_flatbuffer();
+        println!("{:?}", &buf);
+
+        let word_context = crate::ffi::fbs::tokenizer::get_root_as_word_context(&buf);
+        println!(
+            "{:?} {:?}",
+            &word_context.current().index(),
+            &word_context.current().value()
+        );
+    }
 }

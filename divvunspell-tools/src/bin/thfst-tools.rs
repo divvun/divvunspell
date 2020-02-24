@@ -48,9 +48,7 @@ enum Opts {
     },
 }
 
-use std::num::NonZeroU64;
-
-const ALIGNMENT: NonZeroU64 = unsafe { std::num::NonZeroU64::new_unchecked(8) };
+const ALIGNMENT: u64 = 8;
 
 #[inline(always)]
 fn boxpath(path: &Path, filename: &str) -> BoxPath {
