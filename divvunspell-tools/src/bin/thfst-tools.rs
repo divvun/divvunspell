@@ -147,6 +147,14 @@ fn convert_zhfst_to_bhfst(zhfst_path: &Path) -> Result<(), std::io::Error> {
         None => None,
     };
 
+    let acceptor_path = dir.as_ref().join("acceptor.default.hfst");
+    convert_hfst_to_thfst(&acceptor_path)?;
+    insert_thfst_files(&mut boxfile, &acceptor_path.with_extension("thfst"))?;
+
+    let errmodel_path = dir.as_ref().join("errmodel.default.hfst");
+    convert_hfst_to_thfst(&errmodel_path)?;
+    insert_thfst_files(&mut boxfile, &errmodel_path.with_extension("thfst"))?;
+
     if let Some(v) = meta_json {
         println!("Inserting \"meta.json\"...");
         boxfile.insert(
@@ -156,14 +164,6 @@ fn convert_zhfst_to_bhfst(zhfst_path: &Path) -> Result<(), std::io::Error> {
             std::collections::HashMap::new(),
         )?;
     }
-
-    let acceptor_path = dir.as_ref().join("acceptor.default.hfst");
-    convert_hfst_to_thfst(&acceptor_path)?;
-    insert_thfst_files(&mut boxfile, &acceptor_path.with_extension("thfst"))?;
-
-    let errmodel_path = dir.as_ref().join("errmodel.default.hfst");
-    convert_hfst_to_thfst(&errmodel_path)?;
-    insert_thfst_files(&mut boxfile, &errmodel_path.with_extension("thfst"))?;
 
     println!("Wrote to {:?}.", bhfst_path);
 
