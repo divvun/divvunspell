@@ -12,6 +12,7 @@ use crate::vfs::{self, Filesystem};
 use crate::transducer::{IndexTable, TransitionTable};
 
 /// Tromsø-Helsinki Finite State Transducer format
+#[derive(Debug)]
 pub struct ThfstChunkedTransducer<F>
 where
     F: vfs::File,
@@ -130,14 +131,18 @@ impl<F: crate::vfs::File> Transducer<F> for ThfstChunkedTransducer<F> {
             }
         }
 
-        Ok(ThfstChunkedTransducer {
+        let transducer = ThfstChunkedTransducer {
             indexes_per_chunk: index_tables[0].size,
             transitions_per_chunk: transition_tables[0].size,
             index_tables,
             transition_tables,
             alphabet,
             _file: std::marker::PhantomData::<F>,
-        })
+        };
+
+        log::debug!("{:#?}", transducer);
+
+        Ok(transducer)
     }
 
     #[inline(always)]
@@ -187,6 +192,9 @@ impl<F: crate::vfs::File> Transducer<F> for ThfstChunkedTransducer<F> {
 
         if i >= TARGET_TABLE {
             let (page, index) = transition_rel_index!(self, i - TARGET_TABLE);
+            if page >= self.transition_tables.len() {
+                return false;
+            }
             match self.transition_tables[page].input_symbol(index) {
                 Some(res) => sym == res,
                 None => false,
@@ -195,6 +203,9 @@ impl<F: crate::vfs::File> Transducer<F> for ThfstChunkedTransducer<F> {
             log::trace!("has_transitions: i:{} s:{:?}", i, s);
             let (page, index) = index_rel_index!(self, i + u32::from(sym));
             log::trace!("has_transitions: page:{} index:{:?}", page, index);
+            if page >= self.index_tables.len() {
+                return false;
+            }
             match self.index_tables[page].input_symbol(index) {
                 Some(res) => sym == res,
                 None => false,

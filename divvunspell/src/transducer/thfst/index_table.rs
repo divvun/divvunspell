@@ -6,6 +6,7 @@ use crate::transducer::TransducerError;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use crate::vfs::{self, Filesystem};
 
+#[derive(Debug)]
 pub struct MemmapIndexTable<F> {
     buf: Mmap,
     pub(crate) size: u32,

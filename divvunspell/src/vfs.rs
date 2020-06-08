@@ -3,7 +3,7 @@ use std::io::{Read, Result};
 use std::path::Path;
 
 #[cfg(unix)]
-use std::os::unix::fs::FileExt;
+use std::{fmt::Debug, os::unix::fs::FileExt};
 
 pub trait Filesystem {
     type File: File;
@@ -11,7 +11,7 @@ pub trait Filesystem {
     fn open<P: AsRef<Path>>(&self, path: P) -> Result<Self::File>;
 }
 
-pub trait File: Read {
+pub trait File: Read + Debug {
     fn len(&self) -> Result<u64>;
     fn is_empty(&self) -> Result<bool>;
     #[cfg(unix)]
@@ -68,6 +68,7 @@ pub mod boxf {
     use std::io::{Read, Result};
     use std::path::Path;
 
+    #[derive(Debug)]
     pub struct File {
         offset: u64,
         len: usize,
