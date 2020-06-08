@@ -192,7 +192,9 @@ impl<F: crate::vfs::File> Transducer<F> for ThfstChunkedTransducer<F> {
                 None => false,
             }
         } else {
+            log::trace!("has_transitions: i:{} s:{:?}", i, s);
             let (page, index) = index_rel_index!(self, i + u32::from(sym));
+            log::trace!("has_transitions: page:{} index:{:?}", page, index);
             match self.index_tables[page].input_symbol(index) {
                 Some(res) => sym == res,
                 None => false,

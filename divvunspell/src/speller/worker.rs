@@ -507,6 +507,8 @@ where
     }
 
     pub(crate) fn suggest(&self) -> Vec<Suggestion> {
+        log::trace!("Beginning suggest");
+
         let pool = Pool::with_size_and_max(self.config.node_pool_size, self.config.node_pool_size);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
         let mut corrections = HashMap::new();

@@ -78,6 +78,12 @@ pub unsafe extern "C" fn divvun_fbs_free(slice: Slice<u8>) {
     cursed::VecMarshaler::from_foreign(slice);
 }
 
+#[cfg(feature = "logging")]
+#[no_mangle]
+pub unsafe extern "C" fn divvun_enable_logging() {
+    env_logger::init();
+}
+
 #[cthulhu::invoke(return_marshaler = "FbsMarshaler")]
 pub extern "C" fn divvun_cursor_context(
     #[marshal(cursed::StrMarshaler)] first_half: &str,

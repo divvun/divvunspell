@@ -34,10 +34,12 @@ cthulhu = { git = "https://github.com/cthulhu-rs/cthulhu", branch = "feature/byt
 cursed = { git = "https://github.com/cthulhu-rs/cthulhu", branch = "feature/bytes-plus-len" }
 unic-ucd-common = "0.9.0"
 flatbuffers = { version = "0.6.1", optional = true }
+env_logger = { version = "0.7.1", optional = true }
 
 [features]
 compression = ["zip/deflate"]
+logging = ["env_logger"]
 
 # Internal features: unstable, not for external use!
 internal_convert = []
-internal_ffi = ["flatbuffers"]
+internal_ffi = ["flatbuffers", "logging"]
