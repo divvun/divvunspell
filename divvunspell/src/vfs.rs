@@ -1,9 +1,10 @@
 use memmap::{Mmap, MmapOptions};
 use std::io::{Read, Result};
 use std::path::Path;
+use std::fmt::Debug;
 
 #[cfg(unix)]
-use std::{fmt::Debug, os::unix::fs::FileExt};
+use std::os::unix::fs::FileExt;
 
 pub trait Filesystem {
     type File: File;
