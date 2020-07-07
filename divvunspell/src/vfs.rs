@@ -1,7 +1,7 @@
 use memmap::{Mmap, MmapOptions};
+use std::fmt::Debug;
 use std::io::{Read, Result};
 use std::path::Path;
-use std::fmt::Debug;
 
 #[cfg(unix)]
 use std::os::unix::fs::FileExt;

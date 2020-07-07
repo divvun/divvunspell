@@ -60,7 +60,10 @@ fn mmap_by_name<R: Read + Seek>(
 }
 
 impl ZipSpellerArchive {
-    pub fn hfst_speller(&self) -> Arc<HfstSpeller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>> {
+    pub fn hfst_speller(
+        &self,
+    ) -> Arc<HfstSpeller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>>
+    {
         self.speller.clone()
     }
 }

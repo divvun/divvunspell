@@ -5,20 +5,40 @@ pub(crate) mod case_handling;
 pub mod word;
 mod word_break;
 
+pub struct WordIndices<'a> {
+    iter: WordBoundIndices<'a>,
+}
+
+impl<'a> Iterator for WordIndices<'a> {
+    type Item = (usize, &'a str);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(item) = self.iter.next() {
+            if item.1.chars().any(is_alphanumeric) {
+                return Some(item);
+            }
+        }
+
+        None
+    }
+}
+
 pub trait Tokenize {
-    fn word_bound_indices(&self) -> WordBoundIndices;
-    fn words(&self) -> Words;
+    fn word_bound_indices(&self) -> WordBoundIndices<'_>;
+    fn word_indices(&self) -> WordIndices<'_>;
     fn word_bound_indices_with_alphabet(&self, alphabet: Vec<char>) -> WordBoundIndices;
     fn words_with_alphabet(&self, alphabet: Vec<char>) -> Words;
 }
 
 impl Tokenize for str {
-    fn word_bound_indices(&self) -> WordBoundIndices {
+    fn word_bound_indices(&self) -> WordBoundIndices<'_> {
         WordBoundIndices::new(self)
     }
 
-    fn words(&self) -> Words {
-        Words::new(self, |s| s.chars().any(|ch| ch.is_alphanumeric()))
+    fn word_indices(&self) -> WordIndices<'_> {
+        WordIndices {
+            iter: WordBoundIndices::new(self),
+        }
     }
 
     fn word_bound_indices_with_alphabet(&self, alphabet: Vec<char>) -> WordBoundIndices {

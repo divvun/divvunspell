@@ -4,7 +4,7 @@ use box_format::BoxFileReader;
 
 use super::error::SpellerArchiveError;
 use super::{meta::SpellerMetadata, SpellerArchive};
-use crate::speller::{Speller, HfstSpeller};
+use crate::speller::{HfstSpeller, Speller};
 use crate::transducer::{
     thfst::{MemmapThfstChunkedTransducer, MemmapThfstTransducer},
     Transducer,

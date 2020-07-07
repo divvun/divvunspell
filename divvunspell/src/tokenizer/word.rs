@@ -19,7 +19,6 @@ use std::cmp;
 use std::iter::Filter;
 
 use super::word_break::WordBreak as WB;
-use unic_ucd_common::is_alphanumeric;
 
 /// An iterator over the substrings of a string which, after splitting the string on [word
 /// boundaries](https://www.unicode.org/reports/tr29/#Word_Boundaries), contain any characters with
@@ -424,11 +423,7 @@ impl<'a> Iterator for WordBounds<'a> {
         let retstr = &self.string[..idx];
         self.string = &self.string[idx..];
 
-        if retstr.chars().any(is_alphanumeric) {
-            Some(retstr)
-        } else {
-            self.next()
-        }
+        Some(retstr)
     }
 }
 
@@ -668,11 +663,7 @@ impl<'a> DoubleEndedIterator for WordBounds<'a> {
         let retstr = &self.string[idx..];
         self.string = &self.string[..idx];
 
-        if retstr.chars().any(is_alphanumeric) {
-            Some(retstr)
-        } else {
-            self.next_back()
-        }
+        Some(retstr)
     }
 }
 
