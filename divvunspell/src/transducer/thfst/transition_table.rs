@@ -6,6 +6,7 @@ use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use crate::vfs::{self, Filesystem};
 use memmap::Mmap;
 
+#[derive(Debug)]
 pub struct MemmapTransitionTable<F> {
     buf: Mmap,
     pub(crate) size: u32,
