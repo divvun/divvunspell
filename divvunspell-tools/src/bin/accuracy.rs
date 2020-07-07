@@ -1,13 +1,16 @@
 use std::error::Error;
-use std::time::{Instant, SystemTime};
+use std::{
+    path::Path,
+    time::{Instant, SystemTime},
+};
 
-use clap::{App, AppSettings, Arg};
-use divvunspell::archive::ZipSpellerArchive;
+use divvunspell::archive::{SpellerArchive, ZipSpellerArchive};
 use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::{CaseHandlingConfig, SpellerConfig};
 use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::Serialize;
+use structopt::clap::{App, AppSettings, Arg};
 
 static CFG: SpellerConfig = SpellerConfig {
     n_best: Some(10),
@@ -203,7 +206,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     //     };
 
     let archive = match matches.value_of("zhfst") {
-        Some(path) => ZipSpellerArchive::open(path)?,
+        Some(path) => ZipSpellerArchive::open(Path::new(path))?,
         None => {
             eprintln!("No ZHFST found for given path; aborting.");
             std::process::exit(1);

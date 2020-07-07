@@ -1,14 +1,19 @@
 use std::io::{self, Read};
-use std::sync::Arc;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
-use clap::{App, AppSettings, Arg, ArgGroup};
+use gumdrop::Options;
 use serde::Serialize;
 
-use divvunspell::archive::{boxf::ThfstBoxSpellerArchive, BoxSpellerArchive, ZipSpellerArchive};
+use divvunspell::archive::{
+    boxf::ThfstBoxSpellerArchive, error::SpellerArchiveError, BoxSpellerArchive, SpellerArchive,
+    ZipSpellerArchive,
+};
 use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::{Speller, SpellerConfig};
-use divvunspell::transducer::{thfst::MemmapThfstTransducer, Transducer};
-use divvunspell::vfs;
+use divvunspell::tokenizer::Tokenize;
 
 trait OutputWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool);
@@ -75,8 +80,8 @@ impl OutputWriter for JsonWriter {
     }
 }
 
-fn run<F: vfs::File, T: Transducer<F>, U: Transducer<F>>(
-    speller: Arc<Speller<F, T, U>>,
+fn run(
+    speller: Arc<dyn Speller>,
     words: Vec<String>,
     writer: &mut dyn OutputWriter,
     is_suggesting: bool,
@@ -94,203 +99,183 @@ fn run<F: vfs::File, T: Transducer<F>, U: Transducer<F>>(
     }
 }
 
-fn main() {
-    pretty_env_logger::init();
+#[derive(Debug, Options)]
+struct Args {
+    #[options(help = "print help message")]
+    help: bool,
 
-    let matches = App::new("divvunspell")
-        .setting(AppSettings::ArgRequiredElseHelp)
-        .version(env!("CARGO_PKG_VERSION"))
-        .about("Testing frontend for the DivvunSpell library")
-        .arg(
-            Arg::with_name("zhfst")
-                .short("z")
-                .long("zhfst")
-                .value_name("ZHFST")
-                .help("Use the given ZHFST file")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::with_name("bhfst")
-                .short("b")
-                .long("bhfst")
-                .value_name("BHFST")
-                .help("Use the given BHFST file")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::with_name("acceptor")
-                .long("acceptor")
-                .value_name("acceptor")
-                .requires("errmodel")
-                .help("Use the given acceptor file")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::with_name("errmodel")
-                .long("errmodel")
-                .value_name("errmodel")
-                .requires("acceptor")
-                .help("Use the given errmodel file")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::with_name("suggest")
-                .short("s")
-                .long("suggest")
-                .help("Show suggestions for given word(s)"),
-        )
-        .arg(
-            Arg::with_name("always-suggest")
-                .short("S")
-                .long("always-suggest")
-                .help("Always show suggestions even if word is correct (implies -s)"),
-        )
-        .arg(
-            Arg::with_name("weight")
-                .short("w")
-                .long("weight")
-                .requires("suggest")
-                .takes_value(true)
-                .help("Maximum weight limit for suggestions"),
-        )
-        .arg(
-            Arg::with_name("nbest")
-                .short("n")
-                .long("nbest")
-                .requires("suggest")
-                .takes_value(true)
-                .help("Maximum number of results for suggestions"),
-        )
-        .arg(
-            Arg::with_name("no-case-handling")
-                .long("no-case-handling")
-                .help("Disables case handling"),
-        )
-        .arg(
-            Arg::with_name("json")
-                .long("json")
-                .help("Output results in JSON"),
-        )
-        .arg(
-            Arg::with_name("WORDS")
-                .multiple(true)
-                .help("The words to be processed"),
-        )
-        .group(
-            ArgGroup::with_name("archive")
-                .args(&["zhfst", "bhfst", "acceptor"])
-                .required(true),
-        )
-        .get_matches();
+    #[options(command)]
+    command: Option<Command>,
+}
 
-    let is_always_suggesting = matches.is_present("always-suggest");
-    let is_suggesting = matches.is_present("suggest") || is_always_suggesting;
-    let is_json = matches.is_present("json");
-    let no_case_handling = matches.is_present("no-case-handling");
+#[derive(Debug, Options)]
+enum Command {
+    #[options(help = "get suggestions for provided input")]
+    Suggest(SuggestArgs),
 
+    #[options(help = "print input in word-separated tokenized form")]
+    Tokenize(TokenizeArgs),
+}
+
+#[derive(Debug, Options)]
+struct SuggestArgs {
+    #[options(help = "print help message")]
+    help: bool,
+
+    #[options(help = "BHFST or ZHFST archive to be used", required)]
+    archive: PathBuf,
+
+    #[options(short = "S", help = "always show suggestions even if word is correct")]
+    always_suggest: bool,
+
+    #[options(help = "maximum weight limit for suggestions")]
+    weight: Option<f32>,
+
+    #[options(help = "maximum number of results")]
+    nbest: Option<usize>,
+
+    #[options(
+        no_short,
+        long = "no-case-handling",
+        help = "disables case-handling algorithm (makes results more like hfst-ospell)"
+    )]
+    disable_case_handling: bool,
+
+    #[options(no_short, long = "json", help = "output in JSON format")]
+    use_json: bool,
+
+    #[options(free, help = "words to be processed")]
+    inputs: Vec<String>,
+}
+
+#[derive(Debug, Options)]
+struct TokenizeArgs {
+    #[options(help = "print help message")]
+    help: bool,
+
+    #[options(free, help = "text to be tokenized")]
+    inputs: Vec<String>,
+}
+
+fn tokenize(args: TokenizeArgs) -> anyhow::Result<()> {
+    let inputs: String = if args.inputs.is_empty() {
+        eprintln!("Reading from stdin...");
+        let mut buffer = String::new();
+        io::stdin()
+            .read_to_string(&mut buffer)
+            .expect("reading stdin");
+        buffer
+    } else {
+        args.inputs.into_iter().collect::<Vec<_>>().join(" ")
+    };
+
+    for (index, token) in inputs.word_bound_indices() {
+        println!("{:>4}: \"{}\"", index, token);
+    }
+    Ok(())
+}
+
+fn load_archive(path: &Path) -> Result<Box<dyn SpellerArchive>, SpellerArchiveError> {
+    let ext = match path.extension() {
+        Some(v) => v,
+        None => {
+            return Err(SpellerArchiveError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Unsupported archive (missing .zhfst or .bhfst)",
+            )))
+        }
+    };
+
+    if ext == "bhfst" {
+        let archive: ThfstBoxSpellerArchive = match BoxSpellerArchive::open(path) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("{:?}", e);
+                std::process::exit(1);
+            }
+        };
+        Ok(Box::new(archive))
+    } else if ext == "zhfst" {
+        let archive = match ZipSpellerArchive::open(path) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("{:?}", e);
+                std::process::exit(1);
+            }
+        };
+        Ok(Box::new(archive))
+    } else {
+        Err(SpellerArchiveError::Io(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Unsupported archive (missing .zhfst or .bhfst)",
+        )))
+    }
+}
+
+fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
     let mut suggest_cfg = SpellerConfig::default();
 
-    if no_case_handling {
+    if args.disable_case_handling {
         suggest_cfg.case_handling = None;
     }
 
-    if let Some(v) = matches.value_of("nbest") {
-        if let Ok(v) = v.parse::<usize>() {
-            if v == 0 {
-                suggest_cfg.n_best = None;
-            } else {
-                suggest_cfg.n_best = Some(v);
-            }
+    if let Some(v) = args.nbest {
+        if v == 0 {
+            suggest_cfg.n_best = None;
+        } else {
+            suggest_cfg.n_best = Some(v);
         }
     }
 
-    if let Some(v) = matches.value_of("weight") {
-        if let Some(v) = v.parse::<f32>().ok().filter(|x| x >= &0.0) {
-            if v == 0.0 {
-                suggest_cfg.max_weight = None;
-            } else {
-                suggest_cfg.max_weight = Some(v);
-            }
+    if let Some(v) = args.weight.filter(|x| x >= &0.0) {
+        if v == 0.0 {
+            suggest_cfg.max_weight = None;
+        } else {
+            suggest_cfg.max_weight = Some(v);
         }
     }
 
-    let mut writer: Box<dyn OutputWriter> = if is_json {
+    let mut writer: Box<dyn OutputWriter> = if args.use_json {
         Box::new(JsonWriter::new())
     } else {
         Box::new(StdoutWriter)
     };
 
-    let words: Vec<String> = match matches.values_of("WORDS") {
-        Some(v) => v.map(|x| x.to_string()).collect(),
-        None => {
-            eprintln!("Reading from stdin...");
-            let mut buffer = String::new();
-            io::stdin()
-                .read_to_string(&mut buffer)
-                .expect("reading stdin");
-            buffer.split(" ").map(|x| x.trim().to_string()).collect()
-        }
+    let words = if args.inputs.is_empty() {
+        eprintln!("Reading from stdin...");
+        let mut buffer = String::new();
+        io::stdin()
+            .read_to_string(&mut buffer)
+            .expect("reading stdin");
+        buffer.split(" ").map(|x| x.trim().to_string()).collect()
+    } else {
+        args.inputs.into_iter().map(|x| x.to_string()).collect()
     };
 
-    if let Some(zhfst_file) = matches.value_of("zhfst") {
-        let archive = match ZipSpellerArchive::open(zhfst_file) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("{:?}", e);
-                std::process::exit(1);
-            }
-        };
-
-        let speller = archive.speller();
-        run(
-            speller,
-            words,
-            &mut *writer,
-            is_suggesting,
-            is_always_suggesting,
-            &suggest_cfg,
-        );
-    } else if let Some(bhfst_file) = matches.value_of("bhfst") {
-        let archive: ThfstBoxSpellerArchive = match BoxSpellerArchive::open(bhfst_file) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("{:?}", e);
-                std::process::exit(1);
-            }
-        };
-
-        let speller = archive.speller();
-        run(
-            speller,
-            words,
-            &mut *writer,
-            is_suggesting,
-            is_always_suggesting,
-            &suggest_cfg,
-        );
-    } else {
-        match (matches.value_of("acceptor"), matches.value_of("errmodel")) {
-            (Some(acceptor_file), Some(errmodel_file)) => {
-                let fs = divvunspell::vfs::Fs;
-                let acceptor = MemmapThfstTransducer::from_path(&fs, acceptor_file).unwrap();
-                let errmodel = MemmapThfstTransducer::from_path(&fs, errmodel_file).unwrap();
-                let speller = Speller::new(errmodel, acceptor);
-
-                run(
-                    speller,
-                    words,
-                    &mut *writer,
-                    is_suggesting,
-                    is_always_suggesting,
-                    &suggest_cfg,
-                );
-            }
-            _ => {
-                eprintln!("No acceptor or errmodel");
-                std::process::exit(1);
-            }
-        }
-    }
+    let archive = load_archive(&args.archive).unwrap();
+    let speller = archive.speller();
+    run(
+        speller,
+        words,
+        &mut *writer,
+        true,
+        args.always_suggest,
+        &suggest_cfg,
+    );
 
     writer.finish();
+
+    Ok(())
+}
+
+fn main() -> anyhow::Result<()> {
+    pretty_env_logger::init();
+
+    let args = Args::parse_args_default_or_exit();
+
+    match args.command {
+        None => Ok(()),
+        Some(Command::Suggest(args)) => suggest(args),
+        Some(Command::Tokenize(args)) => tokenize(args),
+    }
 }

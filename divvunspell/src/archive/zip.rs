@@ -7,12 +7,12 @@ use std::sync::Arc;
 
 use super::error::SpellerArchiveError;
 use super::meta::SpellerMetadata;
-use super::{MmapRef, TempMmap};
-use crate::speller::Speller;
+use super::{MmapRef, SpellerArchive, TempMmap};
+use crate::speller::{HfstSpeller, Speller};
 use crate::transducer::hfst::HfstTransducer;
 
 pub type HfstZipSpeller =
-    Speller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>;
+    HfstSpeller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>;
 
 pub struct ZipSpellerArchive {
     metadata: SpellerMetadata,
@@ -59,10 +59,8 @@ fn mmap_by_name<R: Read + Seek>(
     }
 }
 
-impl ZipSpellerArchive {
-    pub fn open<P: AsRef<std::path::Path>>(
-        file_path: P,
-    ) -> Result<ZipSpellerArchive, SpellerArchiveError> {
+impl SpellerArchive for ZipSpellerArchive {
+    fn open(file_path: &std::path::Path) -> Result<ZipSpellerArchive, SpellerArchiveError> {
         let file = File::open(&file_path).map_err(SpellerArchiveError::File)?;
         let reader = std::io::BufReader::new(&file);
         let mut archive = ZipArchive::new(reader).expect("zip");
@@ -83,19 +81,17 @@ impl ZipSpellerArchive {
         let acceptor = HfstTransducer::from_mapped_memory(acceptor_mmap.map());
         let errmodel = HfstTransducer::from_mapped_memory(errmodel_mmap.map());
 
-        let speller = Speller::new(errmodel, acceptor);
+        let speller = HfstSpeller::new(errmodel, acceptor);
 
         Ok(ZipSpellerArchive { metadata, speller })
     }
 
-    pub fn speller(
-        &self,
-    ) -> Arc<Speller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>>
-    {
+    fn speller(&self) -> Arc<dyn Speller> {
+        //Arc<HfstSpeller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>> {
         self.speller.clone()
     }
 
-    pub fn metadata(&self) -> Option<&SpellerMetadata> {
+    fn metadata(&self) -> Option<&SpellerMetadata> {
         Some(&self.metadata)
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "divvunspell"
-version = "1.0.0-alpha.2"
+version = "1.0.0-alpha.3"
 authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
@@ -35,6 +35,7 @@ cursed = { git = "https://github.com/cthulhu-rs/cthulhu", branch = "feature/byte
 unic-ucd-common = "0.9.0"
 flatbuffers = { version = "0.6.1", optional = true }
 env_logger = { version = "0.7.1", optional = true }
+thiserror = "1.0.20"
 
 [features]
 compression = ["zip/deflate"]

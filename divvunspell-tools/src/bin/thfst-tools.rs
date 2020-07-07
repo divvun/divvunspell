@@ -1,7 +1,9 @@
 use std::path::{Path, PathBuf};
 use structopt::StructOpt;
 
-use divvunspell::archive::{boxf::ThfstBoxSpellerArchive, BoxSpellerArchive, ZipSpellerArchive};
+use divvunspell::archive::{
+    boxf::ThfstBoxSpellerArchive, BoxSpellerArchive, SpellerArchive, ZipSpellerArchive,
+};
 use divvunspell::transducer::{
     convert::ConvertFile,
     hfst::HfstTransducer,
@@ -121,7 +123,7 @@ fn convert_thfsts_to_bhfst(
 
 fn convert_zhfst_to_bhfst(zhfst_path: &Path) -> Result<(), std::io::Error> {
     let zhfst_path = std::fs::canonicalize(zhfst_path)?;
-    let zhfst = ZipSpellerArchive::open(&zhfst_path).map_err(|e| e.into_io_error())?;
+    let zhfst = ZipSpellerArchive::open(&zhfst_path).unwrap();
 
     let dir = tempdir::TempDir::new("zhfst")?;
     println!(
@@ -182,8 +184,7 @@ fn main() -> Result<(), std::io::Error> {
         } => convert_thfsts_to_bhfst(&acceptor, &errmodel, &output),
         Opts::ZhfstToBhfst { from } => convert_zhfst_to_bhfst(&from),
         Opts::BhfstInfo { path } => {
-            let ar: ThfstBoxSpellerArchive =
-                BoxSpellerArchive::open(&path).map_err(|e| e.into_io_error())?;
+            let ar: ThfstBoxSpellerArchive = BoxSpellerArchive::open(&path).unwrap();
             println!("{:#?}", ar.metadata());
             Ok(())
         }

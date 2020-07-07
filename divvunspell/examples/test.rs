@@ -1,20 +1,17 @@
 extern crate divvunspell;
 
 use std::sync::Arc;
-use std::time::Instant;
+use std::{path::Path, time::Instant};
 
-use divvunspell::archive::ZipSpellerArchive;
+use divvunspell::archive::{SpellerArchive, ZipSpellerArchive};
 use divvunspell::speller::{Speller, SpellerConfig};
 use divvunspell::transducer::hfst::HfstTransducer;
 
-type HfstSpeller =
-    Speller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>;
-
-fn run(speller: Arc<HfstSpeller>, line: &TestLine, cfg: &SpellerConfig) {
+fn run(speller: Arc<dyn Speller>, line: &TestLine, cfg: &SpellerConfig) {
     let _ = speller.suggest_with_config(line.0, &cfg);
 }
 
-fn time_suggest(speller: Arc<HfstSpeller>, line: &TestLine, cfg: &SpellerConfig) -> String {
+fn time_suggest(speller: Arc<dyn Speller>, line: &TestLine, cfg: &SpellerConfig) -> String {
     // println!("[!] Test: {}; Expected: {}; Orig. time: {}; Orig. results:\n    {}", line.0, line.1, line.2, line.3.join(", "));
 
     let now = Instant::now();
@@ -302,7 +299,7 @@ fn main() {
 
     // let words = ["vuovdinfállovuogiŧ", "eanavuoigatvuohtadutkamušas", "nannesivččii", "gárvanivččii", "gáibiđivččii"];
 
-    let unaligned = ZipSpellerArchive::open("./unaligned-test.zhfst").unwrap();
+    let unaligned = ZipSpellerArchive::open(Path::new("./unaligned-test.zhfst")).unwrap();
     // let unaligned = ChfstBundle::from_path(&std::path::Path::new("./out.chfst")).unwrap();
     // let res = unaligned.speller().suggest_with_config("same", &cfg);
     // let aligned = SpellerArchive::open("./aligned-test.zhfst").unwrap();

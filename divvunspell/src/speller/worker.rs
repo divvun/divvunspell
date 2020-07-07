@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use lifeguard::{Pool, Recycled};
 
-use super::{Speller, SpellerConfig};
+use super::{HfstSpeller, SpellerConfig};
 use crate::speller::suggestion::Suggestion;
 use crate::transducer::tree_node::TreeNode;
 use crate::transducer::Transducer;
@@ -25,7 +25,7 @@ fn speller_max_weight(config: &SpellerConfig) -> Weight {
 }
 
 pub struct SpellerWorker<F: crate::vfs::File, T: Transducer<F>, U: Transducer<F>> {
-    speller: Arc<Speller<F, T, U>>,
+    speller: Arc<HfstSpeller<F, T, U>>,
     input: Vec<SymbolNumber>,
     config: SpellerConfig,
 }
@@ -39,7 +39,7 @@ where
 {
     #[inline(always)]
     pub(crate) fn new(
-        speller: Arc<Speller<F, T, U>>,
+        speller: Arc<HfstSpeller<F, T, U>>,
         input: Vec<SymbolNumber>,
         config: SpellerConfig,
     ) -> SpellerWorker<F, T, U> {

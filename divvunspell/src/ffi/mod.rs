@@ -45,6 +45,11 @@ pub extern "C" fn divvun_word_bound_indices_next(
 }
 
 #[no_mangle]
+pub extern "C" fn divvun_cstr_free(handle: *mut c_char) {
+    unsafe { CString::from_raw(handle) };
+}
+
+#[no_mangle]
 pub extern "C" fn divvun_word_bound_indices_free(handle: *mut WordBoundIndices) {
     unsafe { Box::from_raw(handle) };
 }

@@ -53,10 +53,77 @@ impl CaseHandlingConfig {
     }
 }
 
-#[derive(Debug)]
-pub struct Speller<F, T: Transducer<F>, U: Transducer<F>>
+pub trait Speller {
+    fn is_correct(self: Arc<Self>, word: &str) -> bool;
+    fn suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
+    fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion>;
+}
+
+impl<F, T, U> Speller for HfstSpeller<F, T, U>
 where
     F: crate::vfs::File,
+    T: Transducer<F>,
+    U: Transducer<F>,
+{
+    #[allow(clippy::wrong_self_convention)]
+    fn is_correct(self: Arc<Self>, word: &str) -> bool {
+        use crate::tokenizer::case_handling::*;
+
+        if word.len() == 0 {
+            return true;
+        }
+
+        // Check if there are zero letters in the word according to
+        // Unicode letter category
+        if word.chars().all(|c| !GeneralCategory::of(c).is_letter()) {
+            return true;
+        }
+
+        let words = word_variants(word).words;
+
+        for word in words.into_iter() {
+            let worker = SpellerWorker::new(
+                self.clone(),
+                self.to_input_vec(&word),
+                SpellerConfig::default(),
+            );
+
+            if worker.is_correct() {
+                return true;
+            }
+        }
+
+        false
+    }
+
+    #[inline]
+    fn suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
+        self.suggest_with_config(word, &SpellerConfig::default())
+    }
+
+    fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
+        use crate::tokenizer::case_handling::*;
+
+        if word.len() == 0 {
+            return vec![];
+        }
+
+        if let Some(case_handling) = config.case_handling.as_ref() {
+            let case_handler = word_variants(word);
+
+            self.suggest_case(case_handler, config, case_handling)
+        } else {
+            self.suggest_single(word, config)
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct HfstSpeller<F, T, U>
+where
+    F: crate::vfs::File,
+    T: Transducer<F>,
+    U: Transducer<F>,
 {
     mutator: T,
     lexicon: U,
@@ -64,16 +131,16 @@ where
     _file: std::marker::PhantomData<F>,
 }
 
-impl<F, T, U> Speller<F, T, U>
+impl<F, T, U> HfstSpeller<F, T, U>
 where
     F: crate::vfs::File,
     T: Transducer<F>,
     U: Transducer<F>,
 {
-    pub fn new(mutator: T, mut lexicon: U) -> Arc<Speller<F, T, U>> {
+    pub fn new(mutator: T, mut lexicon: U) -> Arc<HfstSpeller<F, T, U>> {
         let alphabet_translator = lexicon.mut_alphabet().create_translator_from(&mutator);
 
-        Arc::new(Speller {
+        Arc::new(HfstSpeller {
             mutator,
             lexicon,
             alphabet_translator,
@@ -107,61 +174,6 @@ where
                     .unwrap_or_else(|| alphabet.unknown().unwrap_or(0u16))
             })
             .collect()
-    }
-
-    #[allow(clippy::wrong_self_convention)]
-    pub fn is_correct(self: Arc<Self>, word: &str) -> bool {
-        use crate::tokenizer::case_handling::*;
-
-        if word.len() == 0 {
-            return true;
-        }
-
-        // Check if there are zero letters in the word according to
-        // Unicode letter category
-        if word.chars().all(|c| !GeneralCategory::of(c).is_letter()) {
-            return true;
-        }
-
-        let words = word_variants(word).words;
-
-        for word in words.into_iter() {
-            let worker = SpellerWorker::new(
-                self.clone(),
-                self.to_input_vec(&word),
-                SpellerConfig::default(),
-            );
-
-            if worker.is_correct() {
-                return true;
-            }
-        }
-
-        false
-    }
-
-    pub fn suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
-        self.suggest_with_config(word, &SpellerConfig::default())
-    }
-
-    pub fn suggest_with_config(
-        self: Arc<Self>,
-        word: &str,
-        config: &SpellerConfig,
-    ) -> Vec<Suggestion> {
-        use crate::tokenizer::case_handling::*;
-
-        if word.len() == 0 {
-            return vec![];
-        }
-
-        if let Some(case_handling) = config.case_handling.as_ref() {
-            let case_handler = word_variants(word);
-
-            self.suggest_case(case_handler, config, case_handling)
-        } else {
-            self.suggest_single(word, config)
-        }
     }
 
     fn suggest_single(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {

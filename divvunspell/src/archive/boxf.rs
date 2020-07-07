@@ -3,8 +3,8 @@ use std::sync::Arc;
 use box_format::BoxFileReader;
 
 use super::error::SpellerArchiveError;
-use super::meta::SpellerMetadata;
-use crate::speller::Speller;
+use super::{meta::SpellerMetadata, SpellerArchive};
+use crate::speller::{HfstSpeller, Speller};
 use crate::transducer::{
     thfst::{MemmapThfstChunkedTransducer, MemmapThfstTransducer},
     Transducer,
@@ -17,13 +17,13 @@ pub type ThfstBoxSpellerArchive = BoxSpellerArchive<
     MemmapThfstTransducer<crate::vfs::boxf::File>,
 >;
 
-pub type ThfstChunkedBoxSpeller = Speller<
+pub type ThfstChunkedBoxSpeller = HfstSpeller<
     crate::vfs::boxf::File,
     MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
     MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
 >;
 
-pub type ThfstBoxSpeller = Speller<
+pub type ThfstBoxSpeller = HfstSpeller<
     crate::vfs::boxf::File,
     MemmapThfstTransducer<crate::vfs::boxf::File>,
     MemmapThfstTransducer<crate::vfs::boxf::File>,
@@ -40,17 +40,15 @@ where
     U: Transducer<crate::vfs::boxf::File>,
 {
     metadata: Option<SpellerMetadata>,
-    speller: Arc<Speller<crate::vfs::boxf::File, T, U>>,
+    speller: Arc<HfstSpeller<crate::vfs::boxf::File, T, U>>,
 }
 
-impl<T, U> BoxSpellerArchive<T, U>
+impl<T, U> SpellerArchive for BoxSpellerArchive<T, U>
 where
-    T: Transducer<crate::vfs::boxf::File>,
-    U: Transducer<crate::vfs::boxf::File>,
+    T: Transducer<crate::vfs::boxf::File> + 'static,
+    U: Transducer<crate::vfs::boxf::File> + 'static,
 {
-    pub fn open<P: AsRef<std::path::Path>>(
-        file_path: P,
-    ) -> Result<BoxSpellerArchive<T, U>, SpellerArchiveError> {
+    fn open(file_path: &std::path::Path) -> Result<BoxSpellerArchive<T, U>, SpellerArchiveError> {
         let archive = BoxFileReader::open(file_path).map_err(SpellerArchiveError::File)?;
 
         let fs = BoxFilesystem::new(&archive);
@@ -64,15 +62,16 @@ where
         let acceptor =
             U::from_path(&fs, "acceptor.default.thfst").map_err(SpellerArchiveError::Transducer)?;
 
-        let speller = Speller::new(errmodel, acceptor);
+        let speller = HfstSpeller::new(errmodel, acceptor);
         Ok(BoxSpellerArchive { speller, metadata })
     }
 
-    pub fn speller(&self) -> Arc<Speller<crate::vfs::boxf::File, T, U>> {
+    fn speller(&self) -> Arc<dyn Speller> {
+        //Arc<HfstSpeller<crate::vfs::boxf::File, T, U>> {
         self.speller.clone()
     }
 
-    pub fn metadata(&self) -> Option<&SpellerMetadata> {
+    fn metadata(&self) -> Option<&SpellerMetadata> {
         self.metadata.as_ref()
     }
 }

@@ -7,7 +7,10 @@ pub mod meta;
 pub mod zip;
 
 pub use self::boxf::BoxSpellerArchive;
+use self::error::SpellerArchiveError;
+use self::meta::SpellerMetadata;
 pub use self::zip::ZipSpellerArchive;
+use crate::speller::Speller;
 
 pub(crate) struct TempMmap {
     mmap: Arc<Mmap>,
@@ -28,4 +31,13 @@ impl MmapRef {
             MmapRef::Temp(tmmap) => Arc::clone(&tmmap.mmap),
         }
     }
+}
+
+pub trait SpellerArchive {
+    fn open(path: &std::path::Path) -> Result<Self, SpellerArchiveError>
+    where
+        Self: Sized;
+
+    fn speller(&self) -> Arc<dyn Speller>;
+    fn metadata(&self) -> Option<&SpellerMetadata>;
 }
