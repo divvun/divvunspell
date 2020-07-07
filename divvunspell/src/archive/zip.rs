@@ -59,6 +59,12 @@ fn mmap_by_name<R: Read + Seek>(
     }
 }
 
+impl ZipSpellerArchive {
+    pub fn hfst_speller(&self) -> Arc<HfstSpeller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>> {
+        self.speller.clone()
+    }
+}
+
 impl SpellerArchive for ZipSpellerArchive {
     fn open(file_path: &std::path::Path) -> Result<ZipSpellerArchive, SpellerArchiveError> {
         let file = File::open(&file_path).map_err(SpellerArchiveError::File)?;
@@ -87,7 +93,6 @@ impl SpellerArchive for ZipSpellerArchive {
     }
 
     fn speller(&self) -> Arc<dyn Speller> {
-        //Arc<HfstSpeller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>> {
         self.speller.clone()
     }
 
@@ -116,7 +121,7 @@ pub(crate) mod ffi {
     pub extern "C" fn divvun_hfst_zip_speller_archive_speller(
         #[marshal(cursed::ArcRefMarshaler::<ZipSpellerArchive>)] handle: Arc<ZipSpellerArchive>,
     ) -> Arc<HfstZipSpeller> {
-        handle.speller()
+        handle.hfst_speller()
     }
 
     #[cthulhu::invoke(return_marshaler = "cursed::StringMarshaler")]

@@ -4,7 +4,7 @@ use box_format::BoxFileReader;
 
 use super::error::SpellerArchiveError;
 use super::{meta::SpellerMetadata, SpellerArchive};
-use crate::speller::{HfstSpeller, Speller};
+use crate::speller::{Speller, HfstSpeller};
 use crate::transducer::{
     thfst::{MemmapThfstChunkedTransducer, MemmapThfstTransducer},
     Transducer,
@@ -43,6 +43,16 @@ where
     speller: Arc<HfstSpeller<crate::vfs::boxf::File, T, U>>,
 }
 
+impl<T, U> BoxSpellerArchive<T, U>
+where
+    T: Transducer<crate::vfs::boxf::File> + 'static,
+    U: Transducer<crate::vfs::boxf::File> + 'static,
+{
+    pub fn hfst_speller(&self) -> Arc<HfstSpeller<crate::vfs::boxf::File, T, U>> {
+        self.speller.clone()
+    }
+}
+
 impl<T, U> SpellerArchive for BoxSpellerArchive<T, U>
 where
     T: Transducer<crate::vfs::boxf::File> + 'static,
@@ -67,7 +77,6 @@ where
     }
 
     fn speller(&self) -> Arc<dyn Speller> {
-        //Arc<HfstSpeller<crate::vfs::boxf::File, T, U>> {
         self.speller.clone()
     }
 
@@ -98,7 +107,7 @@ pub(crate) mod ffi {
             ThfstBoxSpellerArchive,
         >,
     ) -> Arc<ThfstBoxSpeller> {
-        handle.speller()
+        handle.hfst_speller()
     }
 
     #[cthulhu::invoke(return_marshaler = "cursed::StringMarshaler")]
@@ -128,7 +137,7 @@ pub(crate) mod ffi {
             ThfstChunkedBoxSpellerArchive,
         >,
     ) -> Arc<ThfstChunkedBoxSpeller> {
-        handle.speller()
+        handle.hfst_speller()
     }
 
     #[cthulhu::invoke(return_marshaler = "cursed::StringMarshaler")]
