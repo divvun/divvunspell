@@ -53,7 +53,7 @@ impl CaseHandlingConfig {
     }
 }
 
-pub trait Speller {
+pub trait Speller: Send {
     fn is_correct(self: Arc<Self>, word: &str) -> bool;
     fn suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
     fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion>;
@@ -61,9 +61,9 @@ pub trait Speller {
 
 impl<F, T, U> Speller for HfstSpeller<F, T, U>
 where
-    F: crate::vfs::File,
-    T: Transducer<F>,
-    U: Transducer<F>,
+    F: crate::vfs::File + Send,
+    T: Transducer<F> + Send,
+    U: Transducer<F> + Send,
 {
     #[allow(clippy::wrong_self_convention)]
     fn is_correct(self: Arc<Self>, word: &str) -> bool {

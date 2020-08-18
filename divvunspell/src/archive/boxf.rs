@@ -76,7 +76,7 @@ where
         Ok(BoxSpellerArchive { speller, metadata })
     }
 
-    fn speller(&self) -> Arc<dyn Speller + Send> {
+    fn speller(&self) -> Arc<dyn Speller> {
         self.speller.clone()
     }
 

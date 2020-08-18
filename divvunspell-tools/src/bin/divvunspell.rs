@@ -81,7 +81,7 @@ impl OutputWriter for JsonWriter {
 }
 
 fn run(
-    speller: Arc<dyn Speller + Send>,
+    speller: Arc<dyn Speller>,
     words: Vec<String>,
     writer: &mut dyn OutputWriter,
     is_suggesting: bool,
