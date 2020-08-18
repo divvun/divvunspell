@@ -55,8 +55,8 @@ where
 
 impl<T, U> SpellerArchive for BoxSpellerArchive<T, U>
 where
-    T: Transducer<crate::vfs::boxf::File> + 'static,
-    U: Transducer<crate::vfs::boxf::File> + 'static,
+    T: Transducer<crate::vfs::boxf::File> + Send + 'static,
+    U: Transducer<crate::vfs::boxf::File> + Send + 'static,
 {
     fn open(file_path: &std::path::Path) -> Result<BoxSpellerArchive<T, U>, SpellerArchiveError> {
         let archive = BoxFileReader::open(file_path).map_err(SpellerArchiveError::File)?;
@@ -76,7 +76,7 @@ where
         Ok(BoxSpellerArchive { speller, metadata })
     }
 
-    fn speller(&self) -> Arc<dyn Speller> {
+    fn speller(&self) -> Arc<dyn Speller + Send> {
         self.speller.clone()
     }
 

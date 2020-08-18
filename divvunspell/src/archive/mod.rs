@@ -38,6 +38,6 @@ pub trait SpellerArchive {
     where
         Self: Sized;
 
-    fn speller(&self) -> Arc<dyn Speller>;
+    fn speller(&self) -> Arc<dyn Speller + Send>;
     fn metadata(&self) -> Option<&SpellerMetadata>;
 }
