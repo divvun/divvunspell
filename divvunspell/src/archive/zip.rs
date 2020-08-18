@@ -95,7 +95,7 @@ impl SpellerArchive for ZipSpellerArchive {
         Ok(ZipSpellerArchive { metadata, speller })
     }
 
-    fn speller(&self) -> Arc<dyn Speller> {
+    fn speller(&self) -> Arc<dyn Speller + Send + Sync> {
         self.speller.clone()
     }
 

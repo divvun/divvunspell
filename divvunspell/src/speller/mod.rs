@@ -53,7 +53,7 @@ impl CaseHandlingConfig {
     }
 }
 
-pub trait Speller: Send {
+pub trait Speller {
     fn is_correct(self: Arc<Self>, word: &str) -> bool;
     fn suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
     fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion>;
