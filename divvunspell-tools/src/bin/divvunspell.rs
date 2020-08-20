@@ -153,6 +153,9 @@ struct TokenizeArgs {
     #[options(help = "print help message")]
     help: bool,
 
+    #[options(short = "w", long = "words", help = "show words only")]
+    is_words_only: bool,
+
     #[options(free, help = "text to be tokenized")]
     inputs: Vec<String>,
 }
@@ -169,9 +172,16 @@ fn tokenize(args: TokenizeArgs) -> anyhow::Result<()> {
         args.inputs.into_iter().collect::<Vec<_>>().join(" ")
     };
 
-    for (index, token) in inputs.word_bound_indices() {
-        println!("{:>4}: \"{}\"", index, token);
+    if args.is_words_only {
+        for (index, token) in inputs.word_indices() {
+            println!("{:>4}: \"{}\"", index, token);
+        }
+    } else {
+        for (index, token) in inputs.word_bound_indices() {
+            println!("{:>4}: \"{}\"", index, token);
+        }
     }
+
     Ok(())
 }
 
