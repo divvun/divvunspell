@@ -1,5 +1,5 @@
 use crate::transducer::TransducerError;
-use std::io::Error;
+use std::{ffi::OsString, io::Error};
 
 #[derive(Debug, thiserror::Error)]
 pub enum SpellerArchiveError {
@@ -20,4 +20,7 @@ pub enum SpellerArchiveError {
 
     #[error("Unknown error code {0}")]
     Unknown(u8),
+
+    #[error("Unsupported file extension: {0:?}")]
+    UnsupportedExt(OsString),
 }

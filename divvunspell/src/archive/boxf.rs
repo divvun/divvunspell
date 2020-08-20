@@ -45,8 +45,8 @@ where
 
 impl<T, U> BoxSpellerArchive<T, U>
 where
-    T: Transducer<crate::vfs::boxf::File> + 'static,
-    U: Transducer<crate::vfs::boxf::File> + 'static,
+    T: Transducer<crate::vfs::boxf::File> + Send + Sync + 'static,
+    U: Transducer<crate::vfs::boxf::File> + Send + Sync + 'static,
 {
     pub fn hfst_speller(&self) -> Arc<HfstSpeller<crate::vfs::boxf::File, T, U>> {
         self.speller.clone()
