@@ -13,23 +13,23 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 libc = "0.2"
 memmap = "0.7.0"
 byteorder = "1.3.4"
-serde = { version = "1.0.104", features = ["derive"] }
-serde_json = "1.0.48"
-serde-xml-rs = { version = "0.3.1", default-features = false }
+serde = { version = "1.0.116", features = ["derive"] }
+serde_json = "1.0.57"
+serde-xml-rs = { version = "0.4.0", default-features = false }
 zip = { version = "0.5", default-features = false }
 unic-segment = "0.9.0"
 unic-char-range = "0.9.0"
 unic-char-property = "0.9.0"
 unic-ucd-category = "0.9.0"
-parking_lot = "0.10.0"
-hashbrown = { version = "0.7", features = ["serde"] }
+parking_lot = "0.11.0"
+hashbrown = { version = "0.9", features = ["serde"] }
 tempdir = "0.3.7"
 lifeguard = "0.6"
-smol_str = { version = "0.1.15", features = ["serde"] }
-box_format = { git = "https://github.com/bbqsrc/box", branch = "master", features = ["reader"], default-features = false }
-itertools = "0.8.2"
+smol_str = { version = "0.1.16", features = ["serde"] }
+box-format = { git = "https://github.com/bbqsrc/box", branch = "master", features = ["reader"], default-features = false }
+itertools = "0.9.0"
 strsim = "0.10.0"
-log = { version = "0.4.8" }
+log = { version = "0.4.11" }
 cthulhu = { git = "https://github.com/cthulhu-rs/cthulhu", branch = "feature/bytes-plus-len" }
 cursed = { git = "https://github.com/cthulhu-rs/cthulhu", branch = "feature/bytes-plus-len" }
 unic-ucd-common = "0.9.0"

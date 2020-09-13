@@ -15,17 +15,17 @@ name = "accuracy"
 name = "thfst-tools"
 
 [dependencies]
-serde = { version = "1.0.114", features = ["derive"] }
-serde_json = "1.0.56"
+serde = { version = "1.0.116", features = ["derive"] }
+serde_json = "1.0.57"
 divvunspell = { path = "../divvunspell", features = ["internal_convert", "compression"] }
 csv = { version = "1.1" }
-rayon = { version = "1.3.1" }
-indicatif = { git = "https://github.com/mitsuhiko/indicatif", features = ["with_rayon"] }
-box_format = { git = "https://github.com/bbqsrc/box", branch = "master" }
+rayon = { version = "1.4.0" }
+indicatif = { version = "0.15", features = ["with_rayon"] }
+box-format = { git = "https://github.com/bbqsrc/box", branch = "master" }
 tempdir = "0.3.7"
 pretty_env_logger = "0.4.0"
 ctor = "*"
 gumdrop = "0.8.0"
 thiserror = "1.0.20"
-anyhow = "1.0.31"
-structopt = "0.3.15"
+anyhow = "1.0.32"
+structopt = "0.3.17"
