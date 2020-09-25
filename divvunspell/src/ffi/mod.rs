@@ -4,32 +4,27 @@ use std::path::Path;
 use std::ptr::null;
 use std::sync::Arc;
 
-use crate::tokenizer::word::WordBoundIndices;
-use crate::tokenizer::Tokenize;
+use crate::tokenizer::{Tokenize, WordIndices};
 
 pub(crate) mod fbs;
 
 #[no_mangle]
-pub extern "C" fn divvun_word_bound_indices(
+pub extern "C" fn divvun_word_indices<'a>(
     utf8_string: *const c_char,
-) -> *mut WordBoundIndices<'static> {
+) -> *mut WordIndices<'a> {
     let c_str = unsafe { CStr::from_ptr(utf8_string) };
     let string = c_str.to_str().unwrap();
-    let iterator = string.word_bound_indices();
+    let iterator = string.word_indices();
     Box::into_raw(Box::new(iterator)) as *mut _
 }
 
 #[no_mangle]
-pub extern "C" fn divvun_word_bound_indices_next(
-    iterator: *mut WordBoundIndices<'static>,
+pub extern "C" fn divvun_word_indices_next<'a>(
+    iterator: *mut WordIndices<'a>,
     out_index: *mut u64,
     out_string: *mut *const c_char,
 ) -> u8 {
     let iterator = unsafe { &mut *iterator };
-
-    if !out_string.is_null() {
-        unsafe { CString::from_raw(*out_string as _) };
-    }
 
     match iterator.next() {
         Some((index, word)) => {
@@ -45,13 +40,13 @@ pub extern "C" fn divvun_word_bound_indices_next(
 }
 
 #[no_mangle]
-pub extern "C" fn divvun_cstr_free(handle: *mut c_char) {
-    unsafe { CString::from_raw(handle) };
+pub extern "C" fn divvun_word_indices_free<'a>(handle: *mut WordIndices<'a>) {
+    unsafe { Box::from_raw(handle) };
 }
 
 #[no_mangle]
-pub extern "C" fn divvun_word_bound_indices_free(handle: *mut WordBoundIndices) {
-    unsafe { Box::from_raw(handle) };
+pub extern "C" fn divvun_cstr_free(handle: *mut c_char) {
+    unsafe { CString::from_raw(handle) };
 }
 
 use crate::ffi::fbs::IntoFlatbuffer;
