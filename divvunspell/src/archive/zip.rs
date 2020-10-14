@@ -78,13 +78,18 @@ impl SpellerArchive for ZipSpellerArchive {
         let mut file = File::open(file_path).map_err(SpellerArchiveError::File)?;
 
         let metadata_mmap =
-            mmap_by_name(&mut file, &mut archive, "index.xml").map_err(SpellerArchiveError::Io)?;
-        let metadata = SpellerMetadata::from_bytes(&*metadata_mmap.map()).expect("meta");
+            mmap_by_name(&mut file, &mut archive, "index.xml")
+                .map_err(|e| SpellerArchiveError::Io("index.xml".into(), e))?;
+        let metadata = SpellerMetadata::from_bytes(&*metadata_mmap.map())
+            .expect("meta");
 
-        let acceptor_mmap = mmap_by_name(&mut file, &mut archive, &metadata.acceptor.id)
-            .map_err(SpellerArchiveError::Io)?;
-        let errmodel_mmap = mmap_by_name(&mut file, &mut archive, &metadata.errmodel.id)
-            .map_err(SpellerArchiveError::Io)?;
+        let acceptor_id = &metadata.acceptor.id;
+        let errmodel_id = &metadata.errmodel.id;
+
+        let acceptor_mmap = mmap_by_name(&mut file, &mut archive, &acceptor_id)
+            .map_err(|e| SpellerArchiveError::Io(acceptor_id.into(), e))?;
+        let errmodel_mmap = mmap_by_name(&mut file, &mut archive, &errmodel_id)
+            .map_err(|e| SpellerArchiveError::Io(errmodel_id.into(), e))?;
         drop(archive);
 
         let acceptor = HfstTransducer::from_mapped_memory(acceptor_mmap.map());

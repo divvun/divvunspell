@@ -7,7 +7,7 @@ pub enum SpellerArchiveError {
     File(Error),
 
     #[error("IO error")]
-    Io(Error),
+    Io(String, Error),
 
     #[error("Transducer error")]
     Transducer(TransducerError),
