@@ -389,7 +389,7 @@ pub(crate) mod ffi {
         }
     }
 
-    #[cthulhu::invoke]
+    #[cffi::marshal]
     pub extern "C" fn divvun_thfst_box_speller_is_correct(
         #[marshal(cursed::ArcRefMarshaler::<ThfstBoxSpeller>)] speller: Arc<ThfstBoxSpeller>,
         #[marshal(cursed::StrMarshaler)] word: &str,
@@ -397,7 +397,7 @@ pub(crate) mod ffi {
         speller.is_correct(word)
     }
 
-    #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
+    #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_thfst_box_speller_suggest(
         #[marshal(cursed::ArcRefMarshaler::<ThfstBoxSpeller>)] speller: Arc<ThfstBoxSpeller>,
         #[marshal(cursed::StrMarshaler)] word: &str,
@@ -405,7 +405,7 @@ pub(crate) mod ffi {
         speller.suggest(word)
     }
 
-    #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
+    #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_thfst_box_speller_suggest_with_config(
         #[marshal(cursed::ArcRefMarshaler::<ThfstBoxSpeller>)] speller: Arc<ThfstBoxSpeller>,
         #[marshal(cursed::StrMarshaler)] word: &str,
@@ -414,7 +414,7 @@ pub(crate) mod ffi {
         speller.suggest_with_config(word, &config)
     }
 
-    #[cthulhu::invoke]
+    #[cffi::marshal]
     pub extern "C" fn divvun_thfst_chunked_box_speller_is_correct(
         #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: Arc<
             ThfstChunkedBoxSpeller,
@@ -424,7 +424,7 @@ pub(crate) mod ffi {
         speller.is_correct(word)
     }
 
-    #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
+    #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_suggest(
         #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: Arc<
             ThfstChunkedBoxSpeller,
@@ -434,7 +434,7 @@ pub(crate) mod ffi {
         speller.suggest(word)
     }
 
-    #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
+    #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_suggest_with_config(
         #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: Arc<
             ThfstChunkedBoxSpeller,
@@ -445,7 +445,7 @@ pub(crate) mod ffi {
         speller.suggest_with_config(word, &config)
     }
 
-    #[cthulhu::invoke]
+    #[cffi::marshal]
     pub extern "C" fn divvun_hfst_zip_speller_is_correct(
         #[marshal(cursed::ArcRefMarshaler::<HfstZipSpeller>)] speller: Arc<HfstZipSpeller>,
         #[marshal(cursed::StrMarshaler)] word: &str,
@@ -453,7 +453,7 @@ pub(crate) mod ffi {
         speller.is_correct(word)
     }
 
-    #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
+    #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_hfst_zip_speller_suggest(
         #[marshal(cursed::ArcRefMarshaler::<HfstZipSpeller>)] speller: Arc<HfstZipSpeller>,
         #[marshal(cursed::StrMarshaler)] word: &str,
@@ -461,7 +461,7 @@ pub(crate) mod ffi {
         speller.suggest(word)
     }
 
-    #[cthulhu::invoke(return_marshaler = "SuggestionVecMarshaler")]
+    #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_hfst_zip_speller_suggest_with_config(
         #[marshal(cursed::ArcRefMarshaler::<HfstZipSpeller>)] speller: Arc<HfstZipSpeller>,
         #[marshal(cursed::StrMarshaler)] word: &str,
@@ -472,14 +472,14 @@ pub(crate) mod ffi {
 
     // Suggestions vec
 
-    #[cthulhu::invoke]
+    #[cffi::marshal]
     pub extern "C" fn divvun_vec_suggestion_len(
         #[marshal(SuggestionVecRefMarshaler)] suggestions: &[Suggestion],
     ) -> usize {
         suggestions.len()
     }
 
-    #[cthulhu::invoke(return_marshaler = "cursed::StringMarshaler")]
+    #[cffi::marshal(return_marshaler = "cursed::StringMarshaler")]
     pub extern "C" fn divvun_vec_suggestion_get_value(
         #[marshal(SuggestionVecRefMarshaler)] suggestions: &[Suggestion],
         index: usize,

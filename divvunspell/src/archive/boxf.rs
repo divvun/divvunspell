@@ -92,7 +92,7 @@ pub(crate) mod ffi {
     use std::error::Error;
     use std::ffi::c_void;
 
-    #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler::<ThfstBoxSpellerArchive>")]
+    #[cffi::marshal(return_marshaler = "cursed::ArcMarshaler::<ThfstBoxSpellerArchive>")]
     pub extern "C" fn divvun_thfst_box_speller_archive_open(
         #[marshal(cursed::PathBufMarshaler)] path: std::path::PathBuf,
     ) -> Result<Arc<ThfstBoxSpellerArchive>, Box<dyn Error>> {
@@ -101,7 +101,7 @@ pub(crate) mod ffi {
             .map_err(|e| Box::new(e) as _)
     }
 
-    #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler::<ThfstBoxSpeller>")]
+    #[cffi::marshal(return_marshaler = "cursed::ArcMarshaler::<ThfstBoxSpeller>")]
     pub extern "C" fn divvun_thfst_box_speller_archive_speller(
         #[marshal(cursed::ArcRefMarshaler::<ThfstBoxSpellerArchive>)] handle: Arc<
             ThfstBoxSpellerArchive,
@@ -110,7 +110,7 @@ pub(crate) mod ffi {
         handle.hfst_speller()
     }
 
-    #[cthulhu::invoke(return_marshaler = "cursed::StringMarshaler")]
+    #[cffi::marshal(return_marshaler = "cursed::StringMarshaler")]
     pub extern "C" fn divvun_thfst_box_speller_archive_locale(
         #[marshal(cursed::ArcRefMarshaler::<ThfstBoxSpellerArchive>)] handle: Arc<
             ThfstBoxSpellerArchive,
@@ -122,7 +122,7 @@ pub(crate) mod ffi {
         }
     }
 
-    #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler::<ThfstChunkedBoxSpellerArchive>")]
+    #[cffi::marshal(return_marshaler = "cursed::ArcMarshaler::<ThfstChunkedBoxSpellerArchive>")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_archive_open(
         #[marshal(cursed::PathBufMarshaler)] path: std::path::PathBuf,
     ) -> Result<Arc<ThfstChunkedBoxSpellerArchive>, Box<dyn Error>> {
@@ -131,7 +131,7 @@ pub(crate) mod ffi {
             .map_err(|e| Box::new(e) as _)
     }
 
-    #[cthulhu::invoke(return_marshaler = "cursed::ArcMarshaler::<ThfstChunkedBoxSpeller>")]
+    #[cffi::marshal(return_marshaler = "cursed::ArcMarshaler::<ThfstChunkedBoxSpeller>")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_archive_speller(
         #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpellerArchive>)] handle: Arc<
             ThfstChunkedBoxSpellerArchive,
@@ -140,7 +140,7 @@ pub(crate) mod ffi {
         handle.hfst_speller()
     }
 
-    #[cthulhu::invoke(return_marshaler = "cursed::StringMarshaler")]
+    #[cffi::marshal(return_marshaler = "cursed::StringMarshaler")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_archive_locale(
         #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpellerArchive>)] handle: Arc<
             ThfstChunkedBoxSpellerArchive,

@@ -30,8 +30,7 @@ box-format = { git = "https://github.com/bbqsrc/box", branch = "master", feature
 itertools = "0.9.0"
 strsim = "0.10.0"
 log = { version = "0.4.11" }
-cthulhu = { git = "https://github.com/cthulhu-rs/cthulhu", branch = "feature/bytes-plus-len" }
-cursed = { git = "https://github.com/cthulhu-rs/cthulhu", branch = "feature/bytes-plus-len" }
+cffi = "0.1"
 unic-ucd-common = "0.9.0"
 flatbuffers = { version = "0.6.1", optional = true }
 env_logger = { version = "0.7.1", optional = true }
