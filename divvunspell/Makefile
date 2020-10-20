@@ -14,8 +14,8 @@ xcodeinstall:
 xcodeclean:
 	$(CARGO_HOME)/bin/cargo clean
 xcodelipo:
-	$(CARGO_HOME)/bin/cargo lipo --targets aarch64-apple-ios,x86_64-apple-ios $(FLAGS)
+	$(CARGO_HOME)/bin/cargo lipo $(FLAGS)
 xcodelipoinstall:
-	$(CARGO_HOME)/bin/cargo lipo --targets aarch64-apple-ios,x86_64-apple-ios $(FLAGS)
+	$(CARGO_HOME)/bin/cargo lipo $(FLAGS)
 xcodelipoclean:
 	$(CARGO_HOME)/bin/cargo clean
