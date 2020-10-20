@@ -88,31 +88,31 @@ where
 #[cfg(feature = "internal_ffi")]
 pub(crate) mod ffi {
     use super::*;
-    use cursed::{FromForeign, InputType, ReturnType, ToForeign};
+    use cffi::{FromForeign, InputType, ReturnType, ToForeign};
     use std::error::Error;
     use std::ffi::c_void;
 
-    #[cffi::marshal(return_marshaler = "cursed::ArcMarshaler::<ThfstBoxSpellerArchive>")]
+    #[cffi::marshal(return_marshaler = "cffi::ArcMarshaler::<ThfstBoxSpellerArchive>")]
     pub extern "C" fn divvun_thfst_box_speller_archive_open(
-        #[marshal(cursed::PathBufMarshaler)] path: std::path::PathBuf,
+        #[marshal(cffi::PathBufMarshaler)] path: std::path::PathBuf,
     ) -> Result<Arc<ThfstBoxSpellerArchive>, Box<dyn Error>> {
         ThfstBoxSpellerArchive::open(&path)
             .map(|x| Arc::new(x))
             .map_err(|e| Box::new(e) as _)
     }
 
-    #[cffi::marshal(return_marshaler = "cursed::ArcMarshaler::<ThfstBoxSpeller>")]
+    #[cffi::marshal(return_marshaler = "cffi::ArcMarshaler::<ThfstBoxSpeller>")]
     pub extern "C" fn divvun_thfst_box_speller_archive_speller(
-        #[marshal(cursed::ArcRefMarshaler::<ThfstBoxSpellerArchive>)] handle: Arc<
+        #[marshal(cffi::ArcRefMarshaler::<ThfstBoxSpellerArchive>)] handle: Arc<
             ThfstBoxSpellerArchive,
         >,
     ) -> Arc<ThfstBoxSpeller> {
         handle.hfst_speller()
     }
 
-    #[cffi::marshal(return_marshaler = "cursed::StringMarshaler")]
+    #[cffi::marshal(return_marshaler = "cffi::StringMarshaler")]
     pub extern "C" fn divvun_thfst_box_speller_archive_locale(
-        #[marshal(cursed::ArcRefMarshaler::<ThfstBoxSpellerArchive>)] handle: Arc<
+        #[marshal(cffi::ArcRefMarshaler::<ThfstBoxSpellerArchive>)] handle: Arc<
             ThfstBoxSpellerArchive,
         >,
     ) -> Result<String, Box<dyn Error>> {
@@ -122,27 +122,27 @@ pub(crate) mod ffi {
         }
     }
 
-    #[cffi::marshal(return_marshaler = "cursed::ArcMarshaler::<ThfstChunkedBoxSpellerArchive>")]
+    #[cffi::marshal(return_marshaler = "cffi::ArcMarshaler::<ThfstChunkedBoxSpellerArchive>")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_archive_open(
-        #[marshal(cursed::PathBufMarshaler)] path: std::path::PathBuf,
+        #[marshal(cffi::PathBufMarshaler)] path: std::path::PathBuf,
     ) -> Result<Arc<ThfstChunkedBoxSpellerArchive>, Box<dyn Error>> {
         ThfstChunkedBoxSpellerArchive::open(&path)
             .map(|x| Arc::new(x))
             .map_err(|e| Box::new(e) as _)
     }
 
-    #[cffi::marshal(return_marshaler = "cursed::ArcMarshaler::<ThfstChunkedBoxSpeller>")]
+    #[cffi::marshal(return_marshaler = "cffi::ArcMarshaler::<ThfstChunkedBoxSpeller>")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_archive_speller(
-        #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpellerArchive>)] handle: Arc<
+        #[marshal(cffi::ArcRefMarshaler::<ThfstChunkedBoxSpellerArchive>)] handle: Arc<
             ThfstChunkedBoxSpellerArchive,
         >,
     ) -> Arc<ThfstChunkedBoxSpeller> {
         handle.hfst_speller()
     }
 
-    #[cffi::marshal(return_marshaler = "cursed::StringMarshaler")]
+    #[cffi::marshal(return_marshaler = "cffi::StringMarshaler")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_archive_locale(
-        #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpellerArchive>)] handle: Arc<
+        #[marshal(cffi::ArcRefMarshaler::<ThfstChunkedBoxSpellerArchive>)] handle: Arc<
             ThfstChunkedBoxSpellerArchive,
         >,
     ) -> Result<String, Box<dyn Error>> {

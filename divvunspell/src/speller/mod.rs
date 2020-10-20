@@ -280,12 +280,12 @@ pub(crate) mod ffi {
     use super::*;
     use crate::archive::boxf::{ThfstBoxSpeller, ThfstChunkedBoxSpeller};
     use crate::archive::zip::HfstZipSpeller;
-    use cursed::{FromForeign, ToForeign};
+    use cffi::{FromForeign, ToForeign};
     use std::convert::Infallible;
     use std::ffi::c_void;
 
-    pub type SuggestionVecMarshaler = cursed::VecMarshaler<Suggestion>;
-    pub type SuggestionVecRefMarshaler = cursed::VecRefMarshaler<Suggestion>;
+    pub type SuggestionVecMarshaler = cffi::VecMarshaler<Suggestion>;
+    pub type SuggestionVecRefMarshaler = cffi::VecRefMarshaler<Suggestion>;
 
     #[derive(Clone, Copy, Default, PartialEq)]
     #[repr(C)]
@@ -307,11 +307,11 @@ pub(crate) mod ffi {
 
     pub struct SpellerConfigMarshaler;
 
-    impl cursed::InputType for SpellerConfigMarshaler {
+    impl cffi::InputType for SpellerConfigMarshaler {
         type Foreign = *const c_void;
     }
 
-    impl cursed::ReturnType for SpellerConfigMarshaler {
+    impl cffi::ReturnType for SpellerConfigMarshaler {
         type Foreign = *const c_void;
 
         fn foreign_default() -> Self::Foreign {
@@ -391,24 +391,24 @@ pub(crate) mod ffi {
 
     #[cffi::marshal]
     pub extern "C" fn divvun_thfst_box_speller_is_correct(
-        #[marshal(cursed::ArcRefMarshaler::<ThfstBoxSpeller>)] speller: Arc<ThfstBoxSpeller>,
-        #[marshal(cursed::StrMarshaler)] word: &str,
+        #[marshal(cffi::ArcRefMarshaler::<ThfstBoxSpeller>)] speller: Arc<ThfstBoxSpeller>,
+        #[marshal(cffi::StrMarshaler)] word: &str,
     ) -> bool {
         speller.is_correct(word)
     }
 
     #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_thfst_box_speller_suggest(
-        #[marshal(cursed::ArcRefMarshaler::<ThfstBoxSpeller>)] speller: Arc<ThfstBoxSpeller>,
-        #[marshal(cursed::StrMarshaler)] word: &str,
+        #[marshal(cffi::ArcRefMarshaler::<ThfstBoxSpeller>)] speller: Arc<ThfstBoxSpeller>,
+        #[marshal(cffi::StrMarshaler)] word: &str,
     ) -> Vec<Suggestion> {
         speller.suggest(word)
     }
 
     #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_thfst_box_speller_suggest_with_config(
-        #[marshal(cursed::ArcRefMarshaler::<ThfstBoxSpeller>)] speller: Arc<ThfstBoxSpeller>,
-        #[marshal(cursed::StrMarshaler)] word: &str,
+        #[marshal(cffi::ArcRefMarshaler::<ThfstBoxSpeller>)] speller: Arc<ThfstBoxSpeller>,
+        #[marshal(cffi::StrMarshaler)] word: &str,
         #[marshal(SpellerConfigMarshaler)] config: SpellerConfig,
     ) -> Vec<Suggestion> {
         speller.suggest_with_config(word, &config)
@@ -416,30 +416,30 @@ pub(crate) mod ffi {
 
     #[cffi::marshal]
     pub extern "C" fn divvun_thfst_chunked_box_speller_is_correct(
-        #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: Arc<
+        #[marshal(cffi::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: Arc<
             ThfstChunkedBoxSpeller,
         >,
-        #[marshal(cursed::StrMarshaler)] word: &str,
+        #[marshal(cffi::StrMarshaler)] word: &str,
     ) -> bool {
         speller.is_correct(word)
     }
 
     #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_suggest(
-        #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: Arc<
+        #[marshal(cffi::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: Arc<
             ThfstChunkedBoxSpeller,
         >,
-        #[marshal(cursed::StrMarshaler)] word: &str,
+        #[marshal(cffi::StrMarshaler)] word: &str,
     ) -> Vec<Suggestion> {
         speller.suggest(word)
     }
 
     #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_thfst_chunked_box_speller_suggest_with_config(
-        #[marshal(cursed::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: Arc<
+        #[marshal(cffi::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: Arc<
             ThfstChunkedBoxSpeller,
         >,
-        #[marshal(cursed::StrMarshaler)] word: &str,
+        #[marshal(cffi::StrMarshaler)] word: &str,
         #[marshal(SpellerConfigMarshaler)] config: SpellerConfig,
     ) -> Vec<Suggestion> {
         speller.suggest_with_config(word, &config)
@@ -447,24 +447,24 @@ pub(crate) mod ffi {
 
     #[cffi::marshal]
     pub extern "C" fn divvun_hfst_zip_speller_is_correct(
-        #[marshal(cursed::ArcRefMarshaler::<HfstZipSpeller>)] speller: Arc<HfstZipSpeller>,
-        #[marshal(cursed::StrMarshaler)] word: &str,
+        #[marshal(cffi::ArcRefMarshaler::<HfstZipSpeller>)] speller: Arc<HfstZipSpeller>,
+        #[marshal(cffi::StrMarshaler)] word: &str,
     ) -> bool {
         speller.is_correct(word)
     }
 
     #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_hfst_zip_speller_suggest(
-        #[marshal(cursed::ArcRefMarshaler::<HfstZipSpeller>)] speller: Arc<HfstZipSpeller>,
-        #[marshal(cursed::StrMarshaler)] word: &str,
+        #[marshal(cffi::ArcRefMarshaler::<HfstZipSpeller>)] speller: Arc<HfstZipSpeller>,
+        #[marshal(cffi::StrMarshaler)] word: &str,
     ) -> Vec<Suggestion> {
         speller.suggest(word)
     }
 
     #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_hfst_zip_speller_suggest_with_config(
-        #[marshal(cursed::ArcRefMarshaler::<HfstZipSpeller>)] speller: Arc<HfstZipSpeller>,
-        #[marshal(cursed::StrMarshaler)] word: &str,
+        #[marshal(cffi::ArcRefMarshaler::<HfstZipSpeller>)] speller: Arc<HfstZipSpeller>,
+        #[marshal(cffi::StrMarshaler)] word: &str,
         #[marshal(SpellerConfigMarshaler)] config: SpellerConfig,
     ) -> Vec<Suggestion> {
         speller.suggest_with_config(word, &config)
@@ -479,7 +479,7 @@ pub(crate) mod ffi {
         suggestions.len()
     }
 
-    #[cffi::marshal(return_marshaler = "cursed::StringMarshaler")]
+    #[cffi::marshal(return_marshaler = "cffi::StringMarshaler")]
     pub extern "C" fn divvun_vec_suggestion_get_value(
         #[marshal(SuggestionVecRefMarshaler)] suggestions: &[Suggestion],
         index: usize,

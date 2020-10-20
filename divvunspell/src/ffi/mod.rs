@@ -51,12 +51,12 @@ pub extern "C" fn divvun_cstr_free(handle: *mut c_char) {
 
 use crate::ffi::fbs::IntoFlatbuffer;
 use crate::tokenizer::{cursor_context, WordContext};
-use cursed::{FromForeign, Slice, ToForeign};
+use cffi::{FromForeign, Slice, ToForeign};
 use std::convert::Infallible;
 
 pub struct FbsMarshaler;
 
-impl cursed::ReturnType for FbsMarshaler {
+impl cffi::ReturnType for FbsMarshaler {
     type Foreign = Slice<u8>;
 
     fn foreign_default() -> Self::Foreign {
@@ -69,13 +69,13 @@ impl<T: IntoFlatbuffer> ToForeign<T, Slice<u8>> for FbsMarshaler {
 
     fn to_foreign(bufferable: T) -> Result<Slice<u8>, Self::Error> {
         let vec = bufferable.into_flatbuffer();
-        cursed::VecMarshaler::to_foreign(vec)
+        cffi::VecMarshaler::to_foreign(vec)
     }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn divvun_fbs_free(slice: Slice<u8>) {
-    cursed::VecMarshaler::from_foreign(slice);
+    cffi::VecMarshaler::from_foreign(slice);
 }
 
 #[cfg(feature = "logging")]
@@ -86,8 +86,8 @@ pub unsafe extern "C" fn divvun_enable_logging() {
 
 #[cffi::marshal(return_marshaler = "FbsMarshaler")]
 pub extern "C" fn divvun_cursor_context(
-    #[marshal(cursed::StrMarshaler)] first_half: &str,
-    #[marshal(cursed::StrMarshaler)] second_half: &str,
+    #[marshal(cffi::StrMarshaler)] first_half: &str,
+    #[marshal(cffi::StrMarshaler)] second_half: &str,
 ) -> WordContext {
     crate::tokenizer::cursor_context(first_half, second_half)
 }
