@@ -92,7 +92,7 @@ checksum = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693"
 [[package]]
 name = "box-format"
 version = "0.3.0"
-source = "git+https://github.com/bbqsrc/box?branch=master#8b6602fac3013c326db27411766e84352a8a232c"
+source = "git+https://github.com/bbqsrc/box#8b6602fac3013c326db27411766e84352a8a232c"
 dependencies = [
  "byteorder",
  "comde",
@@ -384,7 +384,7 @@ checksum = "b69c98ef9a359c096315189967f3ccdf9d9dbaa02d9129ff724ed3426c61f948"
 
 [[package]]
 name = "divvunspell"
-version = "1.0.0-alpha.4"
+version = "1.0.0-alpha.5"
 dependencies = [
  "box-format",
  "byteorder",
@@ -415,7 +415,7 @@ dependencies = [
 
 [[package]]
 name = "divvunspell-tools"
-version = "1.0.0-alpha.4"
+version = "1.0.0-alpha.5"
 dependencies = [
  "anyhow",
  "box-format",
