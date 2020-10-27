@@ -54,6 +54,21 @@ ARGS:
     <WORDS>...    The words to be processed
 ```
 
+## Speller testing
+
+There's a prototype-level testing tool in `support/accuracy-viewer`. Use it like:
+
+```
+cargo accuracy-test -- -o support/accuracy-viewer/public/report.json typos.txt sma.zhfst
+cd support/accuracy-viewer
+npm i && npm run dev
+```
+
+View in `http://localhost:5000`.
+
+`typos.txt` is a TSV file with typos in the first column and expected correction in the second.
+More info by `cargo accuracy-test -- --help`.
+
 ## License
 
 The crate `divvunspell` is licensed under either of
