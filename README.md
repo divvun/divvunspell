@@ -8,24 +8,20 @@ An implementation of [hfst-ospell](https://github.com/hfst/hfst-ospell) in Rust,
 ```
 curl https://sh.rustup.rs -sSf | sh
 source $HOME/.cargo/env
-rustup default nightly
-cargo build --bin divvunspell --release
+rustup default stable
+cargo build --release
 ```
 
-## Building command line frontend
-
-To build the command line frontend for testing spellers:
+## Building and installing commandline tools
 
 ```
-cargo build --bin divvunspell --release
+cd divvunspell-tools
+cargo install --path .
 ```
 
-The result will be in the `target/release/` directory. To install the binary on your $PATH:
+This builds and install three binaries: divvunspell, accuracy and thfst-tools
 
-```
-cargo install --bin divvunspell --path .
-```
-
+### divvunspell
 Usage:
 
 ```
@@ -54,12 +50,58 @@ ARGS:
     <WORDS>...    The words to be processed
 ```
 
+### accuracy
+Usage:
+
+```
+divvunspell-accuracy 1.0.0-alpha.5
+Accuracy testing for DivvunSpell.
+
+USAGE:
+    accuracy [OPTIONS] [ARGS]
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+OPTIONS:
+    -c <config>             Provide JSON config file to override test defaults
+    -o <JSON-OUTPUT>        The file path for the JSON report output
+    -w <max-words>          Truncate typos list to max number of words specified
+
+ARGS:
+    <WORDS>    The 'input -> expected' list in tab-delimited value file (TSV)
+    <ZHFST>    Use the given ZHFST file
+```
+
+### thfst-tools
+Usage:
+
+```
+thfst-tools 1.0.0-alpha.5
+Tromsø-Helsinki Finite State Transducer toolkit.
+
+USAGE:
+    thfst-tools <SUBCOMMAND>
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+SUBCOMMANDS:
+    bhfst-info         Print metadata for BHFST
+    help               Prints this message or the help of the given subcommand(s)
+    hfst-to-thfst      Convert an HFST file to THFST
+    thfsts-to-bhfst    Convert a THFST acceptor/errmodel pair to BHFST
+    zhfst-to-bhfst     Convert a ZHFST file to BHFST
+```
+
 ## Speller testing
 
 There's a prototype-level testing tool in `support/accuracy-viewer`. Use it like:
 
 ```
-cargo accuracy-test -- -o support/accuracy-viewer/public/report.json typos.txt sma.zhfst
+accuracy -o support/accuracy-viewer/public/report.json typos.txt sma.zhfst
 cd support/accuracy-viewer
 npm i && npm run dev
 ```
