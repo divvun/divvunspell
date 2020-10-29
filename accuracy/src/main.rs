@@ -11,6 +11,7 @@ use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::Serialize;
 use structopt::clap::{App, AppSettings, Arg};
+use distance::damerau_levenshtein;
 
 static CFG: SpellerConfig = SpellerConfig {
     n_best: Some(10),
@@ -59,6 +60,7 @@ impl std::fmt::Display for Time {
 struct AccuracyResult<'a> {
     input: &'a str,
     expected: &'a str,
+    distance: usize,
     suggestions: Vec<Suggestion>,
     position: Option<usize>,
     time: Time,
@@ -248,9 +250,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             let position = suggestions.iter().position(|x| x.value == expected);
 
+            let distance = damerau_levenshtein(input, expected);
             AccuracyResult {
                 input,
                 expected,
+                distance,
                 time,
                 suggestions,
                 position,
