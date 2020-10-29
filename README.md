@@ -5,7 +5,7 @@ An implementation of [hfst-ospell](https://github.com/hfst/hfst-ospell) in Rust,
 [![Actions Status](https://github.com/divvun/divvunspell/workflows/Continuous%20Integration/badge.svg)](https://github.com/divvun/divvunspell/actions)
 
 ## No rust?
-```
+```sh
 curl https://sh.rustup.rs -sSf | sh
 source $HOME/.cargo/env
 rustup default stable
@@ -14,19 +14,19 @@ cargo build --release
 
 ## Building and installing commandline tools
 
-```
+```sh
 cd divvunspell-tools
 cargo install --path .
 ```
 
-This builds and install three binaries: divvunspell, accuracy and thfst-tools
+This builds and installs three binaries: `divvunspell`, `accuracy` and `thfst-tools`.
 
 ### divvunspell
 Usage:
 
 ```
 divvunspell 0.5.0
-Testing frontend for the DivvunSpell library
+Testing frontend for the Divvunspell library
 
 USAGE:
     divvunspell [FLAGS] [OPTIONS] <--zhfst <ZHFST>|--bhfst <BHFST>|--acceptor <acceptor>> [WORDS]...
@@ -55,7 +55,7 @@ Usage:
 
 ```
 divvunspell-accuracy 1.0.0-alpha.5
-Accuracy testing for DivvunSpell.
+Accuracy testing for Divvunspell.
 
 USAGE:
     accuracy [OPTIONS] [ARGS]
@@ -109,7 +109,7 @@ npm i && npm run dev
 View in `http://localhost:5000`.
 
 `typos.txt` is a TSV file with typos in the first column and expected correction in the second.
-More info by `cargo accuracy-test -- --help`.
+More info by `accuracy --help`.
 
 ## License
 
