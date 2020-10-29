@@ -75,6 +75,12 @@ ARGS:
 ```
 
 ### thfst-tools
+
+Convert hfst and zhfst files to thfst and bhfst formats.
+
+- **thfst**: byte-aligned hfst for fast and efficient loading and memory mapping, required to run divvunspell on ARM processors
+- **bhfst**: thfst files wrapped in a [box](https://github.com/bbqsrc/box) container; in the case of zhfst files converted to bhfst, the metadata file (`index.xml` in the zhfst archive) is converted to a json file for faster and leaner processing by the `divvunspell` library.
+
 Usage:
 
 ```
