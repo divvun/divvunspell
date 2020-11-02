@@ -1,9 +1,12 @@
+use chrono::prelude::*;
 use std::error::Error;
 use std::{
+    io::Write,
     path::Path,
     time::{Instant, SystemTime},
 };
 
+use distance::damerau_levenshtein;
 use divvunspell::archive::{SpellerArchive, ZipSpellerArchive};
 use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::{CaseHandlingConfig, SpellerConfig};
@@ -11,7 +14,6 @@ use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::Serialize;
 use structopt::clap::{App, AppSettings, Arg};
-use distance::damerau_levenshtein;
 
 static CFG: SpellerConfig = SpellerConfig {
     n_best: Some(10),
@@ -183,6 +185,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .help("The file path for the JSON report output"),
         )
         .arg(
+            Arg::with_name("tsv-output")
+                .short("t")
+                .value_name("TSV-OUTPUT")
+                .help("The file path for the TSV line append"),
+        )
+        .arg(
             Arg::with_name("max-words")
                 .short("w")
                 .takes_value(true)
@@ -290,6 +298,47 @@ fn main() -> Result<(), Box<dyn Error>> {
         };
         println!("Writing JSON report…");
         serde_json::to_writer_pretty(output, &report)?;
+    } else if let Some(path) = matches.value_of("tsv-output") {
+        let mut output = match std::fs::OpenOptions::new().append(true).open(path) {
+            Ok(f) => Ok(f),
+            Err(_) => std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path),
+        }?;
+        let md = output.metadata()?;
+        if md.len() == 0 {
+            // new file, write headers:
+            output
+                .write_all(b"id\tdate\ttag/branch\ttop1\ttop5\tworse\tno suggs\twrong suggs\n")?;
+        }
+        let git_id = std::process::Command::new("git")
+            .arg("rev-parse")
+            .arg("--short")
+            .arg("HEAD")
+            .output()?;
+        output.write_all(String::from_utf8(git_id.stdout).unwrap().trim().as_bytes())?;
+        output.write_all(b"\t")?;
+        output.write_all(Local::now().to_rfc3339().as_bytes())?;
+        output.write_all(b"\t")?;
+        let git_descr = std::process::Command::new("git").arg("describe").output()?;
+        output.write_all(
+            String::from_utf8(git_descr.stdout)
+                .unwrap()
+                .trim()
+                .as_bytes(),
+        )?;
+        output.write_all(b"\t")?;
+        output.write_all(summary.first_position.to_string().as_bytes())?;
+        output.write_all(b"\t")?;
+        output.write_all(summary.top_five.to_string().as_bytes())?;
+        output.write_all(b"\t")?;
+        output.write_all(summary.any_position.to_string().as_bytes())?;
+        output.write_all(b"\t")?;
+        output.write_all(summary.no_suggestions.to_string().as_bytes())?;
+        output.write_all(b"\t")?;
+        output.write_all(summary.only_wrong.to_string().as_bytes())?;
+        output.write_all(b"\n")?;
     };
 
     println!("Done!");

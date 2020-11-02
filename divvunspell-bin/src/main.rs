@@ -189,10 +189,13 @@ fn load_archive(path: &Path) -> Result<Box<dyn SpellerArchive>, SpellerArchiveEr
     let ext = match path.extension() {
         Some(v) => v,
         None => {
-            return Err(SpellerArchiveError::Io(path.to_string_lossy().to_string(), std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Unsupported archive (missing .zhfst or .bhfst)",
-            )))
+            return Err(SpellerArchiveError::Io(
+                path.to_string_lossy().to_string(),
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "Unsupported archive (missing .zhfst or .bhfst)",
+                ),
+            ))
         }
     };
 
@@ -215,10 +218,13 @@ fn load_archive(path: &Path) -> Result<Box<dyn SpellerArchive>, SpellerArchiveEr
         };
         Ok(Box::new(archive))
     } else {
-        Err(SpellerArchiveError::Io(path.to_string_lossy().to_string(), std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "Unsupported archive (missing .zhfst or .bhfst)",
-        )))
+        Err(SpellerArchiveError::Io(
+            path.to_string_lossy().to_string(),
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "Unsupported archive (missing .zhfst or .bhfst)",
+            ),
+        ))
     }
 }
 
