@@ -90,19 +90,20 @@ pub fn is_first_caps(word: &str) -> bool {
     upper_first(word) == word
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CaseMutation {
     FirstCaps,
     AllCaps,
     None,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CaseMode {
     FirstResults,
     MergeAll,
 }
 
+#[derive(Debug, Clone)]
 pub struct CaseHandler {
     pub mutation: CaseMutation,
     pub mode: CaseMode,
@@ -157,10 +158,10 @@ pub fn word_variants(word: &str) -> CaseHandler {
         }
     }
 
-    let (mutation, mode) = if is_first_caps(word) {
-        (CaseMutation::FirstCaps, CaseMode::MergeAll)
-    } else if is_all_caps(word) {
+    let (mutation, mode) = if is_all_caps(word) {
         (CaseMutation::AllCaps, CaseMode::MergeAll)
+    } else if is_first_caps(word) {
+        (CaseMutation::FirstCaps, CaseMode::MergeAll)
     } else {
         (CaseMutation::None, CaseMode::MergeAll)
     };
@@ -186,6 +187,11 @@ mod tests {
         // println!("{:?}", word_variants(&a, "Giella"));
         // println!("{:?}", word_variants(&a, "abc"));
         // println!("{:?}", word_variants(&a, "$GIELLA$"));
+    }
+
+    #[test]
+    fn variants() {
+        assert_eq!(word_variants("IDENTITETE").mutation, CaseMutation::AllCaps);
     }
 
     #[test]
