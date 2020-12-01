@@ -7,10 +7,10 @@ pub mod meta;
 pub mod zip;
 
 pub use self::boxf::BoxSpellerArchive;
-use self::error::SpellerArchiveError;
+use self::{error::SpellerArchiveError, boxf::ThfstBoxSpellerArchive};
 use self::meta::SpellerMetadata;
 pub use self::zip::ZipSpellerArchive;
-use crate::{speller::Speller, transducer, vfs};
+use crate::speller::Speller;
 
 pub(crate) struct TempMmap {
     mmap: Arc<Mmap>,
@@ -42,15 +42,13 @@ pub trait SpellerArchive {
     fn metadata(&self) -> Option<&SpellerMetadata>;
 }
 
-pub fn open<P, T, U>(path: P) -> Result<Arc<dyn SpellerArchive>, SpellerArchiveError>
+pub fn open<P>(path: P) -> Result<Arc<dyn SpellerArchive + Send + Sync>, SpellerArchiveError>
 where
     P: AsRef<Path>,
-    T: transducer::Transducer<vfs::boxf::File> + Send + Sync + 'static,
-    U: transducer::Transducer<vfs::boxf::File> + Send + Sync + 'static,
 {
     match path.as_ref().extension() {
         Some(x) if x == "bhfst" => {
-            BoxSpellerArchive::<T, U>::open(path.as_ref())
+            ThfstBoxSpellerArchive::open(path.as_ref())
                 .map(|x| Arc::new(x) as _)
         }
         Some(x) if x == "zhfst" => {
