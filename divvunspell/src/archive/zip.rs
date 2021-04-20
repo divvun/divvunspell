@@ -28,7 +28,7 @@ fn mmap_by_name<R: Read + Seek>(
 
     if index.compression() != CompressionMethod::Stored {
         let tempdir = tempdir::TempDir::new("divvunspell")?;
-        let outpath = tempdir.path().join(index.sanitized_name());
+        let outpath = tempdir.path().join(index.mangled_name());
 
         let mut outfile = File::create(&outpath)?;
         std::io::copy(&mut index, &mut outfile)?;
