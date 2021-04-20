@@ -4,22 +4,28 @@ An implementation of [hfst-ospell](https://github.com/hfst/hfst-ospell) in Rust,
 
 [![Actions Status](https://github.com/divvun/divvunspell/workflows/Continuous%20Integration/badge.svg)](https://github.com/divvun/divvunspell/actions)
 
-## No rust?
+
+## Building and installing commandline tools
+
+```sh
+# For the `divvunspell` binary:
+cargo install divvunspell-bin
+
+# For `thfst-tools` binary:
+cargo install thfst-tools
+
+# To build the development version from this source, cd into the relevant directory and:
+cargo install --path .
+```
+
+### No Rust?
+
 ```sh
 curl https://sh.rustup.rs -sSf | sh
 source $HOME/.cargo/env
 rustup default stable
 cargo build --release
 ```
-
-## Building and installing commandline tools
-
-```sh
-cd divvunspell-tools
-cargo install --path .
-```
-
-This builds and installs three binaries: `divvunspell`, `accuracy` and `thfst-tools`.
 
 ### divvunspell
 Usage:
