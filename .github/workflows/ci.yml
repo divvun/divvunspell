@@ -1,0 +1,198 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+      - name: Run cargo check
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+  deploy-bin-windows-i686:
+    needs: check
+    runs-on: windows-latest
+    env:
+      LZMA_API_STATIC: 1
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          target: i686-pc-windows-msvc
+          toolchain: stable
+      - name: Build divvunspell
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --bin divvunspell --release --target i686-pc-windows-msvc
+  deploy-bin-windows-x86_64:
+    needs: check
+    runs-on: windows-latest
+    env:
+      LZMA_API_STATIC: 1
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          target: x86_64-pc-windows-msvc
+          toolchain: stable
+      - name: Build divvunspell
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --bin divvunspell --release --target x86_64-pc-windows-msvc
+  # deploy-bin-macos-arm64:
+  #   needs: check
+  #   runs-on: macos-11.0
+  #   env:
+  #     LZMA_API_STATIC: 1
+  #   steps:
+  #     - uses: actions/checkout@v2
+  #     - name: Install Rust toolchain
+  #       uses: actions-rs/toolchain@v1
+  #       with:
+  #         profile: minimal
+  #         target: aarch64-apple-darwin
+  #         toolchain: stable
+  #     - name: Build divvunspell
+  #       uses: actions-rs/cargo@v1
+  #       with:
+  #         command: build
+  #         args: --bin divvunspell --release --target aarch64-apple-darwin
+  deploy-bin-macos-x86_64:
+    needs: check
+    runs-on: macos-latest
+    env:
+      LZMA_API_STATIC: 1
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          target: x86_64-apple-darwin
+          toolchain: stable
+      - name: Build divvunspell
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --bin divvunspell --release --target x86_64-apple-darwin
+  deploy-lib-ios-aarch64:
+    needs: check
+    runs-on: macos-latest
+    env:
+      LZMA_API_STATIC: 1
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          target: aarch64-apple-ios
+          toolchain: stable
+      - name: Build libdivvunspell
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --lib --release --features internal_ffi --target aarch64-apple-ios
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: lib-ios-aarch64
+          path: |
+            target/aarch64-apple-ios
+  deploy-lib-ios-x86_64:
+    needs: check
+    runs-on: macos-latest
+    env:
+      LZMA_API_STATIC: 1
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          target: x86_64-apple-ios
+          toolchain: stable
+      - name: Build libdivvunspell
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --lib --release --features internal_ffi --target x86_64-apple-ios
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: lib-ios-x86_64
+          path: |
+            target/x86_64-apple-ios
+  deploy-lib-android-aarch64:
+    needs: check
+    runs-on: ubuntu-latest
+    env:
+      LZMA_API_STATIC: 1
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          target: aarch64-linux-android
+          toolchain: stable
+      - name: Install cargo ndk
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-ndk
+      - name: Build libdivvunspell
+        uses: actions-rs/cargo@v1
+        with:
+          command: ndk
+          args: -t arm64-v8a build --lib --release --features internal_ffi
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: lib-android-aarch64
+          path: |
+            target/**/*.so
+  deploy-lib-android-armv7:
+    needs: check
+    runs-on: ubuntu-latest
+    env:
+      LZMA_API_STATIC: 1
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rust toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          target: armv7-linux-androideabi
+          toolchain: stable
+      - name: Install cargo ndk
+        uses: actions-rs/cargo@v1
+        with:
+          command: install
+          args: cargo-ndk
+      - name: Build libdivvunspell
+        uses: actions-rs/cargo@v1
+        with:
+          command: ndk
+          args: -t armeabi-v7a build --lib --release --features internal_ffi
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: lib-android-armv7
+          path: |
+            target/**/*.so
