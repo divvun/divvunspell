@@ -126,4 +126,4 @@ The crate `divvunspell` is licensed under either of
 
 at your option.
 
-The `divvunspell-tools` binaries are licensed under the GPL version 3 license.
+The `divvunspell`, `thfst-tools` and `accuracy` binaries are licensed under the GPL version 3 license.

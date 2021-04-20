@@ -1,7 +1,9 @@
 [workspace]
 members = [
   "divvunspell",
-  "divvunspell-tools",
+  "accuracy",
+  "divvunspell-bin",
+  "thfst-tools",
 ]
 
 [profile.dev]

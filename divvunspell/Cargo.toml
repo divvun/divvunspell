@@ -1,9 +1,11 @@
 [package]
 name = "divvunspell"
-version = "1.0.0-alpha.5"
+description = "Spell checking library for ZHFST/BHFST spellers, with case handling and tokenization support."
+version = "1.0.0-beta.1"
 authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/divvun/divvunspell"
 
 [lib]
 name = "divvunspell"
@@ -26,7 +28,7 @@ hashbrown = { version = "0.9", features = ["serde"] }
 tempdir = "0.3.7"
 lifeguard = "0.6.1"
 smol_str = { version = "0.1.16", features = ["serde"] }
-box-format = { git = "https://github.com/bbqsrc/box", branch = "master", features = ["reader"], default-features = false }
+box-format = { version = "0.3", features = ["reader"], default-features = false }
 itertools = "0.9.0"
 strsim = "0.10.0"
 log = { version = "0.4.11" }

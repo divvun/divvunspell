@@ -1,0 +1,23 @@
+[package]
+name = "accuracy"
+version = "1.0.0-beta.1"
+authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
+edition = "2018"
+license = "GPL-3.0"
+publish = false
+
+[dependencies]
+serde = { version = "1.0.116", features = ["derive"] }
+serde_json = "1.0.57"
+divvunspell = { version = "1.0.0-beta.1", features = ["internal_convert", "compression"], path = "../divvunspell" }
+csv = { version = "1.1" }
+rayon = { version = "1.4.0" }
+indicatif = { version = "0.15", features = ["with_rayon"] }
+# box-format = { git = "https://github.com/bbqsrc/box", branch = "master" }
+# tempdir = "0.3.7"
+pretty_env_logger = "0.4.0"
+# ctor = "*"
+# gumdrop = "0.8.0"
+# thiserror = "1.0.20"
+# anyhow = "1.0.32"
+structopt = "0.3.17"
