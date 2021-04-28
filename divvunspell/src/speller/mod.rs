@@ -278,8 +278,6 @@ where
 #[cfg(feature = "internal_ffi")]
 pub(crate) mod ffi {
     use super::*;
-    use crate::archive::boxf::{ThfstBoxSpeller, ThfstChunkedBoxSpeller};
-    use crate::archive::zip::HfstZipSpeller;
     use cffi::{FromForeign, ToForeign};
     use std::convert::Infallible;
     use std::ffi::c_void;
@@ -309,10 +307,12 @@ pub(crate) mod ffi {
 
     impl cffi::InputType for SpellerConfigMarshaler {
         type Foreign = *const c_void;
+        type ForeignTraitObject = ();
     }
 
     impl cffi::ReturnType for SpellerConfigMarshaler {
         type Foreign = *const c_void;
+        type ForeignTraitObject = ();
 
         fn foreign_default() -> Self::Foreign {
             std::ptr::null()
@@ -352,7 +352,7 @@ pub(crate) mod ffi {
                 return Ok(SpellerConfig::default());
             }
 
-            let config: &FfiSpellerConfig = unsafe { &*ptr.cast() };
+            let config: &FfiSpellerConfig = &*ptr.cast();
 
             let case_handling = if config.case_handling == FfiCaseHandlingConfig::default() {
                 None
@@ -390,34 +390,9 @@ pub(crate) mod ffi {
     }
 
     #[cffi::marshal]
-    pub extern "C" fn divvun_thfst_box_speller_is_correct(
-        #[marshal(cffi::ArcRefMarshaler::<ThfstBoxSpeller>)] speller: Arc<ThfstBoxSpeller>,
-        #[marshal(cffi::StrMarshaler)] word: &str,
-    ) -> bool {
-        speller.is_correct(word)
-    }
-
-    #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
-    pub extern "C" fn divvun_thfst_box_speller_suggest(
-        #[marshal(cffi::ArcRefMarshaler::<ThfstBoxSpeller>)] speller: Arc<ThfstBoxSpeller>,
-        #[marshal(cffi::StrMarshaler)] word: &str,
-    ) -> Vec<Suggestion> {
-        speller.suggest(word)
-    }
-
-    #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
-    pub extern "C" fn divvun_thfst_box_speller_suggest_with_config(
-        #[marshal(cffi::ArcRefMarshaler::<ThfstBoxSpeller>)] speller: Arc<ThfstBoxSpeller>,
-        #[marshal(cffi::StrMarshaler)] word: &str,
-        #[marshal(SpellerConfigMarshaler)] config: SpellerConfig,
-    ) -> Vec<Suggestion> {
-        speller.suggest_with_config(word, &config)
-    }
-
-    #[cffi::marshal]
-    pub extern "C" fn divvun_thfst_chunked_box_speller_is_correct(
-        #[marshal(cffi::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: Arc<
-            ThfstChunkedBoxSpeller,
+    pub extern "C" fn divvun_speller_is_correct(
+        #[marshal(cffi::ArcRefMarshaler::<dyn Speller + Sync + Send>)] speller: Arc<
+            dyn Speller + Sync + Send,
         >,
         #[marshal(cffi::StrMarshaler)] word: &str,
     ) -> bool {
@@ -425,9 +400,9 @@ pub(crate) mod ffi {
     }
 
     #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
-    pub extern "C" fn divvun_thfst_chunked_box_speller_suggest(
-        #[marshal(cffi::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: Arc<
-            ThfstChunkedBoxSpeller,
+    pub extern "C" fn divvun_speller_suggest(
+        #[marshal(cffi::ArcRefMarshaler::<dyn Speller + Sync + Send>)] speller: Arc<
+            dyn Speller + Sync + Send,
         >,
         #[marshal(cffi::StrMarshaler)] word: &str,
     ) -> Vec<Suggestion> {
@@ -435,35 +410,10 @@ pub(crate) mod ffi {
     }
 
     #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
-    pub extern "C" fn divvun_thfst_chunked_box_speller_suggest_with_config(
-        #[marshal(cffi::ArcRefMarshaler::<ThfstChunkedBoxSpeller>)] speller: Arc<
-            ThfstChunkedBoxSpeller,
+    pub extern "C" fn divvun_speller_suggest_with_config(
+        #[marshal(cffi::ArcRefMarshaler::<dyn Speller + Sync + Send>)] speller: Arc<
+            dyn Speller + Sync + Send,
         >,
-        #[marshal(cffi::StrMarshaler)] word: &str,
-        #[marshal(SpellerConfigMarshaler)] config: SpellerConfig,
-    ) -> Vec<Suggestion> {
-        speller.suggest_with_config(word, &config)
-    }
-
-    #[cffi::marshal]
-    pub extern "C" fn divvun_hfst_zip_speller_is_correct(
-        #[marshal(cffi::ArcRefMarshaler::<HfstZipSpeller>)] speller: Arc<HfstZipSpeller>,
-        #[marshal(cffi::StrMarshaler)] word: &str,
-    ) -> bool {
-        speller.is_correct(word)
-    }
-
-    #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
-    pub extern "C" fn divvun_hfst_zip_speller_suggest(
-        #[marshal(cffi::ArcRefMarshaler::<HfstZipSpeller>)] speller: Arc<HfstZipSpeller>,
-        #[marshal(cffi::StrMarshaler)] word: &str,
-    ) -> Vec<Suggestion> {
-        speller.suggest(word)
-    }
-
-    #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
-    pub extern "C" fn divvun_hfst_zip_speller_suggest_with_config(
-        #[marshal(cffi::ArcRefMarshaler::<HfstZipSpeller>)] speller: Arc<HfstZipSpeller>,
         #[marshal(cffi::StrMarshaler)] word: &str,
         #[marshal(SpellerConfigMarshaler)] config: SpellerConfig,
     ) -> Vec<Suggestion> {

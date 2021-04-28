@@ -1,17 +1,12 @@
-use libc::{c_char, size_t};
+use libc::c_char;
 use std::ffi::{CStr, CString};
-use std::path::Path;
-use std::ptr::null;
-use std::sync::Arc;
 
 use crate::tokenizer::{Tokenize, WordIndices};
 
 pub(crate) mod fbs;
 
 #[no_mangle]
-pub extern "C" fn divvun_word_indices<'a>(
-    utf8_string: *const c_char,
-) -> *mut WordIndices<'a> {
+pub extern "C" fn divvun_word_indices<'a>(utf8_string: *const c_char) -> *mut WordIndices<'a> {
     let c_str = unsafe { CStr::from_ptr(utf8_string) };
     let string = c_str.to_str().unwrap();
     let iterator = string.word_indices();
@@ -50,7 +45,7 @@ pub extern "C" fn divvun_cstr_free(handle: *mut c_char) {
 }
 
 use crate::ffi::fbs::IntoFlatbuffer;
-use crate::tokenizer::{cursor_context, WordContext};
+use crate::tokenizer::WordContext;
 use cffi::{FromForeign, Slice, ToForeign};
 use std::convert::Infallible;
 
@@ -58,6 +53,7 @@ pub struct FbsMarshaler;
 
 impl cffi::ReturnType for FbsMarshaler {
     type Foreign = Slice<u8>;
+    type ForeignTraitObject = ();
 
     fn foreign_default() -> Self::Foreign {
         Slice::default()
@@ -75,7 +71,9 @@ impl<T: IntoFlatbuffer> ToForeign<T, Slice<u8>> for FbsMarshaler {
 
 #[no_mangle]
 pub unsafe extern "C" fn divvun_fbs_free(slice: Slice<u8>) {
-    cffi::VecMarshaler::from_foreign(slice);
+    cffi::VecMarshaler::from_foreign(slice)
+        .map(|_| ())
+        .unwrap_or(());
 }
 
 #[cfg(feature = "logging")]

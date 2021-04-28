@@ -94,7 +94,7 @@ impl crate::ffi::fbs::IntoFlatbuffer for WordContext {
         let second_before = add_indexed_word!(builder, self.second_before);
         let first_after = add_indexed_word!(builder, self.first_after);
         let second_after = add_indexed_word!(builder, self.second_after);
-        let mut word_context = WordContext::create(
+        let word_context = WordContext::create(
             &mut builder,
             &WordContextArgs {
                 current,
