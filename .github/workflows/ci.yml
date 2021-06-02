@@ -61,6 +61,8 @@ jobs:
       LZMA_API_STATIC: 1
     steps:
       - uses: actions/checkout@v2
+      - name: Questionable workarounds for a questionable OS
+        run: sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -97,6 +99,8 @@ jobs:
       LZMA_API_STATIC: 1
     steps:
       - uses: actions/checkout@v2
+      - name: Questionable workarounds for a questionable OS
+        run: sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
