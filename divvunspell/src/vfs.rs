@@ -1,4 +1,4 @@
-use memmap::{Mmap, MmapOptions};
+use memmap2::{Mmap, MmapOptions};
 use std::fmt::Debug;
 use std::io::{Read, Result};
 use std::path::Path;
@@ -104,15 +104,15 @@ pub mod boxf {
             self.file.read_exact_at(buf, self.offset + offset)
         }
 
-        unsafe fn memory_map(&self) -> Result<memmap::Mmap> {
-            memmap::MmapOptions::new()
+        unsafe fn memory_map(&self) -> Result<memmap2::Mmap> {
+            memmap2::MmapOptions::new()
                 .offset(self.offset)
                 .len(self.len)
                 .map(&self.file)
         }
 
-        unsafe fn partial_memory_map(&self, offset: u64, len: usize) -> Result<memmap::Mmap> {
-            memmap::MmapOptions::new()
+        unsafe fn partial_memory_map(&self, offset: u64, len: usize) -> Result<memmap2::Mmap> {
+            memmap2::MmapOptions::new()
                 .offset(self.offset + offset)
                 .len(std::cmp::min(self.len - offset as usize, len))
                 .map(&self.file)

@@ -4,7 +4,7 @@ use crate::transducer::TransducerError;
 use crate::transducer::TransitionTable;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use crate::vfs::{self, Filesystem};
-use memmap::Mmap;
+use memmap2::Mmap;
 
 #[derive(Debug)]
 pub struct MemmapTransitionTable<F> {

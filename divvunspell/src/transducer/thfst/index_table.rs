@@ -1,6 +1,6 @@
 use std::ptr;
 
-use memmap::Mmap;
+use memmap2::Mmap;
 
 use crate::transducer::TransducerError;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};

@@ -10,7 +10,7 @@ use std::{u16, u32};
 
 use crate::constants::INDEX_TABLE_SIZE;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
-use memmap::Mmap;
+use memmap2::Mmap;
 use std::sync::Arc;
 
 pub struct MappedIndexTable {

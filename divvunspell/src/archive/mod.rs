@@ -1,4 +1,4 @@
-use memmap::Mmap;
+use memmap2::Mmap;
 use std::{ffi::OsString, path::Path, sync::Arc};
 
 pub mod boxf;

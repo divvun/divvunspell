@@ -1,5 +1,5 @@
 use ::zip::{CompressionMethod, ZipArchive};
-use memmap::MmapOptions;
+use memmap2::MmapOptions;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::Seek;
@@ -50,7 +50,7 @@ fn mmap_by_name<R: Read + Seek>(
         MmapOptions::new()
             .offset(index.data_start())
             .len(index.size() as usize)
-            .map(&zipfile)
+            .map(&*zipfile)
     };
 
     match mmap {

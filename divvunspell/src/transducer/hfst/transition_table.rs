@@ -2,7 +2,7 @@
 #![allow(clippy::cast_ptr_alignment)]
 
 use byteorder::{LittleEndian, ReadBytesExt};
-use memmap::Mmap;
+use memmap2::Mmap;
 use std::fmt;
 use std::io::Cursor;
 use std::ptr;
