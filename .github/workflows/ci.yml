@@ -165,7 +165,7 @@ jobs:
         with:
           name: lib-windows-x86_64
           path: |
-            target/x86_64-pc-windows-msvc
+            target/x86_64-pc-windows-msvc/release/divvunspell.dll
   deploy-lib-windows-i686:
     needs: check
     runs-on: windows-latest
@@ -189,7 +189,7 @@ jobs:
         with:
           name: lib-windows-i686
           path: |
-            target/i686-pc-windows-msvc
+            target/i686-pc-windows-msvc/release/divvunspell.dll
   deploy-lib-ios-aarch64:
     needs: check
     runs-on: macos-latest
