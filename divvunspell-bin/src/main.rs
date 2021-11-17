@@ -257,7 +257,7 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
         io::stdin()
             .read_to_string(&mut buffer)
             .expect("reading stdin");
-        buffer.split(" ").map(|x| x.trim().to_string()).collect()
+        buffer.split("\n").map(|x| x.trim().to_string()).collect()
     } else {
         args.inputs.into_iter().map(|x| x.to_string()).collect()
     };
