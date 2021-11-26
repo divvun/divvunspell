@@ -488,7 +488,7 @@ where
     }
 
     pub(crate) fn is_correct(&self) -> bool {
-        let max_weight = speller_max_weight(&self.config);
+        // let max_weight = speller_max_weight(&self.config);
         let pool = Pool::with_size_and_max(0, 0);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
 
@@ -499,8 +499,8 @@ where
                 return true;
             }
 
-            self.lexicon_epsilons(&pool, max_weight, &next_node, &mut nodes);
-            self.lexicon_consume(&pool, max_weight, &next_node, &mut nodes);
+            self.lexicon_epsilons(&pool, f32::INFINITY, &next_node, &mut nodes);
+            self.lexicon_consume(&pool, f32::INFINITY, &next_node, &mut nodes);
         }
 
         false
