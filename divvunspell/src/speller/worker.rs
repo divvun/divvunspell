@@ -19,11 +19,6 @@ fn speller_start_node(pool: &Pool<TreeNode>, size: usize) -> Vec<Recycled<TreeNo
     nodes
 }
 
-#[inline(always)]
-fn speller_max_weight(config: &SpellerConfig) -> Weight {
-    config.max_weight.unwrap_or(f32::MAX)
-}
-
 pub struct SpellerWorker<F: crate::vfs::File, T: Transducer<F>, U: Transducer<F>> {
     speller: Arc<HfstSpeller<F, T, U>>,
     input: Vec<SymbolNumber>,
