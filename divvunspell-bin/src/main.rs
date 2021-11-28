@@ -89,7 +89,7 @@ fn run(
     suggest_cfg: &SpellerConfig,
 ) {
     for word in words {
-        let is_correct = speller.clone().is_correct(&word);
+        let is_correct = speller.clone().is_correct_with_config(&word, &suggest_cfg);
         writer.write_correction(&word, is_correct);
 
         if is_suggesting && (is_always_suggesting || !is_correct) {
@@ -263,7 +263,11 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
         io::stdin()
             .read_to_string(&mut buffer)
             .expect("reading stdin");
-        buffer.split("\n").map(|x| x.trim().to_string()).collect()
+        buffer
+            .trim()
+            .split("\n")
+            .map(|x| x.trim().to_string())
+            .collect()
     } else {
         args.inputs.into_iter().map(|x| x.to_string()).collect()
     };

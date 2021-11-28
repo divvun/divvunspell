@@ -55,6 +55,7 @@ impl CaseHandlingConfig {
 
 pub trait Speller {
     fn is_correct(self: Arc<Self>, word: &str) -> bool;
+    fn is_correct_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> bool;
     fn suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
     fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion>;
 }
@@ -66,7 +67,7 @@ where
     U: Transducer<F> + Send,
 {
     #[allow(clippy::wrong_self_convention)]
-    fn is_correct(self: Arc<Self>, word: &str) -> bool {
+    fn is_correct_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> bool {
         use crate::tokenizer::case_handling::*;
 
         if word.len() == 0 {
@@ -79,14 +80,15 @@ where
             return true;
         }
 
-        let words = word_variants(word).words;
+        let words = if config.case_handling.is_some() {
+            let variants = word_variants(word);
+            variants.words
+        } else {
+            vec![word.into()]
+        };
 
         for word in words.into_iter() {
-            let worker = SpellerWorker::new(
-                self.clone(),
-                self.to_input_vec(&word),
-                SpellerConfig::default(),
-            );
+            let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
 
             if worker.is_correct() {
                 return true;
@@ -94,6 +96,11 @@ where
         }
 
         false
+    }
+
+    #[inline]
+    fn is_correct(self: Arc<Self>, word: &str) -> bool {
+        self.is_correct_with_config(word, &SpellerConfig::default())
     }
 
     #[inline]
@@ -189,16 +196,16 @@ where
         case_handling: &CaseHandlingConfig,
     ) -> Vec<Suggestion> {
         use crate::tokenizer::case_handling::*;
-        use crate::tokenizer::case_handling::{CaseMode, CaseMutation};
 
         let CaseHandler {
+            original_input,
             mutation,
             mode,
             words,
         } = case;
         let mut best: HashMap<SmolStr, f32> = HashMap::new();
 
-        for word in words.iter() {
+        for word in std::iter::once(&original_input).chain(words.iter()) {
             let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
             let mut suggestions = worker.suggest();
 

@@ -71,7 +71,7 @@ pub fn is_mixed_case(word: &str) -> bool {
 
         match (last_case, next_case) {
             (_, Case::Neither) => return false,
-            (Case::Lower, Case::Upper) => case_changes += 2,
+            (_, Case::Upper) => case_changes += 2,
             (Case::Upper, Case::Lower) => case_changes += 1,
             _ => {}
         }
@@ -105,6 +105,7 @@ pub enum CaseMode {
 
 #[derive(Debug, Clone)]
 pub struct CaseHandler {
+    pub original_input: SmolStr,
     pub mutation: CaseMutation,
     pub mode: CaseMode,
     pub words: Vec<SmolStr>,
@@ -116,18 +117,18 @@ fn mixed_case_word_variants(word: &str) -> CaseHandler {
     //
     // Crucially, it should not be accepted if it is only accepted when all lowercased.
 
-    let words = vec![
-        word.into(),
-        upper_first(word),
-        lower_first(word),
-        upper_case(word),
-    ]
-    .into_iter()
-    .unique()
-    .collect();
+    let words = vec![upper_first(word), lower_first(word)]
+        .into_iter()
+        .unique()
+        .collect();
 
     CaseHandler {
-        mutation: CaseMutation::None,
+        original_input: word.into(),
+        mutation: if is_first_caps(word) {
+            CaseMutation::FirstCaps
+        } else {
+            CaseMutation::None
+        },
         mode: CaseMode::FirstResults,
         words,
     }
@@ -138,35 +139,36 @@ pub fn word_variants(word: &str) -> CaseHandler {
         return mixed_case_word_variants(word);
     }
 
-    let mut base = vec![SmolStr::new(word)];
+    let word = SmolStr::new(word);
+    let mut base: Vec<SmolStr> = vec![];
 
     base.append(
-        &mut base
-            .iter()
+        &mut std::iter::once(&word)
+            .chain(base.iter())
             .filter(|x| is_all_caps(x))
             .map(|x| upper_first(&lower_case(x)))
             .collect(),
     );
 
-    base.append(&mut base.iter().map(|x| lower_case(x)).collect());
+    base.append(
+        &mut std::iter::once(&word)
+            .chain(base.iter())
+            .map(|x| lower_case(x))
+            .collect(),
+    );
 
-    let mut words = vec![];
+    let words = base.into_iter().unique().collect();
 
-    for b in base.into_iter() {
-        if !words.contains(&b) {
-            words.push(b);
-        }
-    }
-
-    let (mutation, mode) = if is_all_caps(word) {
+    let (mutation, mode) = if is_all_caps(&word) {
         (CaseMutation::AllCaps, CaseMode::MergeAll)
-    } else if is_first_caps(word) {
+    } else if is_first_caps(&word) {
         (CaseMutation::FirstCaps, CaseMode::MergeAll)
     } else {
         (CaseMutation::None, CaseMode::MergeAll)
     };
 
     CaseHandler {
+        original_input: word.into(),
         mode,
         mutation,
         words,
@@ -192,6 +194,10 @@ mod tests {
     #[test]
     fn variants() {
         assert_eq!(word_variants("IDENTITETE").mutation, CaseMutation::AllCaps);
+        assert_eq!(
+            word_variants("Identitete").mutation,
+            CaseMutation::FirstCaps
+        );
     }
 
     #[test]
