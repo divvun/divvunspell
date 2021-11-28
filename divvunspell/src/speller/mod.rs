@@ -84,10 +84,10 @@ where
             let variants = word_variants(word);
             variants.words
         } else {
-            vec![word.into()]
+            vec![]
         };
 
-        for word in words.into_iter() {
+        for word in std::iter::once(word.into()).chain(words.into_iter()) {
             let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
 
             if worker.is_correct() {

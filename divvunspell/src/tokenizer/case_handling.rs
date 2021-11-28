@@ -117,10 +117,16 @@ fn mixed_case_word_variants(word: &str) -> CaseHandler {
     //
     // Crucially, it should not be accepted if it is only accepted when all lowercased.
 
-    let words = vec![upper_first(word), lower_first(word)]
-        .into_iter()
-        .unique()
-        .collect();
+    let mut words = vec![];
+    if is_first_caps(word) {
+        words.push(lower_first(word));
+    } else {
+        let upper = upper_first(word);
+        // Edge case of "sOMETHING"
+        if !is_all_caps(&upper) {
+            words.push(upper);
+        }
+    }
 
     CaseHandler {
         original_input: word.into(),
