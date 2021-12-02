@@ -53,7 +53,6 @@ impl CaseHandlingConfig {
     }
 }
 
-
 pub trait Speller {
     fn is_correct(self: Arc<Self>, word: &str) -> bool;
     fn is_correct_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> bool;

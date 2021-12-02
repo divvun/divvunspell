@@ -31,25 +31,26 @@ pub fn load_mlmodel() -> Result<TextGenerationModel, Box<dyn std::error::Error>>
         merges_resource: merges_resource,
         config_resource: config_resource,
         model_type: ModelType::GPT2,
-        max_length:24,
+        max_length: 24,
         do_sample: true,
         num_beams: 5,
         temperature: 1.1,
         num_return_sequences: 1,
-        ..Default::default()};
+        ..Default::default()
+    };
     let model = TextGenerationModel::new(generate_config)?;
     Ok(model)
 }
 
-pub fn generate_suggestions(model:&TextGenerationModel, input:&String) -> Vec<AISuggestion> {
+pub fn generate_suggestions(model: &TextGenerationModel, input: &String) -> Vec<AISuggestion> {
     // let input_context = "Gaskab";
     let output = model.generate(&[input.as_ref()], None);
-    
+
     // for sentence in output {
     //     println!("{:?}", sentence);
     // }
     let mut res: Vec<AISuggestion> = vec![];
-    for o in output{
+    for o in output {
         res.push(AISuggestion::new(SmolStr::new(o)));
     }
     res

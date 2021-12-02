@@ -17,8 +17,7 @@
 
 //     pub fn suggest(&self, word:String) -> Vec<MLSuggestion> {
 //         log::trace!("Beginning suggest");
-        
-        
+
 //         // let mut corrections = HashMap::new();
 //         let mut suggestions: Vec<MLSuggestion> = vec![];
 
@@ -31,4 +30,3 @@
 //         suggestions
 //     }
 // }
-

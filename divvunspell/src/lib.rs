@@ -8,5 +8,5 @@ pub mod transducer;
 pub mod vfs;
 
 pub(crate) mod constants;
-pub(crate) mod types;
 pub mod ml_speller;
+pub(crate) mod types;

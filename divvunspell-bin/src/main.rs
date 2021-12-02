@@ -11,12 +11,11 @@ use divvunspell::archive::{
     boxf::ThfstBoxSpellerArchive, error::SpellerArchiveError, BoxSpellerArchive, SpellerArchive,
     ZipSpellerArchive,
 };
-use divvunspell::speller::suggestion::{Suggestion, AISuggestion};
+use divvunspell::ml_speller;
+use divvunspell::speller::suggestion::{AISuggestion, Suggestion};
 use divvunspell::speller::{Speller, SpellerConfig};
 use divvunspell::tokenizer::Tokenize;
-use divvunspell::ml_speller;
-use rust_bert::pipelines::text_generation::{TextGenerationModel};
-
+use rust_bert::pipelines::text_generation::TextGenerationModel;
 
 trait AIOutputWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool);
@@ -102,8 +101,7 @@ impl AIOutputWriter for AIJsonWriter {
     fn write_ai_suggestions(&mut self, word: &str, suggestions: &[AISuggestion]) {
         let i = self.results.len() - 1;
         self.results[i].suggestions = suggestions.to_vec();
-    }   
-    
+    }
 
     fn finish(&mut self) {
         println!("{}", serde_json::to_string_pretty(self).unwrap());
@@ -113,7 +111,7 @@ impl AIOutputWriter for AIJsonWriter {
 fn run_ai(
     model: TextGenerationModel,
     words: Vec<String>,
-    writer: &mut dyn AIOutputWriter, 
+    writer: &mut dyn AIOutputWriter,
     speller: Arc<dyn Speller + Send>,
     suggest_cfg: &SpellerConfig,
 ) {
@@ -124,15 +122,14 @@ fn run_ai(
         let is_correct = speller.clone().is_correct_with_config(&word, &suggest_cfg);
         writer.write_correction(&word, is_correct);
 
-        for s in suggestions{
-            
+        for s in suggestions {
             for w in s.value.split_whitespace() {
                 let is_correct = speller.clone().is_correct_with_config(&w, &suggest_cfg);
 
-            writer.write_correction(&w, is_correct);
-        }}
+                writer.write_correction(&w, is_correct);
+            }
+        }
     }
-
 }
 
 // fn run(
@@ -182,7 +179,6 @@ struct SuggestAIArgs {
     use_json: bool,
     #[options(help = "BHFST or ZHFST archive to be used", required)]
     archive: PathBuf,
-
 }
 #[derive(Debug, Options)]
 struct SuggestArgs {
@@ -295,7 +291,6 @@ fn load_archive(path: &Path) -> Result<Box<dyn SpellerArchive>, SpellerArchiveEr
     }
 }
 
-
 fn suggest(args: SuggestAIArgs) -> anyhow::Result<()> {
     let mut suggest_cfg = SpellerConfig::default();
 
@@ -343,16 +338,8 @@ fn suggest(args: SuggestAIArgs) -> anyhow::Result<()> {
     let archive = load_archive(&args.archive).unwrap();
     let model = ml_speller::gpt2::load_mlmodel().unwrap();
     let speller = archive.speller();
-   
-    run_ai(
-        model,
-        vec![words],
-        &mut *writer,
-        speller,
-        &suggest_cfg,
-        
-        
-    );
+
+    run_ai(model, vec![words], &mut *writer, speller, &suggest_cfg);
 
     writer.finish();
 

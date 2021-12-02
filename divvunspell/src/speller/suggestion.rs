@@ -22,7 +22,6 @@ impl AISuggestion {
     pub fn value(&self) -> &str {
         &self.value
     }
-    
 }
 
 impl Suggestion {
