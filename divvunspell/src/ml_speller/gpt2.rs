@@ -31,7 +31,7 @@ pub fn load_mlmodel() -> Result<TextGenerationModel, Box<dyn std::error::Error>>
         merges_resource: merges_resource,
         config_resource: config_resource,
         model_type: ModelType::GPT2,
-        max_length:12,
+        max_length:24,
         do_sample: true,
         num_beams: 5,
         temperature: 1.1,

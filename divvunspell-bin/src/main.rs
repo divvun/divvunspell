@@ -44,7 +44,7 @@ impl AIOutputWriter for AIStdoutWriter {
 
     fn write_ai_suggestions(&mut self, _word: &str, suggestions: &[AISuggestion]) {
         for sugg in suggestions {
-            println!("{}\t\t", sugg.value);
+            println!("Completed: {}\t\t", sugg.value);
         }
         println!();
     }
@@ -118,12 +118,20 @@ fn run_ai(
     suggest_cfg: &SpellerConfig,
 ) {
     for word in words {
-        let is_correct = speller.clone().is_correct_with_config(&word, &suggest_cfg);
-            writer.write_correction(&word, is_correct);
         let suggestions = ml_speller::gpt2::generate_suggestions(&model, &word);
-            // println!("{:?}", suggestions);
-            writer.write_ai_suggestions(&word, &suggestions);
-        }
+        // println!("{:?}", suggestions);
+        writer.write_ai_suggestions(&word, &suggestions);
+        let is_correct = speller.clone().is_correct_with_config(&word, &suggest_cfg);
+        writer.write_correction(&word, is_correct);
+
+        for s in suggestions{
+            
+            for w in s.value.split_whitespace() {
+                let is_correct = speller.clone().is_correct_with_config(&w, &suggest_cfg);
+
+            writer.write_correction(&w, is_correct);
+        }}
+    }
 
 }
 
