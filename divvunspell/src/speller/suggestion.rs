@@ -9,6 +9,21 @@ pub struct Suggestion {
     pub value: SmolStr,
     pub weight: Weight,
 }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AISuggestion {
+    pub value: SmolStr,
+}
+
+impl AISuggestion {
+    pub fn new(value: SmolStr) -> AISuggestion {
+        AISuggestion { value }
+    }
+
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+    
+}
 
 impl Suggestion {
     pub fn new(value: SmolStr, weight: Weight) -> Suggestion {

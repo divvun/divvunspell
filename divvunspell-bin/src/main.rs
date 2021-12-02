@@ -11,9 +11,18 @@ use divvunspell::archive::{
     boxf::ThfstBoxSpellerArchive, error::SpellerArchiveError, BoxSpellerArchive, SpellerArchive,
     ZipSpellerArchive,
 };
-use divvunspell::speller::suggestion::Suggestion;
+use divvunspell::speller::suggestion::{Suggestion, AISuggestion};
 use divvunspell::speller::{Speller, SpellerConfig};
 use divvunspell::tokenizer::Tokenize;
+use divvunspell::ml_speller;
+use rust_bert::pipelines::text_generation::{TextGenerationModel};
+
+
+trait AIOutputWriter {
+    fn write_correction(&mut self, word: &str, is_correct: bool);
+    fn write_ai_suggestions(&mut self, word: &str, suggestions: &[AISuggestion]);
+    fn finish(&mut self);
+}
 
 trait OutputWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool);
@@ -22,8 +31,9 @@ trait OutputWriter {
 }
 
 struct StdoutWriter;
+struct AIStdoutWriter;
 
-impl OutputWriter for StdoutWriter {
+impl AIOutputWriter for AIStdoutWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool) {
         println!(
             "Input: {}\t\t[{}]",
@@ -32,9 +42,9 @@ impl OutputWriter for StdoutWriter {
         );
     }
 
-    fn write_suggestions(&mut self, _word: &str, suggestions: &[Suggestion]) {
+    fn write_ai_suggestions(&mut self, _word: &str, suggestions: &[AISuggestion]) {
         for sugg in suggestions {
-            println!("{}\t\t{}", sugg.value, sugg.weight);
+            println!("{}\t\t", sugg.value);
         }
         println!();
     }
@@ -48,9 +58,18 @@ struct SuggestionRequest {
     is_correct: bool,
     suggestions: Vec<Suggestion>,
 }
+#[derive(Serialize)]
+struct AISuggestionRequest {
+    word: String,
+    is_correct: bool,
+    suggestions: Vec<AISuggestion>,
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct AIJsonWriter {
+    results: Vec<AISuggestionRequest>,
+}
 struct JsonWriter {
     results: Vec<SuggestionRequest>,
 }
@@ -61,43 +80,71 @@ impl JsonWriter {
     }
 }
 
-impl OutputWriter for JsonWriter {
+impl AIJsonWriter {
+    pub fn new() -> AIJsonWriter {
+        AIJsonWriter { results: vec![] }
+    }
+}
+impl AIOutputWriter for AIJsonWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool) {
-        self.results.push(SuggestionRequest {
+        self.results.push(AISuggestionRequest {
             word: word.to_owned(),
             is_correct,
             suggestions: vec![],
         });
     }
 
-    fn write_suggestions(&mut self, _word: &str, suggestions: &[Suggestion]) {
+    // fn write_suggestions(&mut self, _word: &str, suggestions: &[Suggestion]) {
+    //     let i = self.results.len() - 1;
+    //     self.results[i].suggestions = suggestions.to_vec();
+    // }
+
+    fn write_ai_suggestions(&mut self, word: &str, suggestions: &[AISuggestion]) {
         let i = self.results.len() - 1;
         self.results[i].suggestions = suggestions.to_vec();
-    }
+    }   
+    
 
     fn finish(&mut self) {
         println!("{}", serde_json::to_string_pretty(self).unwrap());
     }
 }
 
-fn run(
-    speller: Arc<dyn Speller + Send>,
+fn run_ai(
+    model: TextGenerationModel,
     words: Vec<String>,
-    writer: &mut dyn OutputWriter,
-    is_suggesting: bool,
-    is_always_suggesting: bool,
+    writer: &mut dyn AIOutputWriter, 
+    speller: Arc<dyn Speller + Send>,
     suggest_cfg: &SpellerConfig,
 ) {
     for word in words {
         let is_correct = speller.clone().is_correct_with_config(&word, &suggest_cfg);
-        writer.write_correction(&word, is_correct);
-
-        if is_suggesting && (is_always_suggesting || !is_correct) {
-            let suggestions = speller.clone().suggest_with_config(&word, &suggest_cfg);
-            writer.write_suggestions(&word, &suggestions);
+            writer.write_correction(&word, is_correct);
+        let suggestions = ml_speller::gpt2::generate_suggestions(&model, &word);
+            // println!("{:?}", suggestions);
+            writer.write_ai_suggestions(&word, &suggestions);
         }
-    }
+
 }
+
+// fn run(
+//     speller: Arc<dyn Speller + Send>,
+//     words: Vec<String>,
+//     writer: &mut dyn OutputWriter,
+//     is_suggesting: bool,
+//     is_always_suggesting: bool,
+//     suggest_cfg: &SpellerConfig,
+// ) {
+//     for word in words {
+//         let is_correct = speller.clone().is_correct_with_config(&word, &suggest_cfg);
+//         writer.write_correction(&word, is_correct);
+
+//         if is_suggesting && (is_always_suggesting || !is_correct) {
+//             let suggestions = speller.clone().suggest_with_config(&word, &suggest_cfg);
+//             writer.write_suggestions(&word, &suggestions);
+//         }
+//     }
+// }
 
 #[derive(Debug, Options)]
 struct Args {
@@ -111,12 +158,24 @@ struct Args {
 #[derive(Debug, Options)]
 enum Command {
     #[options(help = "get suggestions for provided input")]
-    Suggest(SuggestArgs),
+    Suggest(SuggestAIArgs),
 
     #[options(help = "print input in word-separated tokenized form")]
     Tokenize(TokenizeArgs),
 }
 
+#[derive(Debug, Options)]
+struct SuggestAIArgs {
+    #[options(help = "print help message")]
+    help: bool,
+    #[options(free, help = "words to be processed")]
+    inputs: Vec<String>,
+    #[options(no_short, long = "json", help = "output in JSON format")]
+    use_json: bool,
+    #[options(help = "BHFST or ZHFST archive to be used", required)]
+    archive: PathBuf,
+
+}
 #[derive(Debug, Options)]
 struct SuggestArgs {
     #[options(help = "print help message")]
@@ -228,33 +287,34 @@ fn load_archive(path: &Path) -> Result<Box<dyn SpellerArchive>, SpellerArchiveEr
     }
 }
 
-fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
+
+fn suggest(args: SuggestAIArgs) -> anyhow::Result<()> {
     let mut suggest_cfg = SpellerConfig::default();
 
-    if args.disable_case_handling {
-        suggest_cfg.case_handling = None;
-    }
+    // if args.disable_case_handling {
+    //     suggest_cfg.case_handling = None;
+    // }
 
-    if let Some(v) = args.nbest {
-        if v == 0 {
-            suggest_cfg.n_best = None;
-        } else {
-            suggest_cfg.n_best = Some(v);
-        }
-    }
+    // if let Some(v) = args.nbest {
+    //     if v == 0 {
+    //         suggest_cfg.n_best = None;
+    //     } else {
+    //         suggest_cfg.n_best = Some(v);
+    //     }
+    // }
 
-    if let Some(v) = args.weight.filter(|x| x >= &0.0) {
-        if v == 0.0 {
-            suggest_cfg.max_weight = None;
-        } else {
-            suggest_cfg.max_weight = Some(v);
-        }
-    }
+    // if let Some(v) = args.weight.filter(|x| x >= &0.0) {
+    //     if v == 0.0 {
+    //         suggest_cfg.max_weight = None;
+    //     } else {
+    //         suggest_cfg.max_weight = Some(v);
+    //     }
+    // }
 
-    let mut writer: Box<dyn OutputWriter> = if args.use_json {
-        Box::new(JsonWriter::new())
+    let mut writer: Box<dyn AIOutputWriter> = if args.use_json {
+        Box::new(AIJsonWriter::new())
     } else {
-        Box::new(StdoutWriter)
+        Box::new(AIStdoutWriter)
     };
 
     let words = if args.inputs.is_empty() {
@@ -273,14 +333,17 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
     };
 
     let archive = load_archive(&args.archive).unwrap();
+    let model = ml_speller::gpt2::load_mlmodel().unwrap();
     let speller = archive.speller();
-    run(
-        speller,
-        words,
+   
+    run_ai(
+        model,
+        vec![words],
         &mut *writer,
-        true,
-        args.always_suggest,
+        speller,
         &suggest_cfg,
+        
+        
     );
 
     writer.finish();
