@@ -11,6 +11,7 @@ use self::meta::SpellerMetadata;
 pub use self::zip::ZipSpellerArchive;
 use self::{boxf::ThfstChunkedBoxSpellerArchive, error::SpellerArchiveError};
 use crate::speller::Speller;
+// use crate::ml_speller::ml_speller::MLSuggestion;
 
 pub(crate) struct TempMmap {
     mmap: Arc<Mmap>,
@@ -40,6 +41,7 @@ pub trait SpellerArchive {
 
     fn speller(&self) -> Arc<dyn Speller + Send + Sync>;
     fn metadata(&self) -> Option<&SpellerMetadata>;
+    // fn ml_speller(&self) -> Option<MLSuggestion>;
 }
 
 pub fn open<P>(path: P) -> Result<Arc<dyn SpellerArchive + Send + Sync>, SpellerArchiveError>

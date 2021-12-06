@@ -2,6 +2,9 @@ pub mod archive;
 #[cfg(feature = "internal_ffi")]
 pub mod ffi;
 
+#[cfg(feature = "experimental_ml")]
+pub mod ml_speller;
+
 pub mod speller;
 pub mod tokenizer;
 pub mod transducer;
