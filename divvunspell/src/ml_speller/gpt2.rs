@@ -38,7 +38,7 @@ pub fn load_mlmodel(model_path: &Path) -> Result<TextGenerationModel, Box<dyn st
     Ok(model)
 }
 
-pub fn generate_suggestions(model: &TextGenerationModel, input: &String) -> Vec<Suggestion> {
+pub fn generate_suggestions(model: &TextGenerationModel, input: &str) -> Vec<Suggestion> {
     let output = model.generate(&[input.as_ref()], None);
 
     let mut res: Vec<Suggestion> = vec![];
@@ -46,4 +46,29 @@ pub fn generate_suggestions(model: &TextGenerationModel, input: &String) -> Vec<
         res.push(Suggestion::new(SmolStr::new(o), 0.0));
     }
     res
+}
+
+#[cfg(feature = "internal_ffi")]
+mod ffi {
+    use super::*;
+    use std::sync::Arc;
+    use cffi::{ToForeign, FromForeign};
+    use crate::speller::ffi::SuggestionVecMarshaler;
+    
+    #[cffi::marshal(return_marshaler = "cffi::ArcMarshaler::<TextGenerationModel>")]
+    pub extern "C" fn divvun_ml_load_model(
+        #[marshal(cffi::PathBufMarshaler)] model_path: std::path::PathBuf,
+    ) -> Arc<TextGenerationModel> {
+        let model = load_mlmodel(&model_path).unwrap();
+        Arc::new(model)
+    }
+    
+    
+    #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
+    pub extern "C" fn divvun_ml_suggest(
+        #[marshal(cffi::ArcMarshaler::<TextGenerationModel>)] model: Arc<TextGenerationModel>,
+        #[marshal(cffi::StrMarshaler)] word: &str,
+    ) -> Vec<Suggestion> {
+        generate_suggestions(&model, word)
+    }
 }
