@@ -7,7 +7,7 @@ use std::{
 };
 
 use distance::damerau_levenshtein;
-use divvunspell::archive::{SpellerArchive, ZipSpellerArchive};
+use divvunspell::archive::{SpellerArchive, BoxSpellerArchive};
 use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::{CaseHandlingConfig, SpellerConfig};
 use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
