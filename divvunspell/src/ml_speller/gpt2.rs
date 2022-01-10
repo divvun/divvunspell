@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use rust_bert::RustBertError;
 // use tch::{nn, Device};
 use rust_bert::pipelines::common::ModelType;
 use rust_bert::pipelines::text_generation::{TextGenerationConfig, TextGenerationModel};
@@ -11,7 +12,7 @@ use crate::speller::suggestion::AISuggestion;
 // use rust_bert::Config;
 // use rust_tokenizers::tokenizer::Gpt2Tokenizer;
 
-pub fn load_mlmodel() -> Result<TextGenerationModel, Box<dyn std::error::Error>> {
+pub fn load_mlmodel() -> Result<TextGenerationModel, RustBertError> {
     let config_resource = Resource::Local(LocalResource {
         local_path: PathBuf::from("model_big_1024/config.json"),
     });
@@ -44,7 +45,7 @@ pub fn load_mlmodel() -> Result<TextGenerationModel, Box<dyn std::error::Error>>
 
 pub fn generate_suggestions(model: &TextGenerationModel, input: &String) -> Vec<AISuggestion> {
     // let input_context = "Gaskab";
-    let output = model.generate(&[input.as_ref()], None);
+    let output = model.generate(&[input], None);
 
     // for sentence in output {
     //     println!("{:?}", sentence);
