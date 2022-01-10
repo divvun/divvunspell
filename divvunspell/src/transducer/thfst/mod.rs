@@ -104,6 +104,7 @@ where
 
         let alphabet: TransducerAlphabet = serde_json::from_reader(alphabet_file)
             .map_err(|e| TransducerError::Alphabet(Box::new(e)))?;
+        // println!("{:?}", alphabet);
 
         let index_table =
             I::from_path(fs, path.join("index")).map_err(|_| error!(path, "index"))?;

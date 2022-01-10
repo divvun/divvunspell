@@ -3,6 +3,7 @@ use std::io::{prelude::*, BufWriter};
 use std::path::Path;
 
 use byteorder::{LittleEndian, WriteBytesExt};
+use serde_json::to_writer_pretty;
 
 use super::hfst;
 use super::thfst;
@@ -37,7 +38,7 @@ impl ConvertFile<hfst::HfstTransducer<std::fs::File>>
         thfst::MemmapIndexTable::convert_from(&transducer.index_table, &mut writer)?;
 
         let writer = BufWriter::new(File::create(alphabet_path)?);
-        serde_json::to_writer_pretty(writer, transducer.alphabet())?;
+        to_writer_pretty(writer, transducer.alphabet())?;
 
         Ok(())
     }
