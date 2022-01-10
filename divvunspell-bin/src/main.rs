@@ -109,7 +109,7 @@ impl AIOutputWriter for AIJsonWriter {
 }
 
 fn run_ai(
-    model: TextGenerationModel,
+    model: &TextGenerationModel,
     words: Vec<String>,
     writer: &mut dyn AIOutputWriter,
     speller: Arc<dyn Speller + Send>,
@@ -260,9 +260,11 @@ fn load_archive(path: &Path) -> Result<Box<dyn SpellerArchive>, SpellerArchiveEr
                 ),
             ))
         }
+    
     };
 
     if ext == "bhfst" {
+        // println!("here");
         let archive: ThfstBoxSpellerArchive = match BoxSpellerArchive::open(path) {
             Ok(v) => v,
             Err(e) => {
@@ -336,10 +338,10 @@ fn suggest(args: SuggestAIArgs) -> anyhow::Result<()> {
     };
 
     let archive = load_archive(&args.archive).unwrap();
-    let model = ml_speller::gpt2::load_mlmodel().unwrap();
+    // let model = ml_speller::gpt2::load_mlmodel().unwrap();
     let speller = archive.speller();
-
-    run_ai(model, vec![words], &mut *writer, speller, &suggest_cfg);
+    let ai = archive.ai_model().unwrap();
+    run_ai(&ai, vec![words], &mut *writer, speller, &suggest_cfg);
 
     writer.finish();
 
