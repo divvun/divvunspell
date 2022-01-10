@@ -1,4 +1,5 @@
 use memmap2::Mmap;
+use rust_bert::{pipelines::text_generation::TextGenerationModel, RustBertError};
 use std::{ffi::OsString, path::Path, sync::Arc};
 
 pub mod boxf;
@@ -39,18 +40,21 @@ pub trait SpellerArchive {
     where
         Self: Sized;
 
-    fn speller(&self) -> Arc<dyn Speller + Send + Sync>;
+    fn speller(&self) -> Arc<dyn Speller + Send>;
     fn metadata(&self) -> Option<&SpellerMetadata>;
-    // fn ml_speller(&self) -> Option<MLSuggestion>;
+    fn ai_model(&self) -> Result<&TextGenerationModel, &RustBertError>;
 }
 
-pub fn open<P>(path: P) -> Result<Arc<dyn SpellerArchive + Send + Sync>, SpellerArchiveError>
+pub fn open<P>(path: P) -> Result<Arc<dyn SpellerArchive + Send>, SpellerArchiveError>
 where
     P: AsRef<Path>,
-{
+{   
+    // println!("{:?}", path.as_ref().extension());
     match path.as_ref().extension() {
         Some(x) if x == "bhfst" => {
+            // println!("here");
             ThfstChunkedBoxSpellerArchive::open(path.as_ref()).map(|x| Arc::new(x) as _)
+
         }
         Some(x) if x == "zhfst" => ZipSpellerArchive::open(path.as_ref()).map(|x| Arc::new(x) as _),
         unknown => Err(SpellerArchiveError::UnsupportedExt(

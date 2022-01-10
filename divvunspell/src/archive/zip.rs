@@ -1,8 +1,15 @@
+use rust_bert::RustBertError;
+use rust_bert::pipelines::common::ModelType;
+use rust_bert::pipelines::text_generation::TextGenerationConfig;
+use rust_bert::pipelines::text_generation::TextGenerationModel;
+use rust_bert::resources::LocalResource;
+use rust_bert::resources::Resource;
 use ::zip::{CompressionMethod, ZipArchive};
 use memmap2::MmapOptions;
 use std::fs::File;
 use std::io::prelude::*;
 use std::io::Seek;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::error::SpellerArchiveError;
@@ -17,6 +24,7 @@ pub type HfstZipSpeller =
 pub struct ZipSpellerArchive {
     metadata: SpellerMetadata,
     speller: Arc<HfstZipSpeller>,
+    ai_model: Result<TextGenerationModel, RustBertError>,
 }
 
 fn mmap_by_name<R: Read + Seek>(
@@ -94,15 +102,48 @@ impl SpellerArchive for ZipSpellerArchive {
         let errmodel = HfstTransducer::from_mapped_memory(errmodel_mmap.map());
 
         let speller = HfstSpeller::new(errmodel, acceptor);
+        let config_resource = Resource::Local(LocalResource {
+            local_path: PathBuf::from(format!("{:?}/config.json", file_path)),
+        });
+        let vocab_resource = Resource::Local(LocalResource {
+            local_path: PathBuf::from(format!("{:?}/vocab.json", file_path)),
+        });
+        let merges_resource = Resource::Local(LocalResource {
+            local_path: PathBuf::from(format!("{:?}/merges.txt", file_path)),
+        });
+        let weights_resource = Resource::Local(LocalResource {
+            local_path: PathBuf::from(format!("{:?}/rust_model.ot", file_path)),
+        });
 
-        Ok(ZipSpellerArchive { metadata, speller })
+        let generate_config = TextGenerationConfig {
+            model_resource: weights_resource,
+            vocab_resource: vocab_resource,
+            merges_resource: merges_resource,
+            config_resource: config_resource,
+            model_type: ModelType::GPT2,
+            max_length: 24,
+            do_sample: true,
+            num_beams: 5,
+            temperature: 1.1,
+            num_return_sequences: 1,
+            ..Default::default()
+        };
+        let ai_model = TextGenerationModel::new(generate_config);
+        // ai_model = Ok(ai_model);
+        // ai_model = ai_model.as_ref();
+        // Ok(BoxSpellerArchive { speller, metadata, ai_model })
+        Ok(ZipSpellerArchive { metadata, speller, ai_model })
     }
+    fn ai_model(&self) -> Result<&TextGenerationModel, &RustBertError> { 
+        todo!()
 
-    fn speller(&self) -> Arc<dyn Speller + Send + Sync> {
+    }
+    fn speller(&self) -> Arc<dyn Speller + Send> {
         self.speller.clone()
     }
 
     fn metadata(&self) -> Option<&SpellerMetadata> {
         Some(&self.metadata)
     }
+   
 }
