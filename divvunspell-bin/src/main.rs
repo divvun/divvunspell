@@ -7,13 +7,19 @@ use std::{
 use gumdrop::Options;
 use serde::Serialize;
 
+#[cfg(feature = "gpt2")]
 use divvunspell::archive::{
-    boxf::ThfstBoxSpellerArchive, error::SpellerArchiveError, BoxSpellerArchive, SpellerArchive,
-    ZipSpellerArchive,
+    boxf::BoxGpt2PredictorArchive, error::PredictorArchiveError, PredictorArchive,
 };
-use divvunspell::speller::suggestion::Suggestion;
-use divvunspell::speller::{Speller, SpellerConfig};
-use divvunspell::tokenizer::Tokenize;
+
+use divvunspell::{
+    archive::{
+        boxf::ThfstBoxSpellerArchive, error::SpellerArchiveError, BoxSpellerArchive,
+        SpellerArchive, ZipSpellerArchive,
+    },
+    speller::{suggestion::Suggestion, Speller, SpellerConfig},
+    tokenizer::Tokenize,
+};
 
 trait OutputWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool);
@@ -115,6 +121,9 @@ enum Command {
 
     #[options(help = "print input in word-separated tokenized form")]
     Tokenize(TokenizeArgs),
+
+    #[options(help = "predict next words using GPT2 model")]
+    Predict(PredictArgs),
 }
 
 #[derive(Debug, Options)]
@@ -155,6 +164,18 @@ struct TokenizeArgs {
 
     #[options(short = "w", long = "words", help = "show words only")]
     is_words_only: bool,
+
+    #[options(free, help = "text to be tokenized")]
+    inputs: Vec<String>,
+}
+
+#[derive(Debug, Options)]
+struct PredictArgs {
+    #[options(help = "print help message")]
+    help: bool,
+
+    #[options(help = "BHFST archive to be used", required)]
+    archive: PathBuf,
 
     #[options(free, help = "text to be tokenized")]
     inputs: Vec<String>,
@@ -288,6 +309,48 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "gpt2")]
+fn load_predictor_archive(path: &Path) -> Result<Box<dyn PredictorArchive>, PredictorArchiveError> {
+    let archive = BoxGpt2PredictorArchive::open(path)?;
+    let archive = Box::new(archive);
+    Ok(archive)
+}
+
+#[cfg(feature = "gpt2")]
+fn predict(args: PredictArgs) -> anyhow::Result<()> {
+    let raw_input = if args.inputs.is_empty() {
+        eprintln!("Reading from stdin...");
+        let mut buffer = String::new();
+        io::stdin()
+            .read_to_string(&mut buffer)
+            .expect("reading stdin");
+        buffer
+    } else {
+        args.inputs.join(" ")
+    };
+
+    let archive = load_predictor_archive(&args.archive)?;
+    let predictor = archive.predictor();
+
+    let predictions = predictor.predict(&raw_input);
+
+    println!("Predictions: ");
+    println!("{}", predictions.join(" "));
+
+    Ok(())
+}
+
+#[cfg(not(feature = "gpt2"))]
+fn predict(_args: PredictArgs) -> anyhow::Result<()> {
+    eprintln!("ERROR: DivvunSpell was built without GPT2 support.");
+    eprintln!("If you built this using cargo, re-run the build with the following:");
+    eprintln!("");
+    eprintln!("  cargo build --features gpt2");
+    eprintln!("");
+
+    std::process::exit(1);
+}
+
 fn main() -> anyhow::Result<()> {
     pretty_env_logger::init();
 
@@ -297,5 +360,6 @@ fn main() -> anyhow::Result<()> {
         None => Ok(()),
         Some(Command::Suggest(args)) => suggest(args),
         Some(Command::Tokenize(args)) => tokenize(args),
+        Some(Command::Predict(args)) => predict(args),
     }
 }

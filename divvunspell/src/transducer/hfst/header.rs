@@ -13,7 +13,6 @@ pub struct TransducerHeader {
     transitions: TransitionTableIndex,
 
     properties: [bool; 9],
-    string_content_size: u16,
     header_size: usize,
 }
 
@@ -54,8 +53,6 @@ impl TransducerHeader {
             states,
             transitions,
             properties: props,
-
-            string_content_size: header_len,
             header_size: rdr.position() as usize,
         }
     }

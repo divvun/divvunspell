@@ -2,6 +2,12 @@ use std::sync::Arc;
 
 use box_format::BoxFileReader;
 
+#[cfg(feature = "gpt2")]
+use tempfile::TempDir;
+
+#[cfg(feature = "gpt2")]
+use super::{error::PredictorArchiveError, PredictorArchive};
+
 use super::error::SpellerArchiveError;
 use super::{meta::SpellerMetadata, SpellerArchive};
 use crate::speller::{HfstSpeller, Speller};
@@ -82,5 +88,39 @@ where
 
     fn metadata(&self) -> Option<&SpellerMetadata> {
         self.metadata.as_ref()
+    }
+}
+
+#[cfg(feature = "gpt2")]
+pub struct BoxGpt2PredictorArchive {
+    #[allow(dead_code)]
+    model_path: TempDir, // necessary to keep the temp dir alive until dropped
+    model: Arc<crate::predictor::gpt2::Gpt2Predictor>,
+}
+
+#[cfg(feature = "gpt2")]
+impl PredictorArchive for BoxGpt2PredictorArchive {
+    fn open(path: &std::path::Path) -> Result<Self, PredictorArchiveError>
+    where
+        Self: Sized,
+    {
+        let archive = BoxFileReader::open(path).map_err(PredictorArchiveError::File)?;
+        let fs = BoxFilesystem::new(&archive);
+
+        // TODO: make this name customizable via metadata?
+
+        let model_path = fs.copy_to_temp_dir("gpt2_predictor").map_err(|e| {
+            PredictorArchiveError::Io("Could not copy gpt2_predictor to temp directory".into(), e)
+        })?;
+
+        let model = Arc::new(crate::predictor::gpt2::Gpt2Predictor::new(
+            model_path.path(),
+        )?);
+
+        Ok(BoxGpt2PredictorArchive { model_path, model })
+    }
+
+    fn predictor(&self) -> Arc<dyn crate::predictor::Predictor + Send + Sync> {
+        self.model.clone()
     }
 }

@@ -20,3 +20,6 @@ pretty_env_logger = "0.4.0"
 gumdrop = "0.8.0"
 anyhow = "1.0.32"
 structopt = "0.3.17"
+
+[features]
+gpt2 = ["divvunspell/gpt2"]
