@@ -26,7 +26,7 @@ impl<F: vfs::File> MemmapIndexTable<F> {
         P: AsRef<std::path::Path>,
         FS: Filesystem<File = F>,
     {
-        let file = fs.open(path).map_err(TransducerError::Io)?;
+        let file = fs.open_file(path).map_err(TransducerError::Io)?;
         let len = file.len().map_err(TransducerError::Io)? / total;
         let buf = unsafe {
             file.partial_memory_map(chunk * len, len as usize)
@@ -47,7 +47,7 @@ impl<F: vfs::File> crate::transducer::IndexTable<F> for MemmapIndexTable<F> {
         P: AsRef<std::path::Path>,
         FS: Filesystem<File = F>,
     {
-        let file = fs.open(path).map_err(TransducerError::Io)?;
+        let file = fs.open_file(path).map_err(TransducerError::Io)?;
         let buf = unsafe { file.memory_map().map_err(TransducerError::Memmap)? };
         let size = (buf.len() / INDEX_TABLE_SIZE) as u32;
         Ok(MemmapIndexTable {
@@ -142,7 +142,7 @@ mod unix {
             P: AsRef<std::path::Path>,
             FS: Filesystem<File = F>,
         {
-            let file = fs.open(path).map_err(TransducerError::Io)?;
+            let file = fs.open_file(path).map_err(TransducerError::Io)?;
             Ok(FileIndexTable {
                 size: file.len().map_err(TransducerError::Io)? as u32,
                 file,

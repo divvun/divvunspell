@@ -99,7 +99,7 @@ where
     {
         let path = path.as_ref();
         let alphabet_file = fs
-            .open(&path.join("alphabet"))
+            .open_file(&path.join("alphabet"))
             .map_err(|_| error!(path, "alphabet"))?;
 
         let alphabet: TransducerAlphabet = serde_json::from_reader(alphabet_file)

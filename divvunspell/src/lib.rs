@@ -5,6 +5,7 @@ pub mod ffi;
 #[cfg(feature = "experimental_ml")]
 pub mod ml_speller;
 
+pub mod predictor;
 pub mod speller;
 pub mod tokenizer;
 pub mod transducer;

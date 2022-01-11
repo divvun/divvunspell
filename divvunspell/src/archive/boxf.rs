@@ -64,7 +64,7 @@ where
         let fs = BoxFilesystem::new(&archive);
 
         let metadata = fs
-            .open("meta.json")
+            .open_file("meta.json")
             .ok()
             .and_then(|x| serde_json::from_reader(x).ok());
         let errmodel =

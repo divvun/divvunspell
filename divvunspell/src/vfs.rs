@@ -1,7 +1,9 @@
+use fs_extra::dir::CopyOptions;
 use memmap2::{Mmap, MmapOptions};
 use std::fmt::Debug;
 use std::io::{Read, Result};
 use std::path::Path;
+use tempfile::TempDir;
 
 #[cfg(unix)]
 use std::os::unix::fs::FileExt;
@@ -9,7 +11,8 @@ use std::os::unix::fs::FileExt;
 pub trait Filesystem {
     type File: File;
 
-    fn open<P: AsRef<Path>>(&self, path: P) -> Result<Self::File>;
+    fn open_file<P: AsRef<Path>>(&self, path: P) -> Result<Self::File>;
+    fn copy_to_temp_dir<P: AsRef<Path>>(&self, path: P) -> Result<TempDir>;
 }
 
 pub trait File: Read + Debug {
@@ -59,8 +62,15 @@ impl Filesystem for Fs {
     type File = std::fs::File;
 
     #[inline(always)]
-    fn open<P: AsRef<Path>>(&self, path: P) -> Result<Self::File> {
+    fn open_file<P: AsRef<Path>>(&self, path: P) -> Result<Self::File> {
         std::fs::File::open(&path)
+    }
+
+    fn copy_to_temp_dir<P: AsRef<Path>>(&self, path: P) -> Result<TempDir> {
+        let dir = tempfile::tempdir()?;
+        fs_extra::copy_items(&[path.as_ref()], &dir, &CopyOptions::new())
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        Ok(dir)
     }
 }
 
@@ -68,6 +78,7 @@ pub mod boxf {
     use box_format::{BoxFileReader, BoxPath};
     use std::io::{Read, Result};
     use std::path::Path;
+    use tempfile::TempDir;
 
     #[derive(Debug)]
     pub struct File {
@@ -131,7 +142,7 @@ pub mod boxf {
         type File = File;
 
         #[inline(always)]
-        fn open<P: AsRef<Path>>(&self, path: P) -> Result<Self::File> {
+        fn open_file<P: AsRef<Path>>(&self, path: P) -> Result<Self::File> {
             let boxpath = BoxPath::new(path).map_err(|e| e.as_io_error())?;
             let meta = self.0.metadata();
             let record = meta
@@ -153,6 +164,14 @@ pub mod boxf {
                     "not found",
                 )),
             }
+        }
+
+        fn copy_to_temp_dir<P: AsRef<Path>>(&self, path: P) -> Result<TempDir> {
+            let dir = tempfile::tempdir()?;
+            let box_path = BoxPath::new(path)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            self.0.extract(&box_path, &dir)?;
+            Ok(dir)
         }
     }
 }

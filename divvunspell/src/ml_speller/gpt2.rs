@@ -51,10 +51,10 @@ pub fn generate_suggestions(model: &TextGenerationModel, input: &str) -> Vec<Sug
 #[cfg(feature = "internal_ffi")]
 mod ffi {
     use super::*;
-    use std::sync::Arc;
-    use cffi::{ToForeign, FromForeign};
     use crate::speller::ffi::SuggestionVecMarshaler;
-    
+    use cffi::{FromForeign, ToForeign};
+    use std::sync::Arc;
+
     #[cffi::marshal(return_marshaler = "cffi::ArcMarshaler::<TextGenerationModel>")]
     pub extern "C" fn divvun_ml_load_model(
         #[marshal(cffi::PathBufMarshaler)] model_path: std::path::PathBuf,
@@ -62,8 +62,7 @@ mod ffi {
         let model = load_mlmodel(&model_path).unwrap();
         Arc::new(model)
     }
-    
-    
+
     #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
     pub extern "C" fn divvun_ml_suggest(
         #[marshal(cffi::ArcMarshaler::<TextGenerationModel>)] model: Arc<TextGenerationModel>,
