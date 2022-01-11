@@ -125,7 +125,7 @@ fn convert_zhfst_to_bhfst(zhfst_path: &Path) -> Result<(), std::io::Error> {
     let zhfst_path = std::fs::canonicalize(zhfst_path)?;
     let zhfst = ZipSpellerArchive::open(&zhfst_path).unwrap();
 
-    let dir = tempdir::TempDir::new("zhfst")?;
+    let dir = tempfile::tempdir()?;
     println!(
         "Unzipping {:?} to temporary directory...",
         zhfst_path.file_name().unwrap()

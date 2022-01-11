@@ -17,7 +17,7 @@ pub(crate) struct TempMmap {
     mmap: Arc<Mmap>,
 
     // Not really dead, needed to drop when TempMmap drops
-    _tempdir: tempdir::TempDir,
+    _tempdir: tempfile::TempDir,
 }
 
 pub(crate) enum MmapRef {

@@ -27,7 +27,7 @@ fn mmap_by_name<R: Read + Seek>(
     let mut index = archive.by_name(name)?;
 
     if index.compression() != CompressionMethod::Stored {
-        let tempdir = tempdir::TempDir::new("divvunspell")?;
+        let tempdir = tempfile::tempdir()?;
         let outpath = tempdir.path().join(index.mangled_name());
 
         let mut outfile = File::create(&outpath)?;
