@@ -93,9 +93,9 @@ where
 
 #[cfg(feature = "gpt2")]
 pub struct BoxGpt2PredictorArchive {
-    #[allow(dead_code)]
-    model_path: TempDir, // necessary to keep the temp dir alive until dropped
+    model_path: std::path::PathBuf,
     model: Arc<crate::predictor::gpt2::Gpt2Predictor>,
+    _temp_dir: TempDir, // necessary to keep the temp dir alive until dropped
 }
 
 #[cfg(feature = "gpt2")]
@@ -109,15 +109,20 @@ impl PredictorArchive for BoxGpt2PredictorArchive {
 
         // TODO: make this name customizable via metadata?
 
-        let model_path = fs.copy_to_temp_dir("gpt2_predictor").map_err(|e| {
+        let temp_dir = fs.copy_to_temp_dir("gpt2_predictor").map_err(|e| {
             PredictorArchiveError::Io("Could not copy gpt2_predictor to temp directory".into(), e)
         })?;
+        let model_path = temp_dir.path().join("gpt2_predictor");
 
         let model = Arc::new(crate::predictor::gpt2::Gpt2Predictor::new(
-            model_path.path(),
+            &model_path,
         )?);
 
-        Ok(BoxGpt2PredictorArchive { model_path, model })
+        Ok(BoxGpt2PredictorArchive {
+            model_path,
+            model,
+            _temp_dir: temp_dir,
+        })
     }
 
     fn predictor(&self) -> Arc<dyn crate::predictor::Predictor + Send + Sync> {
