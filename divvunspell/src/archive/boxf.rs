@@ -106,7 +106,9 @@ impl PredictorArchive for BoxGpt2PredictorArchive {
     where
         Self: Sized,
     {
-        let archive = BoxFileReader::open(path).map_err(PredictorArchiveError::File)?;
+        let archive = BoxFileReader::open(path).map_err(|e| {
+            PredictorArchiveError::File(std::io::Error::new(std::io::ErrorKind::Other, e))
+        })?;
         let fs = BoxFilesystem::new(&archive);
 
         // TODO: make this name customizable via metadata?

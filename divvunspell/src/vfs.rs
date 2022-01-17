@@ -171,7 +171,7 @@ pub mod boxf {
             let box_path = BoxPath::new(path)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
             self.0
-                .extract(&box_path, &dir)
+                .extract_recursive(&box_path, &dir)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
             Ok(dir)
         }
