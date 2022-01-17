@@ -11,10 +11,10 @@ pub enum SpellerArchiveError {
     File(Error),
 
     #[error("IO error")]
-    Io(String, Error),
+    Io(String, #[source] Error),
 
     #[error("Transducer error")]
-    Transducer(TransducerError),
+    Transducer(#[source] TransducerError),
 
     #[error("Missing metadata")]
     NoMetadata,
@@ -32,10 +32,10 @@ pub enum SpellerArchiveError {
 #[derive(Debug, thiserror::Error)]
 pub enum PredictorArchiveError {
     #[error("File error")]
-    File(Error),
+    File(#[source] Error),
 
     #[error("IO error")]
-    Io(String, Error),
+    Io(String, #[source] Error),
 
     #[cfg(feature = "gpt2")]
     #[error("Error loading bert model")]

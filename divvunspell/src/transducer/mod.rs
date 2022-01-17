@@ -11,11 +11,14 @@ use self::symbol_transition::SymbolTransition;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use crate::vfs::{self, Filesystem};
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum TransducerError {
-    Memmap(std::io::Error),
-    Io(std::io::Error),
-    Alphabet(Box<dyn std::error::Error>),
+    #[error("Memory mapping error")]
+    Memmap(#[source] std::io::Error),
+    #[error("IO error")]
+    Io(#[source] std::io::Error),
+    #[error("Alphabet error")]
+    Alphabet(#[source] Box<dyn std::error::Error>),
 }
 
 impl TransducerError {
