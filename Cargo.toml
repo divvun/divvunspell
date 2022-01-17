@@ -13,3 +13,6 @@ opt-level = 1
 debug = true
 codegen-units = 1
 lto = "fat"
+
+[patch.crates-io]
+box-format = { git = "https://github.com/bbqsrc/box" }

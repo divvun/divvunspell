@@ -121,18 +121,17 @@ dependencies = [
 [[package]]
 name = "box-format"
 version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad59854d6235dc12ac4d2f537c60da1920e8095973541fdb8fd7684e9b8edfc6"
+source = "git+https://github.com/bbqsrc/box#57edf893c7eec83222bedce74c4ba33504f4c073"
 dependencies = [
  "byteorder",
  "comde",
  "fastvlq",
  "log",
- "memmap",
+ "memmap2",
  "pathdiff",
- "pathtrie",
  "relative-path",
  "serde_json",
+ "thiserror",
  "tracing",
  "unic-normal",
  "unic-ucd",
@@ -1025,12 +1024,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "indenter"
-version = "0.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce23b50ad8242c51a442f3ff322d56b02f08852c77e4c0b4d3fd684abc89c683"
-
-[[package]]
 name = "indexmap"
 version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1186,16 +1179,6 @@ name = "memchr"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "308cc39be01b73d0d18f82a0e7b2a3df85245f84af96fdddc5d202d27e47b86a"
-
-[[package]]
-name = "memmap"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6585fd95e7bb50d6cc31e20d4cf9afb4e2ba16c5846fc76793f11218da9c475b"
-dependencies = [
- "libc",
- "winapi",
-]
 
 [[package]]
 name = "memmap2"
@@ -1421,18 +1404,6 @@ name = "pathdiff"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8835116a5c179084a830efb3adc117ab007512b535bc1a21c991d3b32a6b44dd"
-
-[[package]]
-name = "pathtrie"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f3c1d4ee5a2c3a8d3720b933c7a1b45cd180077f63a7a1604b0907d28182d8f"
-dependencies = [
- "indenter",
- "memmap",
- "thiserror",
- "tracing",
-]
 
 [[package]]
 name = "percent-encoding"

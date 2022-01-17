@@ -8,7 +8,7 @@ use crate::transducer::TransducerError;
 #[derive(Debug, thiserror::Error)]
 pub enum SpellerArchiveError {
     #[error("File error")]
-    File(Error),
+    File(#[source] Error),
 
     #[error("IO error")]
     Io(String, #[source] Error),

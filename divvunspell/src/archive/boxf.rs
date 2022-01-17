@@ -65,7 +65,9 @@ where
     U: Transducer<crate::vfs::boxf::File> + Send + Sync + 'static,
 {
     fn open(file_path: &std::path::Path) -> Result<BoxSpellerArchive<T, U>, SpellerArchiveError> {
-        let archive = BoxFileReader::open(file_path).map_err(SpellerArchiveError::File)?;
+        let archive = BoxFileReader::open(file_path).map_err(|e| {
+            SpellerArchiveError::File(std::io::Error::new(std::io::ErrorKind::Other, e))
+        })?;
 
         let fs = BoxFilesystem::new(&archive);
 
