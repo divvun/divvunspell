@@ -114,9 +114,7 @@ impl PredictorArchive for BoxGpt2PredictorArchive {
         })?;
         let model_path = temp_dir.path().join("gpt2_predictor");
 
-        let model = Arc::new(crate::predictor::gpt2::Gpt2Predictor::new(
-            &model_path,
-        )?);
+        let model = Arc::new(crate::predictor::gpt2::Gpt2Predictor::new(&model_path)?);
 
         Ok(BoxGpt2PredictorArchive {
             model_path,
