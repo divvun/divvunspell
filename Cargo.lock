@@ -121,7 +121,7 @@ dependencies = [
 [[package]]
 name = "box-format"
 version = "0.3.1"
-source = "git+https://github.com/bbqsrc/box#8d3f336fd358f3152ac965514a958df761cf54c5"
+source = "git+https://github.com/bbqsrc/box#0499ae23f8995e4e67b84ef47d81f6e79c63c507"
 dependencies = [
  "byteorder",
  "comde",

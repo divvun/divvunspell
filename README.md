@@ -17,6 +17,14 @@ cargo install thfst-tools
 # To build the development version from this source, cd into the relevant directory and:
 cargo install --path .
 ```
+### Building with `gpt2` support on macOS aarch64
+
+Clone this repo then:
+
+```bash
+brew install libtorch
+LIBTORCH=/opt/homebrew/opt/libtorch cargo build --features gpt2 --bin divvunspell
+```
 
 ### No Rust?
 
