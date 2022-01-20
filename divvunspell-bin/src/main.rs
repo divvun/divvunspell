@@ -95,7 +95,7 @@ fn run(
     suggest_cfg: &SpellerConfig,
 ) {
     for word in words {
-        let cleaned_str = Tokenize::word_indices(word.as_str());
+        let cleaned_str = word.as_str().word_indices();
         for w in cleaned_str {
             let is_correct = speller.clone().is_correct_with_config(&w.1, &suggest_cfg);
             writer.write_correction(&w.1, is_correct);
