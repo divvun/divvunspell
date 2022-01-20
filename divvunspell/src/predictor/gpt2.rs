@@ -36,7 +36,7 @@ impl Gpt2Predictor {
             model_type: ModelType::GPT2,
             max_length: 24,
             do_sample: true,
-            num_beams: 5,
+            num_beams: 1,
             temperature: 1.1,
             num_return_sequences: 1,
             ..Default::default()

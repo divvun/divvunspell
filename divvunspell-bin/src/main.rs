@@ -21,6 +21,9 @@ use divvunspell::{
     tokenizer::Tokenize,
 };
 
+// use divvunspell::
+use serde::de::MapAccess;
+
 trait OutputWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool);
     fn write_suggestions(&mut self, word: &str, suggestions: &[Suggestion]);
@@ -95,12 +98,10 @@ fn run(
     suggest_cfg: &SpellerConfig,
 ) {
     for word in words {
-        let is_correct = speller.clone().is_correct_with_config(&word, &suggest_cfg);
-        writer.write_correction(&word, is_correct);
-
-        if is_suggesting && (is_always_suggesting || !is_correct) {
-            let suggestions = speller.clone().suggest_with_config(&word, &suggest_cfg);
-            writer.write_suggestions(&word, &suggestions);
+        let cleaned_str = Tokenize::word_indices(word.as_str());
+        for w in cleaned_str {
+            let is_correct = speller.clone().is_correct_with_config(&w.1, &suggest_cfg);
+            writer.write_correction(&w.1, is_correct);
         }
     }
 }
@@ -179,6 +180,12 @@ struct PredictArgs {
 
     #[options(free, help = "text to be tokenized")]
     inputs: Vec<String>,
+
+    #[options(short = "S", help = "always show suggestions even if word is correct")]
+    always_suggest: bool,
+
+    #[options(no_short, long = "json", help = "output in JSON format")]
+    use_json: bool,
 }
 
 fn tokenize(args: TokenizeArgs) -> anyhow::Result<()> {
@@ -331,11 +338,28 @@ fn predict(args: PredictArgs) -> anyhow::Result<()> {
 
     let archive = load_predictor_archive(&args.archive)?;
     let predictor = archive.predictor();
+    let speller = load_archive(&args.archive).unwrap().speller();
 
     let predictions = predictor.predict(&raw_input);
 
+    let mut writer: Box<dyn OutputWriter> = if args.use_json {
+        Box::new(JsonWriter::new())
+    } else {
+        Box::new(StdoutWriter)
+    };
+
+    let mut suggest_cfg = SpellerConfig::default();
+
     println!("Predictions: ");
     println!("{}", predictions.join(" "));
+    run(
+        speller,
+        predictions,
+        &mut *writer,
+        true,
+        args.always_suggest,
+        &suggest_cfg,
+    );
 
     Ok(())
 }
