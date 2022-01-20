@@ -21,9 +21,6 @@ use divvunspell::{
     tokenizer::Tokenize,
 };
 
-// use divvunspell::
-use serde::de::MapAccess;
-
 trait OutputWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool);
     fn write_suggestions(&mut self, word: &str, suggestions: &[Suggestion]);
