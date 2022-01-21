@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 
+use anyhow::Error;
 use gumdrop::Options;
 use serde::Serialize;
 
@@ -178,6 +179,9 @@ struct PredictArgs {
     #[options(free, help = "text to be tokenized")]
     inputs: Vec<String>,
 
+    #[options(help = "whether to use spellchecker or not")]
+    do_spellcheck: bool,
+
     #[options(short = "S", help = "always show suggestions even if word is correct")]
     always_suggest: bool,
 
@@ -335,8 +339,8 @@ fn predict(args: PredictArgs) -> anyhow::Result<()> {
 
     let archive = load_predictor_archive(&args.archive)?;
     let predictor = archive.predictor();
-    let speller = load_archive(&args.archive).unwrap().speller();
-
+    let speller = load_archive(&args.archive).unwrap().speller(); //Arc<dyn Speller + Send + Sync>
+     
     let predictions = predictor.predict(&raw_input);
 
     let mut writer: Box<dyn OutputWriter> = if args.use_json {
@@ -349,14 +353,16 @@ fn predict(args: PredictArgs) -> anyhow::Result<()> {
 
     println!("Predictions: ");
     println!("{}", predictions.join(" "));
-    run(
-        speller,
-        predictions,
-        &mut *writer,
-        true,
-        args.always_suggest,
-        &suggest_cfg,
-    );
+    if args.do_spellcheck {
+        run(
+            speller,
+            predictions,
+            &mut *writer,
+            true,
+            args.always_suggest,
+            &suggest_cfg,
+        );
+    };
 
     Ok(())
 }
