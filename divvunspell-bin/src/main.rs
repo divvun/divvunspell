@@ -4,7 +4,6 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::Error;
 use gumdrop::Options;
 use serde::Serialize;
 
