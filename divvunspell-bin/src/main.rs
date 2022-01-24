@@ -193,8 +193,8 @@ struct PredictArgs {
     #[options(free, help = "text to be tokenized")]
     inputs: Vec<String>,
 
-    #[options(help = "whether suggestions are validated against a speller")]
-    validate_spelling: bool,
+    #[options(help = "whether suggestions should not be validated against a speller")]
+    disable_spelling_validation: bool,
 
     #[options(short = "S", help = "always show suggestions even if word is correct")]
     always_suggest: bool,
@@ -365,10 +365,10 @@ fn predict(args: PredictArgs) -> anyhow::Result<()> {
     let predictions = predictor.predict(&raw_input);
     writer.write_predictions(&predictions);
 
-    if args.validate_spelling {
+    if !args.disable_spelling_validation {
         let speller_archive = load_archive(&args.archive).unwrap();
         let speller = speller_archive.speller();
-        
+
         for word in predictions {
             let cleaned_str = word.as_str().word_indices();
             for w in cleaned_str {
