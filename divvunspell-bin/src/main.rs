@@ -353,8 +353,6 @@ fn predict(args: PredictArgs) -> anyhow::Result<()> {
 
     let archive = load_predictor_archive(&args.archive)?;
     let predictor = archive.predictor();
-    let speller_archive = load_archive(&args.archive).unwrap();
-    let speller = speller_archive.speller();
 
     let mut writer: Box<dyn OutputWriter> = if args.use_json {
         Box::new(JsonWriter::new())
@@ -368,6 +366,9 @@ fn predict(args: PredictArgs) -> anyhow::Result<()> {
     writer.write_predictions(&predictions);
 
     if args.validate_spelling {
+        let speller_archive = load_archive(&args.archive).unwrap();
+        let speller = speller_archive.speller();
+        
         for word in predictions {
             let cleaned_str = word.as_str().word_indices();
             for w in cleaned_str {
