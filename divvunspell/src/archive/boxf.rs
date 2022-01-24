@@ -95,6 +95,7 @@ where
 
 #[cfg(feature = "gpt2")]
 pub struct BoxGpt2PredictorArchive {
+    #[allow(unused)]
     model_path: std::path::PathBuf,
     model: Arc<crate::predictor::gpt2::Gpt2Predictor>,
     _temp_dir: TempDir, // necessary to keep the temp dir alive until dropped

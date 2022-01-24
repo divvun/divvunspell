@@ -24,6 +24,7 @@ use divvunspell::{
 trait OutputWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool);
     fn write_suggestions(&mut self, word: &str, suggestions: &[Suggestion]);
+    fn write_predictions(&mut self, predictions: &[String]);
     fn finish(&mut self);
 }
 
@@ -45,6 +46,11 @@ impl OutputWriter for StdoutWriter {
         println!();
     }
 
+    fn write_predictions(&mut self, predictions: &[String]) {
+        println!("Predictions: ");
+        println!("{}", predictions.join(" "));
+    }
+
     fn finish(&mut self) {}
 }
 
@@ -58,18 +64,22 @@ struct SuggestionRequest {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct JsonWriter {
-    results: Vec<SuggestionRequest>,
+    suggest: Vec<SuggestionRequest>,
+    predict: Option<Vec<String>>,
 }
 
 impl JsonWriter {
     pub fn new() -> JsonWriter {
-        JsonWriter { results: vec![] }
+        JsonWriter {
+            suggest: vec![],
+            predict: None,
+        }
     }
 }
 
 impl OutputWriter for JsonWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool) {
-        self.results.push(SuggestionRequest {
+        self.suggest.push(SuggestionRequest {
             word: word.to_owned(),
             is_correct,
             suggestions: vec![],
@@ -77,8 +87,12 @@ impl OutputWriter for JsonWriter {
     }
 
     fn write_suggestions(&mut self, _word: &str, suggestions: &[Suggestion]) {
-        let i = self.results.len() - 1;
-        self.results[i].suggestions = suggestions.to_vec();
+        let i = self.suggest.len() - 1;
+        self.suggest[i].suggestions = suggestions.to_vec();
+    }
+
+    fn write_predictions(&mut self, predictions: &[String]) {
+        self.predict = Some(predictions.to_vec());
     }
 
     fn finish(&mut self) {
@@ -95,14 +109,15 @@ fn run(
     suggest_cfg: &SpellerConfig,
 ) {
     for word in words {
-        let cleaned_str = word.as_str().word_indices();
-        for w in cleaned_str {
-            let is_correct = speller.clone().is_correct_with_config(&w.1, &suggest_cfg);
-            writer.write_correction(&w.1, is_correct);
+        let is_correct = speller.clone().is_correct_with_config(&word, &suggest_cfg);
+        writer.write_correction(&word, is_correct);
+
+        if is_suggesting && (is_always_suggesting || !is_correct) {
+            let suggestions = speller.clone().suggest_with_config(&word, &suggest_cfg);
+            writer.write_suggestions(&word, &suggestions);
         }
     }
 }
-
 #[derive(Debug, Options)]
 struct Args {
     #[options(help = "print help message")]
@@ -178,8 +193,8 @@ struct PredictArgs {
     #[options(free, help = "text to be tokenized")]
     inputs: Vec<String>,
 
-    #[options(help = "whether to use spellchecker or not")]
-    do_spellcheck: bool,
+    #[options(help = "whether suggestions are validated against a speller")]
+    validate_spelling: bool,
 
     #[options(short = "S", help = "always show suggestions even if word is correct")]
     always_suggest: bool,
@@ -293,11 +308,11 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
             .expect("reading stdin");
         buffer
             .trim()
-            .split("\n")
+            .split('\n')
             .map(|x| x.trim().to_string())
             .collect()
     } else {
-        args.inputs.into_iter().map(|x| x.to_string()).collect()
+        args.inputs.into_iter().collect()
     };
 
     let archive = load_archive(&args.archive).unwrap();
@@ -338,9 +353,8 @@ fn predict(args: PredictArgs) -> anyhow::Result<()> {
 
     let archive = load_predictor_archive(&args.archive)?;
     let predictor = archive.predictor();
-    let speller = load_archive(&args.archive).unwrap().speller(); //Arc<dyn Speller + Send + Sync>
-     
-    let predictions = predictor.predict(&raw_input);
+    let speller_archive = load_archive(&args.archive).unwrap();
+    let speller = speller_archive.speller();
 
     let mut writer: Box<dyn OutputWriter> = if args.use_json {
         Box::new(JsonWriter::new())
@@ -348,19 +362,19 @@ fn predict(args: PredictArgs) -> anyhow::Result<()> {
         Box::new(StdoutWriter)
     };
 
-    let mut suggest_cfg = SpellerConfig::default();
+    let suggest_cfg = SpellerConfig::default();
 
-    println!("Predictions: ");
-    println!("{}", predictions.join(" "));
-    if args.do_spellcheck {
-        run(
-            speller,
-            predictions,
-            &mut *writer,
-            true,
-            args.always_suggest,
-            &suggest_cfg,
-        );
+    let predictions = predictor.predict(&raw_input);
+    writer.write_predictions(&predictions);
+
+    if args.validate_spelling {
+        for word in predictions {
+            let cleaned_str = word.as_str().word_indices();
+            for w in cleaned_str {
+                let is_correct = speller.clone().is_correct_with_config(&w.1, &suggest_cfg);
+                writer.write_correction(w.1, is_correct);
+            }
+        }
     };
 
     Ok(())
