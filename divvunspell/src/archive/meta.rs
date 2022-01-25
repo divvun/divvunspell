@@ -7,6 +7,13 @@ pub struct SpellerMetadata {
     pub acceptor: SpellerMetadataAcceptor,
     pub errmodel: SpellerMetadataErrmodel,
 }
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PredictorMetadata {
+    pub info: SpellerMetadataInfo,
+    pub acceptor: SpellerMetadataAcceptor,
+    pub errmodel: SpellerMetadataErrmodel,
+    pub predictor: PredictorMetadataInfo,
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SpellerTitle {
@@ -38,6 +45,13 @@ pub struct SpellerMetadataErrmodel {
     pub title: Vec<SpellerTitle>,
     pub description: String,
 }
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PredictorMetadataInfo {
+    pub dir: String,
+    pub description: String,
+    pub enable_spelling_validation: Option<bool>,
+}
+
 
 impl std::str::FromStr for SpellerMetadata {
     type Err = Error;
@@ -49,6 +63,19 @@ impl std::str::FromStr for SpellerMetadata {
 
 impl SpellerMetadata {
     pub fn from_bytes(bytes: &[u8]) -> Result<SpellerMetadata, Error> {
+        let mut reader = ParserConfig::new()
+            .trim_whitespace(true)
+            .ignore_comments(true)
+            .coalesce_characters(true)
+            .create_reader(bytes)
+            .into_inner();
+
+        from_reader(&mut reader)
+    }
+}
+
+impl PredictorMetadata {
+    pub fn from_bytes(bytes: &[u8]) -> Result<PredictorMetadata, Error> {
         let mut reader = ParserConfig::new()
             .trim_whitespace(true)
             .ignore_comments(true)

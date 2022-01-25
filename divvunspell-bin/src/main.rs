@@ -365,7 +365,9 @@ fn predict(args: PredictArgs) -> anyhow::Result<()> {
     let predictions = predictor.predict(&raw_input);
     writer.write_predictions(&predictions);
 
-    if !args.disable_spelling_validation {
+    let meta = &archive.metadata().unwrap().predictor;
+    let is_speller = meta.enable_spelling_validation.unwrap();
+    if !args.disable_spelling_validation && is_speller {
         let speller_archive = load_archive(&args.archive).unwrap();
         let speller = speller_archive.speller();
 
