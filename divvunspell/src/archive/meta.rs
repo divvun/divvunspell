@@ -7,12 +7,11 @@ pub struct SpellerMetadata {
     pub acceptor: SpellerMetadataAcceptor,
     pub errmodel: SpellerMetadataErrmodel,
 }
-#[derive(Serialize, Deserialize, Debug, Clone)]
+
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct PredictorMetadata {
-    pub info: SpellerMetadataInfo,
-    pub acceptor: SpellerMetadataAcceptor,
-    pub errmodel: SpellerMetadataErrmodel,
-    pub predictor: PredictorMetadataInfo,
+    #[serde(default)]
+    pub speller: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -44,12 +43,6 @@ pub struct SpellerMetadataErrmodel {
     pub id: String,
     pub title: Vec<SpellerTitle>,
     pub description: String,
-}
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct PredictorMetadataInfo {
-    pub dir: String,
-    pub description: String,
-    pub enable_spelling_validation: Option<bool>,
 }
 
 impl std::str::FromStr for SpellerMetadata {

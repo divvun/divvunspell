@@ -579,6 +579,7 @@ dependencies = [
  "box-format",
  "byteorder",
  "cffi",
+ "eieio",
  "env_logger 0.9.0",
  "flatbuffers",
  "fs_extra",
@@ -620,6 +621,12 @@ dependencies = [
  "serde_json",
  "structopt",
 ]
+
+[[package]]
+name = "eieio"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0f3dd87dfc333e61e1be9ec6d6a4d946a98ece074da331eeb5d1c0b98b47ee34"
 
 [[package]]
 name = "either"

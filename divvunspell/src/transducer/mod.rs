@@ -18,7 +18,7 @@ pub enum TransducerError {
     #[error("IO error")]
     Io(#[source] std::io::Error),
     #[error("Alphabet error")]
-    Alphabet(#[source] Box<dyn std::error::Error>),
+    Alphabet(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
 impl TransducerError {

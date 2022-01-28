@@ -6,13 +6,10 @@ use box_format::BoxFileReader;
 use tempfile::TempDir;
 
 #[cfg(feature = "gpt2")]
-use super::{error::PredictorArchiveError, PredictorArchive};
+use super::{error::PredictorArchiveError, meta::PredictorMetadata, PredictorArchive};
 
 use super::error::SpellerArchiveError;
-use super::{
-    meta::{PredictorMetadata, SpellerMetadata},
-    SpellerArchive,
-};
+use super::{meta::SpellerMetadata, SpellerArchive};
 use crate::speller::{HfstSpeller, Speller};
 use crate::transducer::{
     thfst::{MemmapThfstChunkedTransducer, MemmapThfstTransducer},
@@ -107,7 +104,7 @@ pub struct BoxGpt2PredictorArchive {
 
 #[cfg(feature = "gpt2")]
 impl PredictorArchive for BoxGpt2PredictorArchive {
-    fn open(path: &std::path::Path) -> Result<Self, PredictorArchiveError>
+    fn open(path: &std::path::Path, predictor_name: Option<&str>) -> Result<Self, PredictorArchiveError>
     where
         Self: Sized,
     {
@@ -116,16 +113,18 @@ impl PredictorArchive for BoxGpt2PredictorArchive {
         })?;
         let fs = BoxFilesystem::new(&archive);
 
-        // TODO: make this name customizable via metadata?
-        let metadata: Option<PredictorMetadata> = fs
-            .open_file("predictor_meta.json")
-            .ok()
-            .and_then(|x| serde_json::from_reader(x).ok());
+        let predictor_name = predictor_name.unwrap_or("gpt2_predictor");
+        let predictor_path = std::path::Path::new(predictor_name);
 
-        let predictor_path = &metadata.clone().unwrap().predictor.dir;
+        // TODO: make this name customizable via metadata?
+        let file = fs
+            .open_file(predictor_path.join("meta.json"))
+            .map_err(|e| PredictorArchiveError::Io("Could not load meta.json".into(), e))?;
+
+        let metadata = serde_json::from_reader(file)?;
 
         let temp_dir = fs.copy_to_temp_dir(&predictor_path).map_err(|e| {
-            PredictorArchiveError::Io("Could not copy gpt2_predictor to temp directory".into(), e)
+            PredictorArchiveError::Io(format!("Could not copy '{}' to temp directory", predictor_name), e)
         })?;
         let model_path = temp_dir.path().join(&predictor_path);
 

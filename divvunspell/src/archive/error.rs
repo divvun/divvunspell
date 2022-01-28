@@ -11,7 +11,7 @@ pub enum SpellerArchiveError {
     File(#[source] Error),
 
     #[error("IO error")]
-    Io(String, #[source] Error),
+    Io(String, #[source] eieio::Error),
 
     #[error("Transducer error")]
     Transducer(#[source] TransducerError),
@@ -40,6 +40,9 @@ pub enum PredictorArchiveError {
     #[cfg(feature = "gpt2")]
     #[error("Error loading bert model")]
     Bert(#[from] RustBertError),
+
+    #[error("Error deserialising JSON")]
+    Json(#[from] serde_json::Error),
 
     #[error("Missing metadata")]
     NoMetadata,

@@ -237,7 +237,8 @@ fn load_archive(path: &Path) -> Result<Box<dyn SpellerArchive>, SpellerArchiveEr
                 std::io::Error::new(
                     std::io::ErrorKind::Other,
                     "Unsupported archive (missing .zhfst or .bhfst)",
-                ),
+                )
+                .into(),
             ))
         }
     };
@@ -266,7 +267,8 @@ fn load_archive(path: &Path) -> Result<Box<dyn SpellerArchive>, SpellerArchiveEr
             std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "Unsupported archive (missing .zhfst or .bhfst)",
-            ),
+            )
+            .into(),
         ))
     }
 }
@@ -315,7 +317,7 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
         args.inputs.into_iter().collect()
     };
 
-    let archive = load_archive(&args.archive).unwrap();
+    let archive = load_archive(&args.archive)?;
     let speller = archive.speller();
     run(
         speller,
@@ -333,7 +335,7 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
 
 #[cfg(feature = "gpt2")]
 fn load_predictor_archive(path: &Path) -> Result<Box<dyn PredictorArchive>, PredictorArchiveError> {
-    let archive = BoxGpt2PredictorArchive::open(path)?;
+    let archive = BoxGpt2PredictorArchive::open(path, None)?;
     let archive = Box::new(archive);
     Ok(archive)
 }
@@ -365,17 +367,20 @@ fn predict(args: PredictArgs) -> anyhow::Result<()> {
     let predictions = predictor.predict(&raw_input);
     writer.write_predictions(&predictions);
 
-    let meta = &archive.metadata().unwrap().predictor;
-    let is_speller = meta.enable_spelling_validation.unwrap_or_default();
-    if !args.disable_spelling_validation && is_speller {
-        let speller_archive = load_archive(&args.archive).unwrap();
-        let speller = speller_archive.speller();
+    let has_speller = archive.metadata().map(|x| x.speller).unwrap_or(false);
+    if !args.disable_spelling_validation {
+        if !has_speller {
+            eprintln!("Error: requested spell checking but no speller present in archive!");
+        } else {
+            let speller_archive = load_archive(&args.archive)?;
+            let speller = speller_archive.speller();
 
-        for word in predictions {
-            let cleaned_str = word.as_str().word_indices();
-            for w in cleaned_str {
-                let is_correct = speller.clone().is_correct_with_config(&w.1, &suggest_cfg);
-                writer.write_correction(w.1, is_correct);
+            for word in predictions {
+                let cleaned_str = word.as_str().word_indices();
+                for w in cleaned_str {
+                    let is_correct = speller.clone().is_correct_with_config(&w.1, &suggest_cfg);
+                    writer.write_correction(w.1, is_correct);
+                }
             }
         }
     };

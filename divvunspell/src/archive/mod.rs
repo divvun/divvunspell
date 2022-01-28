@@ -48,7 +48,7 @@ pub trait SpellerArchive {
 }
 
 pub trait PredictorArchive {
-    fn open(path: &Path) -> Result<Self, PredictorArchiveError>
+    fn open(path: &Path, predictor_name: Option<&str>) -> Result<Self, PredictorArchiveError>
     where
         Self: Sized;
 

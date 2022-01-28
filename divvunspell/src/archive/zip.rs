@@ -78,16 +78,16 @@ impl SpellerArchive for ZipSpellerArchive {
         let mut file = File::open(file_path).map_err(SpellerArchiveError::File)?;
 
         let metadata_mmap = mmap_by_name(&mut file, &mut archive, "index.xml")
-            .map_err(|e| SpellerArchiveError::Io("index.xml".into(), e))?;
+            .map_err(|e| SpellerArchiveError::Io("index.xml".into(), e.into()))?;
         let metadata = SpellerMetadata::from_bytes(&*metadata_mmap.map()).expect("meta");
 
         let acceptor_id = &metadata.acceptor.id;
         let errmodel_id = &metadata.errmodel.id;
 
         let acceptor_mmap = mmap_by_name(&mut file, &mut archive, &acceptor_id)
-            .map_err(|e| SpellerArchiveError::Io(acceptor_id.into(), e))?;
+            .map_err(|e| SpellerArchiveError::Io(acceptor_id.into(), e.into()))?;
         let errmodel_mmap = mmap_by_name(&mut file, &mut archive, &errmodel_id)
-            .map_err(|e| SpellerArchiveError::Io(errmodel_id.into(), e))?;
+            .map_err(|e| SpellerArchiveError::Io(errmodel_id.into(), e.into()))?;
         drop(archive);
 
         let acceptor = HfstTransducer::from_mapped_memory(acceptor_mmap.map());
