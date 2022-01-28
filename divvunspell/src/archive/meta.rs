@@ -52,7 +52,6 @@ pub struct PredictorMetadataInfo {
     pub enable_spelling_validation: Option<bool>,
 }
 
-
 impl std::str::FromStr for SpellerMetadata {
     type Err = Error;
 

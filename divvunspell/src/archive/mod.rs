@@ -11,7 +11,9 @@ use error::PredictorArchiveError;
 pub use self::{boxf::BoxSpellerArchive, zip::ZipSpellerArchive};
 
 use self::{
-    boxf::ThfstChunkedBoxSpellerArchive, error::SpellerArchiveError, meta::{SpellerMetadata, PredictorMetadata},
+    boxf::ThfstChunkedBoxSpellerArchive,
+    error::SpellerArchiveError,
+    meta::{PredictorMetadata, SpellerMetadata},
 };
 use crate::{predictor::Predictor, speller::Speller};
 
@@ -51,7 +53,7 @@ pub trait PredictorArchive {
         Self: Sized;
 
     fn predictor(&self) -> Arc<dyn Predictor + Send + Sync>;
-    fn metadata(&self) ->Option<&PredictorMetadata>;
+    fn metadata(&self) -> Option<&PredictorMetadata>;
 }
 
 pub fn open<P>(path: P) -> Result<Arc<dyn SpellerArchive + Send + Sync>, SpellerArchiveError>

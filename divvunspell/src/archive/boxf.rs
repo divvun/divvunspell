@@ -9,7 +9,10 @@ use tempfile::TempDir;
 use super::{error::PredictorArchiveError, PredictorArchive};
 
 use super::error::SpellerArchiveError;
-use super::{meta::{SpellerMetadata, PredictorMetadata}, SpellerArchive};
+use super::{
+    meta::{PredictorMetadata, SpellerMetadata},
+    SpellerArchive,
+};
 use crate::speller::{HfstSpeller, Speller};
 use crate::transducer::{
     thfst::{MemmapThfstChunkedTransducer, MemmapThfstTransducer},
@@ -63,7 +66,6 @@ impl<T, U> SpellerArchive for BoxSpellerArchive<T, U>
 where
     T: Transducer<crate::vfs::boxf::File> + Send + Sync + 'static,
     U: Transducer<crate::vfs::boxf::File> + Send + Sync + 'static,
-    
 {
     fn open(file_path: &std::path::Path) -> Result<BoxSpellerArchive<T, U>, SpellerArchiveError> {
         let archive = BoxFileReader::open(file_path).map_err(|e| {
@@ -119,7 +121,7 @@ impl PredictorArchive for BoxGpt2PredictorArchive {
             .open_file("predictor_meta.json")
             .ok()
             .and_then(|x| serde_json::from_reader(x).ok());
-        
+
         let predictor_path = &metadata.clone().unwrap().predictor.dir;
 
         let temp_dir = fs.copy_to_temp_dir(&predictor_path).map_err(|e| {
@@ -139,10 +141,9 @@ impl PredictorArchive for BoxGpt2PredictorArchive {
 
     fn predictor(&self) -> Arc<dyn crate::predictor::Predictor + Send + Sync> {
         self.model.clone()
-
     }
 
-    fn metadata(&self) ->Option<&PredictorMetadata> {
+    fn metadata(&self) -> Option<&PredictorMetadata> {
         self.metadata.as_ref()
     }
 }
