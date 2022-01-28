@@ -190,17 +190,21 @@ struct PredictArgs {
     #[options(help = "BHFST archive to be used", required)]
     archive: PathBuf,
 
-    #[options(free, help = "text to be tokenized")]
-    inputs: Vec<String>,
+    #[options(
+        short = "n",
+        long = "name",
+        help = "Predictor name to use (default: gpt2_predictor)"
+    )]
+    predictor_name: Option<String>,
 
     #[options(help = "whether suggestions should not be validated against a speller")]
     disable_spelling_validation: bool,
 
-    #[options(short = "S", help = "always show suggestions even if word is correct")]
-    always_suggest: bool,
-
     #[options(no_short, long = "json", help = "output in JSON format")]
     use_json: bool,
+
+    #[options(free, help = "text to be tokenized")]
+    inputs: Vec<String>,
 }
 
 fn tokenize(args: TokenizeArgs) -> anyhow::Result<()> {
@@ -334,8 +338,11 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
 }
 
 #[cfg(feature = "gpt2")]
-fn load_predictor_archive(path: &Path) -> Result<Box<dyn PredictorArchive>, PredictorArchiveError> {
-    let archive = BoxGpt2PredictorArchive::open(path, None)?;
+fn load_predictor_archive(
+    path: &Path,
+    name: Option<&str>,
+) -> Result<Box<dyn PredictorArchive>, PredictorArchiveError> {
+    let archive = BoxGpt2PredictorArchive::open(path, name)?;
     let archive = Box::new(archive);
     Ok(archive)
 }
@@ -353,7 +360,8 @@ fn predict(args: PredictArgs) -> anyhow::Result<()> {
         args.inputs.join(" ")
     };
 
-    let archive = load_predictor_archive(&args.archive)?;
+    let predictor_name = args.predictor_name.as_deref();
+    let archive = load_predictor_archive(&args.archive, predictor_name)?;
     let predictor = archive.predictor();
 
     let mut writer: Box<dyn OutputWriter> = if args.use_json {
