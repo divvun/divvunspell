@@ -1,9 +1,14 @@
 use std::io::{self, Read};
+use std::process;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
 
+use divvunspell::speller::HfstSpeller;
+use divvunspell::transducer::hfst::HfstTransducer;
+use divvunspell::transducer::Transducer;
+use divvunspell::vfs::Fs;
 use gumdrop::Options;
 use serde::Serialize;
 
@@ -17,18 +22,22 @@ use divvunspell::{
         boxf::ThfstBoxSpellerArchive, error::SpellerArchiveError, BoxSpellerArchive,
         SpellerArchive, ZipSpellerArchive,
     },
-    speller::{suggestion::Suggestion, Speller, SpellerConfig},
+    speller::{suggestion::Suggestion, Analyzer, SpellerConfig},
     tokenizer::Tokenize,
 };
 
 trait OutputWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool);
     fn write_suggestions(&mut self, word: &str, suggestions: &[Suggestion]);
+    fn write_input_analyses(&mut self, word: &str, analyses: &[Suggestion]);
+    fn write_output_analyses(&mut self, word: &str, analyses: &[Suggestion]);
     fn write_predictions(&mut self, predictions: &[String]);
     fn finish(&mut self);
 }
 
-struct StdoutWriter;
+struct StdoutWriter {
+    has_continuation_marker: Option<String>,
+}
 
 impl OutputWriter for StdoutWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool) {
@@ -40,8 +49,18 @@ impl OutputWriter for StdoutWriter {
     }
 
     fn write_suggestions(&mut self, _word: &str, suggestions: &[Suggestion]) {
-        for sugg in suggestions {
-            println!("{}\t\t{}", sugg.value, sugg.weight);
+        if let Some(s) = &self.has_continuation_marker {
+            for sugg in suggestions {
+                print!("{}", sugg.value);
+                if sugg.completed == Some(true) {
+                    print!("{s}");
+                }
+                println!("\t\t{}", sugg.weight);
+            }
+        } else {
+            for sugg in suggestions {
+                println!("{}\t\t{}", sugg.value, sugg.weight);
+            }
         }
         println!();
     }
@@ -49,6 +68,22 @@ impl OutputWriter for StdoutWriter {
     fn write_predictions(&mut self, predictions: &[String]) {
         println!("Predictions: ");
         println!("{}", predictions.join(" "));
+    }
+
+    fn write_input_analyses(&mut self, _word: &str, suggestions: &[Suggestion]) {
+        println!("Input analyses: ");
+        for sugg in suggestions {
+            println!("{}\t\t{}", sugg.value, sugg.weight);
+        }
+        println!();
+    }
+
+    fn write_output_analyses(&mut self, _word: &str, suggestions: &[Suggestion]) {
+        println!("Output analyses: ");
+        for sugg in suggestions {
+            println!("{}\t\t{}", sugg.value, sugg.weight);
+        }
+        println!();
     }
 
     fn finish(&mut self) {}
@@ -62,18 +97,27 @@ struct SuggestionRequest {
 }
 
 #[derive(Serialize)]
+struct AnalysisRequest {
+    word: String,
+    suggestions: Vec<Suggestion>,
+}
+
+#[derive(Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct JsonWriter {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     suggest: Vec<SuggestionRequest>,
-    predict: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    predict: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    input_analysis: Vec<AnalysisRequest>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    output_analysis: Vec<AnalysisRequest>,
 }
 
 impl JsonWriter {
     pub fn new() -> JsonWriter {
-        JsonWriter {
-            suggest: vec![],
-            predict: None,
-        }
+        Self::default()
     }
 }
 
@@ -92,7 +136,21 @@ impl OutputWriter for JsonWriter {
     }
 
     fn write_predictions(&mut self, predictions: &[String]) {
-        self.predict = Some(predictions.to_vec());
+        self.predict = predictions.to_vec();
+    }
+
+    fn write_input_analyses(&mut self, word: &str, suggestions: &[Suggestion]) {
+        self.input_analysis.push(AnalysisRequest {
+            word: word.to_string(),
+            suggestions: suggestions.to_vec(),
+        })
+    }
+
+    fn write_output_analyses(&mut self, word: &str, suggestions: &[Suggestion]) {
+        self.output_analysis.push(AnalysisRequest {
+            word: word.to_string(),
+            suggestions: suggestions.to_vec(),
+        })
     }
 
     fn finish(&mut self) {
@@ -101,9 +159,10 @@ impl OutputWriter for JsonWriter {
 }
 
 fn run(
-    speller: Arc<dyn Speller + Send>,
+    speller: Arc<dyn Analyzer + Send>,
     words: Vec<String>,
     writer: &mut dyn OutputWriter,
+    is_analyzing: bool,
     is_suggesting: bool,
     is_always_suggesting: bool,
     suggest_cfg: &SpellerConfig,
@@ -115,6 +174,23 @@ fn run(
         if is_suggesting && (is_always_suggesting || !is_correct) {
             let suggestions = speller.clone().suggest_with_config(&word, &suggest_cfg);
             writer.write_suggestions(&word, &suggestions);
+        }
+
+        if is_analyzing {
+            let input_analyses = speller
+                .clone()
+                .analyze_input_with_config(&word, &suggest_cfg);
+            writer.write_input_analyses(&word, &input_analyses);
+
+            let output_analyses = speller
+                .clone()
+                .analyze_output_with_config(&word, &suggest_cfg);
+            writer.write_output_analyses(&word, &output_analyses);
+
+            let final_suggs = speller
+                .clone()
+                .analyse_suggest_with_config(&word, &suggest_cfg);
+            writer.write_suggestions(&word, &final_suggs);
         }
     }
 }
@@ -144,17 +220,29 @@ struct SuggestArgs {
     #[options(help = "print help message")]
     help: bool,
 
-    #[options(help = "BHFST or ZHFST archive to be used", required)]
-    archive: PathBuf,
+    #[options(short = "a", help = "BHFST or ZHFST archive to be used")]
+    archive_path: Option<PathBuf>,
+
+    #[options(long = "mutator", help = "mutator to use (if archive not provided)")]
+    mutator_path: Option<PathBuf>,
+
+    #[options(long = "lexicon", help = "lexicon to use (if archive not provided)")]
+    lexicon_path: Option<PathBuf>,
 
     #[options(short = "S", help = "always show suggestions even if word is correct")]
     always_suggest: bool,
+
+    #[options(short = "A", help = "analyze words and suggestions")]
+    analyze: bool,
 
     #[options(help = "maximum weight limit for suggestions")]
     weight: Option<f32>,
 
     #[options(help = "maximum number of results")]
     nbest: Option<usize>,
+
+    #[options(help = "character for incomplete predictions")]
+    continuation_marker: Option<String>,
 
     #[options(
         no_short,
@@ -288,21 +376,42 @@ fn load_archive(path: &Path) -> Result<Box<dyn SpellerArchive>, SpellerArchiveEr
 }
 
 fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
+    // 1. default config
     let mut suggest_cfg = SpellerConfig::default();
 
+    let speller = if let Some(archive_path) = args.archive_path {
+        let archive = load_archive(&archive_path)?;
+        // 2. config from metadata
+        if let Some(metadata) = archive.metadata() {
+            if let Some(continuation) = &metadata.acceptor.continuation {
+                suggest_cfg.continuation_marker = Some(continuation.clone());
+            }
+        }
+        let speller = archive.analyser();
+        speller
+    } else if let (Some(lexicon_path), Some(mutator_path)) = (args.lexicon_path, args.mutator_path)
+    {
+        let acceptor = HfstTransducer::from_path(&Fs, lexicon_path)?;
+        let errmodel = HfstTransducer::from_path(&Fs, mutator_path)?;
+        HfstSpeller::new(errmodel, acceptor) as _
+    } else {
+        eprintln!("Either a BHFST or ZHFST archive must be provided, or a mutator and lexicon.");
+        process::exit(1);
+    };
+    // 3. config from explicit config file
     if let Some(config_path) = args.config {
         let config_file = std::fs::File::open(config_path)?;
         let config: SpellerConfig = serde_json::from_reader(config_file)?;
         suggest_cfg = config;
     }
-
+    // 4. config from other command line stuff
     if args.disable_reweight {
         suggest_cfg.reweight = None;
     }
     if args.disable_recase {
         suggest_cfg.recase = false;
     }
-
+    suggest_cfg.continuation_marker = args.continuation_marker.clone();
     if let Some(v) = args.nbest {
         if v == 0 {
             suggest_cfg.n_best = None;
@@ -322,7 +431,9 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
     let mut writer: Box<dyn OutputWriter> = if args.use_json {
         Box::new(JsonWriter::new())
     } else {
-        Box::new(StdoutWriter)
+        Box::new(StdoutWriter {
+            has_continuation_marker: args.continuation_marker,
+        })
     };
 
     let words = if args.inputs.is_empty() {
@@ -340,12 +451,12 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
         args.inputs.into_iter().collect()
     };
 
-    let archive = load_archive(&args.archive)?;
-    let speller = archive.speller();
+
     run(
         speller,
         words,
         &mut *writer,
+        args.analyze,
         true,
         args.always_suggest,
         &suggest_cfg,

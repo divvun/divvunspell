@@ -23,6 +23,7 @@ pub struct SpellerWorker<F: crate::vfs::File, T: Transducer<F>, U: Transducer<F>
     speller: Arc<HfstSpeller<F, T, U>>,
     input: Vec<SymbolNumber>,
     config: SpellerConfig,
+    mode_correcting: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -37,11 +38,13 @@ where
         speller: Arc<HfstSpeller<F, T, U>>,
         input: Vec<SymbolNumber>,
         config: SpellerConfig,
+        mode_correcting: bool,
     ) -> SpellerWorker<F, T, U> {
         SpellerWorker {
             speller,
             input,
             config,
+            mode_correcting,
         }
     }
 
@@ -70,7 +73,12 @@ where
                     if self
                         .is_under_weight_limit(max_weight, next_node.weight() + transition_weight)
                     {
-                        let new_node = next_node.update_lexicon(pool, transition);
+                        let new_node =  if self.mode_correcting {
+                            next_node.update_lexicon(pool,
+                                transition.clone_with_epsilon_symbol())
+                        } else {
+                            next_node.update_lexicon(pool, transition)
+                        };
                         output_nodes.push(new_node);
                     }
                 } else {
@@ -220,15 +228,27 @@ where
                 );
 
                 if is_under_weight_limit {
-                    let new_node = next_node.update(
+                    let new_node = if self.mode_correcting {
+                        next_node.update(
+                            pool,
+                            input_sym,
+                            Some(next_node.input_state + input_increment as
+                                u32),
+                            mutator_state,
+                            noneps_trans.target().unwrap(),
+                            noneps_trans.weight().unwrap() + mutator_weight,
+                        )
+
+                    } else {
+                        next_node.update(
                         pool,
                         sym,
                         Some(next_node.input_state + input_increment as u32),
                         mutator_state,
                         noneps_trans.target().unwrap(),
                         noneps_trans.weight().unwrap() + mutator_weight,
-                    );
-
+                        )
+                    };
                     output_nodes.push(new_node);
                 }
             }
@@ -399,14 +419,14 @@ where
 
         let input_sym = alphabet_translator[self.input[input_state as usize] as usize];
         let next_lexicon_state = next_node.lexicon_state + 1;
-        log::trace!(
-            "lexicon consuming {}: {}",
-            input_sym,
-            self.speller
-                .lexicon
-                .alphabet()
-                .string_from_symbols(&[input_sym])
-        );
+        //        log::trace!(
+        //            "lexicon consuming {}: {}",
+        //            input_sym,
+        //            self.speller
+        //                .lexicon
+        //                .alphabet()
+        //                .string_from_symbols(&[input_sym])
+        //        );
 
         if !lexicon.has_transitions(next_lexicon_state, Some(input_sym)) {
             // we have no regular transitions for this
@@ -491,6 +511,7 @@ where
     }
 
     pub(crate) fn is_correct(&self) -> bool {
+        log::trace!("is_correct");
         // let max_weight = speller_max_weight(&self.config);
         let pool = Pool::with_size_and_max(0, 0);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
@@ -507,6 +528,41 @@ where
         }
 
         false
+    }
+
+    pub(crate) fn analyze(&self) -> Vec<Suggestion> {
+        log::trace!("Beginning analyze");
+        let pool = Pool::with_size_and_max(0, 0);
+        let mut nodes = speller_start_node(&pool, self.state_size() as usize);
+        log::trace!("beginning analyze {:?}", self.input);
+        let mut lookups = HashMap::new();
+        let mut analyses: Vec<Suggestion> = vec![];
+        while let Some(next_node) = nodes.pop() {
+            if next_node.input_state as usize == self.input.len()
+                && self.speller.lexicon().is_final(next_node.lexicon_state)
+            {
+                let string = self
+                    .speller
+                    .lexicon()
+                    .alphabet()
+                    .string_from_symbols(&next_node.string);
+                let weight = next_node.weight()
+                    + self
+                    .speller
+                    .lexicon()
+                    .final_weight(next_node.lexicon_state)
+                    .unwrap();
+                let entry = lookups.entry(string).or_insert(weight);
+                if *entry > weight {
+                    *entry = weight;
+                }
+            }
+            self.lexicon_epsilons(&pool, f32::INFINITY, &next_node, &mut nodes);
+            self.lexicon_consume(&pool, f32::INFINITY, &next_node, &mut nodes);
+            analyses = self.generate_sorted_suggestions(&lookups);
+        }
+        analyses
+
     }
 
     pub(crate) fn suggest(&self) -> Vec<Suggestion> {
@@ -577,7 +633,7 @@ where
                 .lexicon()
                 .alphabet()
                 .string_from_symbols(&next_node.string);
-
+            // log::trace!("suggesting? {}::{}", string, weight);
             if weight < best_weight {
                 best_weight = weight;
             }
@@ -592,7 +648,6 @@ where
 
             suggestions = self.generate_sorted_suggestions(&corrections);
         }
-
         suggestions
     }
 
@@ -600,17 +655,24 @@ where
         &self,
         corrections: &HashMap<SmolStr, Weight>,
     ) -> Vec<Suggestion> {
-        let mut c: Vec<Suggestion> = corrections
-            .into_iter()
-            .map(|x| Suggestion::new(x.0.clone(), *x.1))
-            .collect();
-
+        //log::trace!("Generating sorted suggestions");
+        let mut c: Vec<Suggestion>;
+        if let Some(s) = &self.config.continuation_marker {
+            c = corrections
+                .into_iter()
+                .map(|x| Suggestion::new(x.0.clone(), *x.1, Some(x.0.ends_with(s))))
+                .collect();
+        } else {
+            c = corrections
+                .into_iter()
+                .map(|x| Suggestion::new(x.0.clone(), *x.1, None))
+                .collect();
+        }
         c.sort();
 
         if let Some(n) = self.config.n_best {
             c.truncate(n);
         }
-
         c
     }
 }

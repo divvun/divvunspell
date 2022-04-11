@@ -1,48 +1,78 @@
-//! Archive metadata handling
+//! Data structures of speller metadata.
+//!
+//! These are usually read from the speller archives, in xml or json files or
+//! such. XML format is described here and json format there.
 use serde::{Deserialize, Serialize};
 use serde_xml_rs::{from_reader, Error, ParserConfig};
 
+/// Speller metadata
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SpellerMetadata {
+    /// speller info
     pub info: SpellerMetadataInfo,
+    /// acceptor metadata
     pub acceptor: SpellerMetadataAcceptor,
+    /// error model metadata
     pub errmodel: SpellerMetadataErrmodel,
 }
 
+/// Predictor metadata
 #[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct PredictorMetadata {
+    /// whether speller is
     #[serde(default)]
     pub speller: bool,
 }
 
+/// localised speller title
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SpellerTitle {
+    /// ISO 639 code of the title's content language
     pub lang: Option<String>,
+    /// translated title
     #[serde(rename = "$value")]
     pub value: String,
 }
 
+/// Speller metadata
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SpellerMetadataInfo {
+    /// ISO-639 code of speller language
     pub locale: String,
+    /// localised, human readable titles of speller
     pub title: Vec<SpellerTitle>,
+    /// human readable description of speller
     pub description: String,
+    /// creator and copyright owner of the speller
     pub producer: String,
 }
 
+/// Acceptor metadata
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SpellerMetadataAcceptor {
+    /// acceptor type:
+    /// - `blah` if normal dictionary automaton
+    /// - `foo` if analyser
     #[serde(rename = "type", default)]
     pub type_: String,
+    /// locally unique id for this acceptor
     pub id: String,
+    /// localised human readable titles of speller
     pub title: Vec<SpellerTitle>,
+    /// human readable description of the acceptor
     pub description: String,
+    /// marker for incomplete strings
+    pub continuation: Option<String>,
 }
 
+/// Error model metadata
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SpellerMetadataErrmodel {
+    /// locally unique id for the error model
     pub id: String,
+    /// localised human readable titles for the error model
     pub title: Vec<SpellerTitle>,
+    /// human readable description of the error model
     pub description: String,
 }
 
@@ -91,7 +121,7 @@ fn test_xml_parse() {
             <locale>se</locale>
             <title>Giellatekno/Divvun/UiT fst-based speller for Northern Sami</title>
             <description>This is an fst-based speller for Northern Sami. It is based
-            on the normative subset of the morphological analyser for Northern Sami.
+            on the normative subset of the morphological analyzer for Northern Sami.
             The source code can be found at:
             https://victorio.uit.no/langtech/trunk/langs/sme/
             License: GPL3+.</description>

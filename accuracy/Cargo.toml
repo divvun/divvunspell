@@ -15,7 +15,7 @@ rayon = { version = "1.4.0" }
 indicatif = { version = "0.15", features = ["with_rayon"] }
 # box-format = { git = "https://github.com/bbqsrc/box", branch = "master" }
 # tempdir = "0.3.7"
-pretty_env_logger = "0.4.0"
+pretty_env_logger = "0.5.0"
 # ctor = "*"
 # gumdrop = "0.8.0"
 # thiserror = "1.0.20"
