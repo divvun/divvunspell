@@ -501,6 +501,50 @@ where
         false
     }
 
+    pub(crate) fn analyse(&self) -> Vec<Suggestion> {
+        log::trace!("Beginning analyse");
+        let pool = Pool::with_size_and_max(0, 0);
+        let mut nodes = speller_start_node(&pool, self.state_size() as usize);
+        let mut lookups = HashMap::new();
+        let mut analyses: Vec<Suggestion> = vec![];
+        let best_weight = self.config.max_weight.unwrap_or(f32::MAX);
+
+        while let Some(next_node) = nodes.pop() {
+            let max_weight = self.update_weight_limit(best_weight, &analyses);
+
+            self.lexicon_epsilons(&pool, max_weight, &next_node, &mut nodes);
+            if next_node.input_state as usize != self.input.len() {
+                self.consume_input(&pool, max_weight, &next_node, &mut nodes);
+                continue;
+            }
+            if self.speller.lexicon().is_final(next_node.lexicon_state) {
+                let weight = next_node.weight()
+                    + self
+                        .speller
+                        .lexicon()
+                        .final_weight(next_node.lexicon_state)
+                        .unwrap();
+
+                let string = self
+                    .speller
+                    .lexicon()
+                    .alphabet()
+                    .string_from_symbols(&next_node.string);
+
+                {
+                    let entry = lookups.entry(string).or_insert(weight);
+
+                    if *entry > weight {
+                        *entry = weight;
+                    }
+                }
+
+            }
+            analyses = self.generate_sorted_suggestions(&lookups);
+        }
+        analyses
+    }
+
     pub(crate) fn suggest(&self) -> Vec<Suggestion> {
         log::trace!("Beginning suggest");
 

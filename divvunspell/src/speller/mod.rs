@@ -60,6 +60,14 @@ pub trait Speller {
     fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion>;
 }
 
+pub trait Analyser {
+    fn analyse(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
+    fn analyse_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion>;
+    fn suggest_with_analyse(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
+    fn suggest_with_analyse_with_config(self: Arc<Self>, word: &str, config:
+                                        &SpellerConfig) -> Vec<Suggestion>;
+}
+
 impl<F, T, U> Speller for HfstSpeller<F, T, U>
 where
     F: crate::vfs::File + Send,
@@ -122,6 +130,46 @@ where
         } else {
             self.suggest_single(word, config)
         }
+    }
+}
+
+impl<F, T, U> Analyser for HfstSpeller<F, T, U>
+where
+    F: crate::vfs::File + Send,
+    T: Transducer<F> + Send,
+    U: Transducer<F> + Send,
+{
+    #[allow(clippy::wrong_self_convention)]
+    fn analyse_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
+        if word.len() == 0 {
+            return vec![];
+        }
+
+        let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
+
+        worker.analyse()
+
+        //vec![]
+    }
+
+    #[inline]
+    fn analyse(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
+        self.analyse_with_config(word, &SpellerConfig::default())
+    }
+
+    #[inline]
+    fn suggest_with_analyse(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
+        self.suggest_with_analyse_with_config(word, &SpellerConfig::default())
+    }
+
+    fn suggest_with_analyse_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
+        if word.len() == 0 {
+            return vec![];
+        }
+        let worker = SpellerWorker::new(self.clone(), self.to_input_vec(word), config.clone());
+
+        worker.analyse()
+
     }
 }
 
