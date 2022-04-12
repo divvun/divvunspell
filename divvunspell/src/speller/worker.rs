@@ -513,10 +513,7 @@ where
             let max_weight = self.update_weight_limit(best_weight, &analyses);
 
             self.lexicon_epsilons(&pool, max_weight, &next_node, &mut nodes);
-            if next_node.input_state as usize != self.input.len() {
-                self.consume_input(&pool, max_weight, &next_node, &mut nodes);
-                continue;
-            }
+            self.lexicon_consume(&pool, max_weight, &next_node, &mut nodes);
             if self.speller.lexicon().is_final(next_node.lexicon_state) {
                 let weight = next_node.weight()
                     + self

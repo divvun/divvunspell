@@ -168,7 +168,7 @@ where
         }
         let worker = SpellerWorker::new(self.clone(), self.to_input_vec(word), config.clone());
 
-        worker.analyse()
+        worker.suggest()
 
     }
 }
