@@ -24,6 +24,7 @@ use divvunspell::{
 trait OutputWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool);
     fn write_suggestions(&mut self, word: &str, suggestions: &[Suggestion]);
+    fn write_analyses(&mut self, word: &str, analyses: &[Suggestion]);
     fn write_predictions(&mut self, predictions: &[String]);
     fn finish(&mut self);
 }
@@ -49,6 +50,14 @@ impl OutputWriter for StdoutWriter {
     fn write_predictions(&mut self, predictions: &[String]) {
         println!("Predictions: ");
         println!("{}", predictions.join(" "));
+    }
+
+    fn write_analyses(&mut self, _word: &str, suggestions: &[Suggestion]) {
+        println!("Analyses: ");
+        for sugg in suggestions {
+            println!("{}\t\t{}", sugg.value, sugg.weight);
+        }
+        println!();
     }
 
     fn finish(&mut self) {}
@@ -95,6 +104,11 @@ impl OutputWriter for JsonWriter {
         self.predict = Some(predictions.to_vec());
     }
 
+    fn write_analyses(&mut self, _word: &str, suggestions: &[Suggestion]) {
+        let i = self.suggest.len() - 1;
+        self.suggest[i].suggestions = suggestions.to_vec();
+    }
+
     fn finish(&mut self) {
         println!("{}", serde_json::to_string_pretty(self).unwrap());
     }
@@ -104,6 +118,7 @@ fn run(
     speller: Arc<dyn Speller + Send>,
     words: Vec<String>,
     writer: &mut dyn OutputWriter,
+    analyse: bool,
     is_suggesting: bool,
     is_always_suggesting: bool,
     suggest_cfg: &SpellerConfig,
@@ -115,6 +130,15 @@ fn run(
         if is_suggesting && (is_always_suggesting || !is_correct) {
             let suggestions = speller.clone().suggest_with_config(&word, &suggest_cfg);
             writer.write_suggestions(&word, &suggestions);
+        }
+        if analyse {
+            let input_analyses = speller.clone().analyse_with_config(&word,
+                                                                     &suggest_cfg);
+            writer.write_analyses(&word, &input_analyses);
+            let output_analyses =
+                speller.clone().suggest_with_analyse_with_config(&word,
+                                                                 &suggest_cfg);
+            writer.write_analyses(&word, &output_analyses);
         }
     }
 }
@@ -149,6 +173,9 @@ struct SuggestArgs {
 
     #[options(short = "S", help = "always show suggestions even if word is correct")]
     always_suggest: bool,
+
+    #[options(short = "a", help = "analyse words and suggestions")]
+    analyse: bool,
 
     #[options(help = "maximum weight limit for suggestions")]
     weight: Option<f32>,
@@ -327,6 +354,7 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
         speller,
         words,
         &mut *writer,
+        args.analyse,
         true,
         args.always_suggest,
         &suggest_cfg,

@@ -58,9 +58,9 @@ pub trait Speller {
     fn is_correct_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> bool;
     fn suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
     fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion>;
-}
+//}
 
-pub trait Analyser {
+//pub trait Analyser {
     fn analyse(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
     fn analyse_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion>;
     fn suggest_with_analyse(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
@@ -131,14 +131,14 @@ where
             self.suggest_single(word, config)
         }
     }
-}
+//}
 
-impl<F, T, U> Analyser for HfstSpeller<F, T, U>
-where
-    F: crate::vfs::File + Send,
-    T: Transducer<F> + Send,
-    U: Transducer<F> + Send,
-{
+//impl<F, T, U> Analyser for HfstSpeller<F, T, U>
+//where
+//    F: crate::vfs::File + Send,
+//    T: Transducer<F> + Send,
+//    U: Transducer<F> + Send,
+//{
     #[allow(clippy::wrong_self_convention)]
     fn analyse_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
         if word.len() == 0 {
