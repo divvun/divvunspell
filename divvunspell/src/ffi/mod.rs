@@ -82,6 +82,12 @@ pub unsafe extern "C" fn divvun_enable_logging() {
     env_logger::init();
 }
 
+#[doc(hidden)]
+/// This makes the cffi go brrr.
+pub unsafe extern "C" fn _cffi_string_free(ptr: Slice<u8>) {
+    cffi::ffi::cffi_string_free(ptr);
+}
+
 #[cffi::marshal(return_marshaler = "FbsMarshaler")]
 pub extern "C" fn divvun_cursor_context(
     #[marshal(cffi::StrMarshaler)] first_half: &str,
