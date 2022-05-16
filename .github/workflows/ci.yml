@@ -118,7 +118,7 @@ jobs:
         with:
           name: lib-darwin-aarch64
           path: |
-            target/aarch64-apple-darwin/release/*.a
+            target/aarch64-apple-darwin/release/*.dylib
   deploy-lib-darwin-x86_64:
     needs: check
     runs-on: macos-latest
@@ -142,7 +142,7 @@ jobs:
         with:
           name: lib-darwin-x86_64
           path: |
-            target/x86_64-apple-darwin/release/*.a
+            target/x86_64-apple-darwin/release/*.dylib
   deploy-lib-windows-x86_64:
     needs: check
     runs-on: windows-latest
