@@ -18,6 +18,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: check
+          args: --all-features
   deploy-bin-windows-i686:
     needs: check
     runs-on: windows-latest
