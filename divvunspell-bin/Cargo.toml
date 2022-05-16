@@ -22,5 +22,5 @@ anyhow = "1.0.32"
 structopt = "0.3.17"
 
 [features]
-default = ["gpt2"]
+default = []
 gpt2 = ["divvunspell/gpt2"]

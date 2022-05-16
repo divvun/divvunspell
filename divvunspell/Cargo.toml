@@ -46,8 +46,8 @@ eieio = "1.0.0"
 [features]
 compression = ["zip/deflate"]
 logging = ["env_logger"]
+gpt2 = ["tch", "rust-bert", "rust_tokenizers"]
 
 # Internal features: unstable, not for external use!
 internal_convert = []
 internal_ffi = ["flatbuffers", "logging"]
-gpt2 = ["tch", "rust-bert", "rust_tokenizers"]
