@@ -1,7 +1,7 @@
 [package]
 name = "divvunspell"
 description = "Spell checking library for ZHFST/BHFST spellers, with case handling and tokenization support."
-version = "1.0.0-beta.1"
+version = "1.0.0-beta.3"
 authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
@@ -27,7 +27,7 @@ parking_lot = "0.11.2"
 hashbrown = { version = "0.11", features = ["serde"] }
 lifeguard = "0.6.1"
 smol_str = { version = "0.1.16", features = ["serde"] }
-box-format = { version = "0.3", features = ["reader"], default-features = false }
+box-format = { version = "0.3.2", features = ["reader"], default-features = false }
 itertools = "0.10"
 strsim = "0.10.0"
 log = "0.4.11"
