@@ -438,6 +438,7 @@ fn predict(_args: PredictArgs) -> anyhow::Result<()> {
 fn main() -> anyhow::Result<()> {
     pretty_env_logger::init();
 
+
     let args = Args::parse_args_default_or_exit();
 
     match args.command {

@@ -147,6 +147,7 @@ where
 
         let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
 
+        log::trace!("Beginning analyse with config in mod");
         worker.analyse()
 
         //vec![]
@@ -166,6 +167,7 @@ where
         if word.len() == 0 {
             return vec![];
         }
+        log::trace!("Beginning analyse suggest with config in mod");
         let worker = SpellerWorker::new(self.clone(), self.to_input_vec(word), config.clone());
 
         worker.suggest()

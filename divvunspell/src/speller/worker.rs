@@ -483,6 +483,7 @@ where
     }
 
     pub(crate) fn is_correct(&self) -> bool {
+        log::trace!("is_correct");
         // let max_weight = speller_max_weight(&self.config);
         let pool = Pool::with_size_and_max(0, 0);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
@@ -610,7 +611,7 @@ where
                 .lexicon()
                 .alphabet()
                 .string_from_symbols(&next_node.string);
-
+            log::trace!("suggesting? {}::{}", string, weight);
             if weight < best_weight {
                 best_weight = weight;
             }
@@ -633,6 +634,7 @@ where
         &self,
         corrections: &HashMap<SmolStr, Weight>,
     ) -> Vec<Suggestion> {
+        log::trace!("Generating sorted suggestions");
         let mut c: Vec<Suggestion> = corrections
             .into_iter()
             .map(|x| Suggestion::new(x.0.clone(), *x.1))
