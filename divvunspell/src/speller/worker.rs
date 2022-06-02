@@ -623,10 +623,8 @@ where
                     *entry = weight;
                 }
             }
-
-            suggestions = self.generate_sorted_suggestions(&corrections);
         }
-
+        suggestions = self.generate_sorted_suggestions(&corrections);
         suggestions
     }
 
