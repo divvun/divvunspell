@@ -93,56 +93,6 @@ jobs:
         with:
           command: build
           args: --bin divvunspell --release --target x86_64-apple-darwin
-  deploy-lib-darwin-aarch64:
-    needs: check
-    runs-on: macos-latest
-    env:
-      LZMA_API_STATIC: 1
-    steps:
-      - uses: actions/checkout@v2
-      - name: Questionable workarounds for a questionable OS
-        run: sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          target: aarch64-apple-darwin
-          toolchain: stable
-      - name: Build libdivvunspell
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --lib --release --features compression,internal_ffi --target aarch64-apple-darwin
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          name: lib-darwin-aarch64
-          path: |
-            target/aarch64-apple-darwin/release/*.dylib
-  deploy-lib-darwin-x86_64:
-    needs: check
-    runs-on: macos-latest
-    env:
-      LZMA_API_STATIC: 1
-    steps:
-      - uses: actions/checkout@v2
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          target: x86_64-apple-darwin
-          toolchain: stable
-      - name: Build libdivvunspell
-        uses: actions-rs/cargo@v1
-        with:
-          command: build
-          args: --lib --release --features compression,internal_ffi --target x86_64-apple-darwin
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v2
-        with:
-          name: lib-darwin-x86_64
-          path: |
-            target/x86_64-apple-darwin/release/*.dylib
   deploy-lib-windows-x86_64:
     needs: check
     runs-on: windows-latest
