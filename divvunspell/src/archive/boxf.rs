@@ -104,7 +104,10 @@ pub struct BoxGpt2PredictorArchive {
 
 #[cfg(feature = "gpt2")]
 impl PredictorArchive for BoxGpt2PredictorArchive {
-    fn open(path: &std::path::Path, predictor_name: Option<&str>) -> Result<Self, PredictorArchiveError>
+    fn open(
+        path: &std::path::Path,
+        predictor_name: Option<&str>,
+    ) -> Result<Self, PredictorArchiveError>
     where
         Self: Sized,
     {
@@ -124,7 +127,10 @@ impl PredictorArchive for BoxGpt2PredictorArchive {
         let metadata = serde_json::from_reader(file)?;
 
         let temp_dir = fs.copy_to_temp_dir(&predictor_path).map_err(|e| {
-            PredictorArchiveError::Io(format!("Could not copy '{}' to temp directory", predictor_name), e)
+            PredictorArchiveError::Io(
+                format!("Could not copy '{}' to temp directory", predictor_name),
+                e,
+            )
         })?;
         let model_path = temp_dir.path().join(&predictor_path);
 

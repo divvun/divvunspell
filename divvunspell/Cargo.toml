@@ -42,6 +42,9 @@ rust_tokenizers = { version = "7", optional = true }
 tempfile = "3.3.0"
 fs_extra = "1.2.0"
 eieio = "1.0.0"
+pathos = "0.3.0"
+language-tags = "0.3.2"
+globwalk = "0.8.1"
 
 [features]
 compression = ["zip/deflate"]
