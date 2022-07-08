@@ -19,20 +19,13 @@ pub fn find_speller_path(tag: LanguageTag) -> Option<PathBuf> {
         }
     }
 
-    if let Ok(path) = pathos::macos::user::services_dir() {
-        match globwalk::GlobWalkerBuilder::new(path, &pattern)
-            .build()
-            .unwrap()
-            .into_iter()
-            .filter_map(Result::ok)
-            .next()
-        {
-            Some(v) => return Some(v.path().to_path_buf()),
-            None => {}
-        }
-    }
-
-    None
+    globwalk::GlobWalkerBuilder::new(pathos::macos::system::services_dir(), &pattern)
+        .build()
+        .unwrap()
+        .into_iter()
+        .filter_map(Result::ok)
+        .next()
+        .map(|v| v.path().to_path_buf())
 }
 
 #[cfg(windows)]
