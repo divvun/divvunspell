@@ -611,7 +611,7 @@ where
                 .lexicon()
                 .alphabet()
                 .string_from_symbols(&next_node.string);
-            log::trace!("suggesting? {}::{}", string, weight);
+            // log::trace!("suggesting? {}::{}", string, weight);
             if weight < best_weight {
                 best_weight = weight;
             }
@@ -633,17 +633,24 @@ where
         corrections: &HashMap<SmolStr, Weight>,
     ) -> Vec<Suggestion> {
         log::trace!("Generating sorted suggestions");
-        let mut c: Vec<Suggestion> = corrections
-            .into_iter()
-            .map(|x| Suggestion::new(x.0.clone(), *x.1))
-            .collect();
-
+        let mut c: Vec<Suggestion>;
+        if let Some(s) = &self.config.completion_marker {
+            c = corrections
+                .into_iter()
+                .map(|x| Suggestion::new(x.0.clone(), *x.1, x.0.ends_with(s)))
+                .collect();
+        }
+        else {
+            c = corrections
+                .into_iter()
+                .map(|x| Suggestion::new(x.0.clone(), *x.1, true))
+                .collect();
+        }
         c.sort();
 
         if let Some(n) = self.config.n_best {
             c.truncate(n);
         }
-
         c
     }
 }

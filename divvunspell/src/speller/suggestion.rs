@@ -8,11 +8,12 @@ use std::cmp::Ordering::Equal;
 pub struct Suggestion {
     pub value: SmolStr,
     pub weight: Weight,
+    pub completed: bool,
 }
 
 impl Suggestion {
-    pub fn new(value: SmolStr, weight: Weight) -> Suggestion {
-        Suggestion { value, weight }
+    pub fn new(value: SmolStr, weight: Weight, completed: bool) -> Suggestion {
+        Suggestion { value, weight, completed }
     }
 
     pub fn value(&self) -> &str {
@@ -21,6 +22,10 @@ impl Suggestion {
 
     pub fn weight(&self) -> Weight {
         self.weight
+    }
+    
+    pub fn completed(&self) -> bool {
+        self.completed
     }
 }
 

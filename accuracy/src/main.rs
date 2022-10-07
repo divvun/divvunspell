@@ -21,6 +21,7 @@ static CFG: SpellerConfig = SpellerConfig {
     beam: None,
     case_handling: Some(CaseHandlingConfig::default()),
     node_pool_size: 128,
+    completion_marker: None,
 };
 
 fn load_words(

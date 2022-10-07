@@ -29,6 +29,7 @@ pub struct SpellerConfig {
     pub beam: Option<Weight>,
     pub case_handling: Option<CaseHandlingConfig>,
     pub node_pool_size: usize,
+    pub completion_marker: Option<String>,
 }
 
 impl SpellerConfig {
@@ -39,6 +40,7 @@ impl SpellerConfig {
             beam: None,
             case_handling: Some(CaseHandlingConfig::default()),
             node_pool_size: 128,
+            completion_marker: None,
         }
     }
 }
@@ -236,6 +238,7 @@ where
     fn suggest_single(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
         let worker = SpellerWorker::new(self.clone(), self.to_input_vec(word), config.clone());
 
+        log::trace!("suggesting single {}", word);
         worker.suggest()
     }
 
@@ -247,6 +250,7 @@ where
     ) -> Vec<Suggestion> {
         use crate::tokenizer::case_handling::*;
 
+        log::trace!("suggesting cases...");
         let CaseHandler {
             original_input,
             mutation,
@@ -256,6 +260,7 @@ where
         let mut best: HashMap<SmolStr, f32> = HashMap::new();
 
         for word in std::iter::once(&original_input).chain(words.iter()) {
+            log::trace!("suggesting for word {}", word);
             let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
             let mut suggestions = worker.suggest();
 
@@ -275,7 +280,9 @@ where
 
             match mode {
                 CaseMode::MergeAll => {
+                    log::trace!("Case merge all");
                     for sugg in suggestions.into_iter() {
+                        log::trace!("for {}", sugg.value);
                         let penalty_start =
                             if !sugg.value().starts_with(word.chars().next().unwrap()) {
                                 case_handling.start_penalty
@@ -316,14 +323,27 @@ where
         if best.is_empty() {
             return vec![];
         }
-
-        let mut out = best
-            .into_iter()
-            .map(|(k, v)| Suggestion {
-                value: k,
-                weight: v,
-            })
+        let mut out: Vec<Suggestion>;
+        if let Some(s) = &config.completion_marker {
+            out = best
+                .into_iter()
+                .map(|(k, v)| Suggestion {
+                    value: k.clone(),
+                    weight: v,
+                    completed: !k.ends_with(s),
+                })
             .collect::<Vec<_>>();
+        }
+        else {
+            out = best
+                .into_iter()
+                .map(|(k, v)| Suggestion {
+                    value: k,
+                    weight: v,
+                    completed: true,
+                })
+            .collect::<Vec<_>>();
+        }
         out.sort();
         if let Some(n_best) = config.n_best {
             out.truncate(n_best);

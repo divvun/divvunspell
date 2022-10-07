@@ -42,7 +42,9 @@ impl OutputWriter for StdoutWriter {
 
     fn write_suggestions(&mut self, _word: &str, suggestions: &[Suggestion]) {
         for sugg in suggestions {
-            println!("{}\t\t{}", sugg.value, sugg.weight);
+
+            println!("{}\t\t{} (is complete {})", sugg.value, sugg.weight,
+                     sugg.completed);
         }
         println!();
     }
@@ -183,6 +185,9 @@ struct SuggestArgs {
     #[options(help = "maximum number of results")]
     nbest: Option<usize>,
 
+    #[options(help = "Character for incomplete predictions")]
+    continuation_marker: Option<String>,
+
     #[options(
         no_short,
         long = "no-case-handling",
@@ -310,7 +315,7 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
     if args.disable_case_handling {
         suggest_cfg.case_handling = None;
     }
-
+    suggest_cfg.completion_marker = args.continuation_marker;
     if let Some(v) = args.nbest {
         if v == 0 {
             suggest_cfg.n_best = None;
