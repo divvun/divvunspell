@@ -11,6 +11,6 @@ fn main() {
 
     match divvunspell::paths::find_speller_path(tag) {
         Some(v) => println!("Found: {}", v.display()),
-        None => println!("Not found!")
+        None => println!("Not found!"),
     }
-} 
+}

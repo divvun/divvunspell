@@ -2,8 +2,7 @@
 
 An implementation of [hfst-ospell](https://github.com/hfst/hfst-ospell) in Rust, with added features like tokenization, case handling, and parallelisation.
 
-[![Actions Status](https://github.com/divvun/divvunspell/workflows/Continuous%20Integration/badge.svg)](https://github.com/divvun/divvunspell/actions)
-
+[![CI](https://github.com/divvun/divvunspell/actions/workflows/ci.yml/badge.svg)](https://github.com/divvun/divvunspell/actions/workflows/ci.yml)
 
 ## Building and installing commandline tools
 

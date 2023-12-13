@@ -36,12 +36,12 @@ pub extern "C" fn divvun_word_indices_next<'a>(
 
 #[no_mangle]
 pub extern "C" fn divvun_word_indices_free<'a>(handle: *mut WordIndices<'a>) {
-    unsafe { Box::from_raw(handle) };
+    drop(unsafe { Box::from_raw(handle) });
 }
 
 #[no_mangle]
 pub extern "C" fn divvun_cstr_free(handle: *mut c_char) {
-    unsafe { CString::from_raw(handle) };
+    drop(unsafe { CString::from_raw(handle) });
 }
 
 use crate::ffi::fbs::IntoFlatbuffer;

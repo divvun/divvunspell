@@ -187,7 +187,7 @@ mod tests {
 
     #[test]
     fn test() {
-        let a = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        let _a = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
             .chars()
             .map(|c| SmolStr::from(c.to_string()))
             .collect::<Vec<SmolStr>>();
