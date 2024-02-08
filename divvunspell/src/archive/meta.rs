@@ -90,7 +90,7 @@ fn test_xml_parse() {
             <locale>se</locale>
             <title>Giellatekno/Divvun/UiT fst-based speller for Northern Sami</title>
             <description>This is an fst-based speller for Northern Sami. It is based
-            on the normative subset of the morphological analyser for Northern Sami.
+            on the normative subset of the morphological analyzer for Northern Sami.
             The source code can be found at:
             https://victorio.uit.no/langtech/trunk/langs/sme/
             License: GPL3+.</description>

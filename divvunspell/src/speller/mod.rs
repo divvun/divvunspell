@@ -29,7 +29,7 @@ pub struct SpellerConfig {
     pub beam: Option<Weight>,
     pub case_handling: Option<CaseHandlingConfig>,
     pub node_pool_size: usize,
-    pub completion_marker: Option<String>,
+    pub continuation_marker: Option<String>,
 }
 
 impl SpellerConfig {
@@ -40,7 +40,7 @@ impl SpellerConfig {
             beam: None,
             case_handling: Some(CaseHandlingConfig::default()),
             node_pool_size: 128,
-            completion_marker: None,
+            continuation_marker: None,
         }
     }
 }
@@ -55,19 +55,22 @@ impl CaseHandlingConfig {
     }
 }
 
-pub trait Speller {
+pub trait Speller: Analyzer {
     fn is_correct(self: Arc<Self>, word: &str) -> bool;
     fn is_correct_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> bool;
     fn suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
     fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion>;
-//}
+}
 
-//pub trait Analyser {
-    fn analyse(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
-    fn analyse_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion>;
-    fn suggest_with_analyse(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
-    fn suggest_with_analyse_with_config(self: Arc<Self>, word: &str, config:
-                                        &SpellerConfig) -> Vec<Suggestion>;
+pub trait Analyzer {
+    fn analyze_input(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
+    fn analyze_input_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion>;
+    fn analyze_output(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
+    fn analyze_output_with_config(
+        self: Arc<Self>,
+        word: &str,
+        config: &SpellerConfig,
+    ) -> Vec<Suggestion>;
 }
 
 impl<F, T, U> Speller for HfstSpeller<F, T, U>
@@ -133,47 +136,48 @@ where
             self.suggest_single(word, config)
         }
     }
-//}
+}
 
-//impl<F, T, U> Analyser for HfstSpeller<F, T, U>
-//where
-//    F: crate::vfs::File + Send,
-//    T: Transducer<F> + Send,
-//    U: Transducer<F> + Send,
-//{
+impl<F, T, U> Analyzer for HfstSpeller<F, T, U>
+where
+    F: crate::vfs::File + Send,
+    T: Transducer<F> + Send,
+    U: Transducer<F> + Send,
+{
     #[allow(clippy::wrong_self_convention)]
-    fn analyse_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
+    fn analyze_input_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
         if word.len() == 0 {
             return vec![];
         }
 
         let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
 
-        log::trace!("Beginning analyse with config in mod");
-        worker.analyse()
-
-        //vec![]
+        log::trace!("Beginning analyze with config in mod");
+        worker.analyze()
     }
 
     #[inline]
-    fn analyse(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
-        self.analyse_with_config(word, &SpellerConfig::default())
+    fn analyze_input(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
+        self.analyze_input_with_config(word, &SpellerConfig::default())
     }
 
     #[inline]
-    fn suggest_with_analyse(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
-        self.suggest_with_analyse_with_config(word, &SpellerConfig::default())
+    fn analyze_output(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
+        self.analyze_output_with_config(word, &SpellerConfig::default())
     }
 
-    fn suggest_with_analyse_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
+    fn analyze_output_with_config(
+        self: Arc<Self>,
+        word: &str,
+        config: &SpellerConfig,
+    ) -> Vec<Suggestion> {
         if word.len() == 0 {
             return vec![];
         }
-        log::trace!("Beginning analyse suggest with config in mod");
+        log::trace!("Beginning analyze suggest with config in mod");
         let worker = SpellerWorker::new(self.clone(), self.to_input_vec(word), config.clone());
 
         worker.suggest()
-
     }
 }
 
@@ -324,7 +328,7 @@ where
             return vec![];
         }
         let mut out: Vec<Suggestion>;
-        if let Some(s) = &config.completion_marker {
+        if let Some(s) = &config.continuation_marker {
             out = best
                 .into_iter()
                 .map(|(k, v)| Suggestion {
@@ -332,9 +336,8 @@ where
                     weight: v,
                     completed: !k.ends_with(s),
                 })
-            .collect::<Vec<_>>();
-        }
-        else {
+                .collect::<Vec<_>>();
+        } else {
             out = best
                 .into_iter()
                 .map(|(k, v)| Suggestion {
@@ -342,7 +345,7 @@ where
                     weight: v,
                     completed: true,
                 })
-            .collect::<Vec<_>>();
+                .collect::<Vec<_>>();
         }
         out.sort();
         if let Some(n_best) = config.n_best {

@@ -502,8 +502,8 @@ where
         false
     }
 
-    pub(crate) fn analyse(&self) -> Vec<Suggestion> {
-        log::trace!("Beginning analyse");
+    pub(crate) fn analyze(&self) -> Vec<Suggestion> {
+        log::trace!("Beginning analyze");
         let pool = Pool::with_size_and_max(0, 0);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
         let mut lookups = HashMap::new();
@@ -536,7 +536,6 @@ where
                         *entry = weight;
                     }
                 }
-
             }
             analyses = self.generate_sorted_suggestions(&lookups);
         }
@@ -623,8 +622,9 @@ where
                     *entry = weight;
                 }
             }
+            
+            suggestions = self.generate_sorted_suggestions(&corrections);
         }
-        suggestions = self.generate_sorted_suggestions(&corrections);
         suggestions
     }
 
@@ -634,13 +634,12 @@ where
     ) -> Vec<Suggestion> {
         log::trace!("Generating sorted suggestions");
         let mut c: Vec<Suggestion>;
-        if let Some(s) = &self.config.completion_marker {
+        if let Some(s) = &self.config.continuation_marker {
             c = corrections
                 .into_iter()
                 .map(|x| Suggestion::new(x.0.clone(), *x.1, x.0.ends_with(s)))
                 .collect();
-        }
-        else {
+        } else {
             c = corrections
                 .into_iter()
                 .map(|x| Suggestion::new(x.0.clone(), *x.1, true))

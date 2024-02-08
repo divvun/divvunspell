@@ -13,7 +13,11 @@ pub struct Suggestion {
 
 impl Suggestion {
     pub fn new(value: SmolStr, weight: Weight, completed: bool) -> Suggestion {
-        Suggestion { value, weight, completed }
+        Suggestion {
+            value,
+            weight,
+            completed,
+        }
     }
 
     pub fn value(&self) -> &str {
@@ -23,7 +27,7 @@ impl Suggestion {
     pub fn weight(&self) -> Weight {
         self.weight
     }
-    
+
     pub fn completed(&self) -> bool {
         self.completed
     }
