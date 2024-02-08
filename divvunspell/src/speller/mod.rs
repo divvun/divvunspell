@@ -29,6 +29,7 @@ pub struct SpellerConfig {
     pub beam: Option<Weight>,
     pub case_handling: Option<CaseHandlingConfig>,
     pub node_pool_size: usize,
+    pub continuation_marker: Option<String>,
 }
 
 impl SpellerConfig {
@@ -39,6 +40,7 @@ impl SpellerConfig {
             beam: None,
             case_handling: Some(CaseHandlingConfig::default()),
             node_pool_size: 128,
+            continuation_marker: None,
         }
     }
 }
@@ -53,11 +55,22 @@ impl CaseHandlingConfig {
     }
 }
 
-pub trait Speller {
+pub trait Speller: Analyzer {
     fn is_correct(self: Arc<Self>, word: &str) -> bool;
     fn is_correct_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> bool;
     fn suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
     fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion>;
+}
+
+pub trait Analyzer {
+    fn analyze_input(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
+    fn analyze_input_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion>;
+    fn analyze_output(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
+    fn analyze_output_with_config(
+        self: Arc<Self>,
+        word: &str,
+        config: &SpellerConfig,
+    ) -> Vec<Suggestion>;
 }
 
 impl<F, T, U> Speller for HfstSpeller<F, T, U>
@@ -125,6 +138,49 @@ where
     }
 }
 
+impl<F, T, U> Analyzer for HfstSpeller<F, T, U>
+where
+    F: crate::vfs::File + Send,
+    T: Transducer<F> + Send,
+    U: Transducer<F> + Send,
+{
+    #[allow(clippy::wrong_self_convention)]
+    fn analyze_input_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
+        if word.len() == 0 {
+            return vec![];
+        }
+
+        let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
+
+        log::trace!("Beginning analyze with config in mod");
+        worker.analyze()
+    }
+
+    #[inline]
+    fn analyze_input(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
+        self.analyze_input_with_config(word, &SpellerConfig::default())
+    }
+
+    #[inline]
+    fn analyze_output(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
+        self.analyze_output_with_config(word, &SpellerConfig::default())
+    }
+
+    fn analyze_output_with_config(
+        self: Arc<Self>,
+        word: &str,
+        config: &SpellerConfig,
+    ) -> Vec<Suggestion> {
+        if word.len() == 0 {
+            return vec![];
+        }
+        log::trace!("Beginning analyze suggest with config in mod");
+        let worker = SpellerWorker::new(self.clone(), self.to_input_vec(word), config.clone());
+
+        worker.suggest()
+    }
+}
+
 #[derive(Debug)]
 pub struct HfstSpeller<F, T, U>
 where
@@ -186,6 +242,7 @@ where
     fn suggest_single(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
         let worker = SpellerWorker::new(self.clone(), self.to_input_vec(word), config.clone());
 
+        log::trace!("suggesting single {}", word);
         worker.suggest()
     }
 
@@ -197,6 +254,7 @@ where
     ) -> Vec<Suggestion> {
         use crate::tokenizer::case_handling::*;
 
+        log::trace!("suggesting cases...");
         let CaseHandler {
             original_input,
             mutation,
@@ -206,6 +264,7 @@ where
         let mut best: HashMap<SmolStr, f32> = HashMap::new();
 
         for word in std::iter::once(&original_input).chain(words.iter()) {
+            log::trace!("suggesting for word {}", word);
             let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
             let mut suggestions = worker.suggest();
 
@@ -225,7 +284,9 @@ where
 
             match mode {
                 CaseMode::MergeAll => {
+                    log::trace!("Case merge all");
                     for sugg in suggestions.into_iter() {
+                        log::trace!("for {}", sugg.value);
                         let penalty_start =
                             if !sugg.value().starts_with(word.chars().next().unwrap()) {
                                 case_handling.start_penalty
@@ -266,14 +327,26 @@ where
         if best.is_empty() {
             return vec![];
         }
-
-        let mut out = best
-            .into_iter()
-            .map(|(k, v)| Suggestion {
-                value: k,
-                weight: v,
-            })
-            .collect::<Vec<_>>();
+        let mut out: Vec<Suggestion>;
+        if let Some(s) = &config.continuation_marker {
+            out = best
+                .into_iter()
+                .map(|(k, v)| Suggestion {
+                    value: k.clone(),
+                    weight: v,
+                    completed: !k.ends_with(s),
+                })
+                .collect::<Vec<_>>();
+        } else {
+            out = best
+                .into_iter()
+                .map(|(k, v)| Suggestion {
+                    value: k,
+                    weight: v,
+                    completed: true,
+                })
+                .collect::<Vec<_>>();
+        }
         out.sort();
         if let Some(n_best) = config.n_best {
             out.truncate(n_best);
@@ -390,6 +463,7 @@ pub(crate) mod ffi {
                 },
                 case_handling,
                 node_pool_size: config.node_pool_size,
+                completion_marker: None,
             };
 
             Ok(out)
