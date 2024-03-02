@@ -52,7 +52,7 @@ impl OutputWriter for StdoutWriter {
         if let Some(s) = &self.has_continuation_marker {
             for sugg in suggestions {
                 print!("{}", sugg.value);
-                if !sugg.completed {
+                if sugg.completed == Some(true) {
                     print!("{s}");
                 }
                 println!("\t\t{}", sugg.weight);

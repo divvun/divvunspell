@@ -64,7 +64,11 @@ pub trait Speller: Analyzer {
 
 pub trait Analyzer {
     fn analyze_input(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
-    fn analyze_input_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion>;
+    fn analyze_input_with_config(
+        self: Arc<Self>,
+        word: &str,
+        config: &SpellerConfig,
+    ) -> Vec<Suggestion>;
     fn analyze_output(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
     fn analyze_output_with_config(
         self: Arc<Self>,
@@ -145,7 +149,11 @@ where
     U: Transducer<F> + Send,
 {
     #[allow(clippy::wrong_self_convention)]
-    fn analyze_input_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
+    fn analyze_input_with_config(
+        self: Arc<Self>,
+        word: &str,
+        config: &SpellerConfig,
+    ) -> Vec<Suggestion> {
         if word.len() == 0 {
             return vec![];
         }
@@ -334,7 +342,7 @@ where
                 .map(|(k, v)| Suggestion {
                     value: k.clone(),
                     weight: v,
-                    completed: !k.ends_with(s),
+                    completed: Some(!k.ends_with(s)),
                 })
                 .collect::<Vec<_>>();
         } else {
@@ -343,7 +351,7 @@ where
                 .map(|(k, v)| Suggestion {
                     value: k,
                     weight: v,
-                    completed: true,
+                    completed: None,
                 })
                 .collect::<Vec<_>>();
         }

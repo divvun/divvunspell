@@ -622,7 +622,7 @@ where
                     *entry = weight;
                 }
             }
-            
+
             suggestions = self.generate_sorted_suggestions(&corrections);
         }
         suggestions
@@ -637,12 +637,12 @@ where
         if let Some(s) = &self.config.continuation_marker {
             c = corrections
                 .into_iter()
-                .map(|x| Suggestion::new(x.0.clone(), *x.1, x.0.ends_with(s)))
+                .map(|x| Suggestion::new(x.0.clone(), *x.1, Some(x.0.ends_with(s))))
                 .collect();
         } else {
             c = corrections
                 .into_iter()
-                .map(|x| Suggestion::new(x.0.clone(), *x.1, true))
+                .map(|x| Suggestion::new(x.0.clone(), *x.1, None))
                 .collect();
         }
         c.sort();

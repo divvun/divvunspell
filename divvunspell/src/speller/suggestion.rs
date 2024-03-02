@@ -8,11 +8,12 @@ use std::cmp::Ordering::Equal;
 pub struct Suggestion {
     pub value: SmolStr,
     pub weight: Weight,
-    pub completed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completed: Option<bool>,
 }
 
 impl Suggestion {
-    pub fn new(value: SmolStr, weight: Weight, completed: bool) -> Suggestion {
+    pub fn new(value: SmolStr, weight: Weight, completed: Option<bool>) -> Suggestion {
         Suggestion {
             value,
             weight,
@@ -28,7 +29,7 @@ impl Suggestion {
         self.weight
     }
 
-    pub fn completed(&self) -> bool {
+    pub fn completed(&self) -> Option<bool> {
         self.completed
     }
 }
