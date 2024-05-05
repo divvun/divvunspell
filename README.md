@@ -38,30 +38,31 @@ cargo build --release
 ### divvunspell
 Usage:
 
-```
-divvunspell 0.5.0
-Testing frontend for the Divvunspell library
+```sh
+Usage: divvunspell SUBCOMMAND [OPTIONS]
 
-USAGE:
-    divvunspell [FLAGS] [OPTIONS] <--zhfst <ZHFST>|--bhfst <BHFST>|--acceptor <acceptor>> [WORDS]...
+Optional arguments:
+  -h, --help  print help message
 
-FLAGS:
-    -S, --always-suggest    Always show suggestions even if word is correct (implies -s)
-    -h, --help              Prints help information
-        --json              Output results in JSON
-    -s, --suggest           Show suggestions for given word(s)
-    -V, --version           Prints version information
+Available subcommands:
+  suggest   get suggestions for provided input
+  tokenize  print input in word-separated tokenized form
+  predict   predict next words using GPT2 model
 
-OPTIONS:
-        --acceptor <acceptor>    Use the given acceptor file
-    -b, --bhfst <BHFST>          Use the given BHFST file
-        --errmodel <errmodel>    Use the given errmodel file
-    -n, --nbest <nbest>          Maximum number of results for suggestions
-    -w, --weight <weight>        Maximum weight limit for suggestions
-    -z, --zhfst <ZHFST>          Use the given ZHFST file
+$ divvunspell suggest -h
+Usage: divvunspell suggest [OPTIONS]
 
-ARGS:
-    <WORDS>...    The words to be processed
+Positional arguments:
+  inputs                 words to be processed
+
+Optional arguments:
+  -h, --help             print help message
+  -a, --archive ARCHIVE  BHFST or ZHFST archive to be used
+  -S, --always-suggest   always show suggestions even if word is correct
+  -w, --weight WEIGHT    maximum weight limit for suggestions
+  -n, --nbest NBEST      maximum number of results
+  --no-case-handling     disables case-handling algorithm (makes results more like hfst-ospell)
+  --json                 output in JSON format
 ```
 
 ### accuracy
