@@ -10,7 +10,7 @@ An implementation of [hfst-ospell](https://github.com/hfst/hfst-ospell) in Rust,
 # For the `divvunspell` binary:
 cargo install divvunspell-bin
 
-# For `thfst-tools` binary:
+# For `thfst-tools` binary (most people can skip this one):
 cargo install thfst-tools
 
 # To build the development version from this source, cd into the relevant directory and:
@@ -18,6 +18,8 @@ cargo install --path .
 ```
 
 ### Building with `gpt2` support on macOS aarch64
+
+(Skip this if you are not experimenting with gpt2 support. So skip. Now.)
 
 Clone this repo then:
 
