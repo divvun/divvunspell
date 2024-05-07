@@ -69,8 +69,8 @@ Optional arguments:
 Usage:
 
 ```
-divvunspell-accuracy 1.0.0-alpha.5
-Accuracy testing for Divvunspell.
+divvunspell-accuracy 1.0.0-beta.1
+Accuracy testing for DivvunSpell.
 
 USAGE:
     accuracy [OPTIONS] [ARGS]
@@ -83,6 +83,7 @@ OPTIONS:
     -c <config>             Provide JSON config file to override test defaults
     -o <JSON-OUTPUT>        The file path for the JSON report output
     -w <max-words>          Truncate typos list to max number of words specified
+    -t <TSV-OUTPUT>         The file path for the TSV line append
 
 ARGS:
     <WORDS>    The 'input -> expected' list in tab-delimited value file (TSV)
