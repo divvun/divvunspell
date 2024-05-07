@@ -75,7 +75,7 @@ cd accuracy/
 cargo install --path .
 ```
 
-The resulting binary is placed in `$HOME/.cargo/bin/accuracy`, make sure it is on the path.
+The resulting binary `accuracy` is placed in `$HOME/.cargo/bin/`, make sure it is on the path.
 
 Usage:
 
