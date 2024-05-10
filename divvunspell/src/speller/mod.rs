@@ -471,7 +471,7 @@ pub(crate) mod ffi {
                 },
                 case_handling,
                 node_pool_size: config.node_pool_size,
-                completion_marker: None,
+                continuation_marker: None,
             };
 
             Ok(out)
