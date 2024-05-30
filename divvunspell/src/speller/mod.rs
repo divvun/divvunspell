@@ -86,7 +86,8 @@ where
         } else {
             vec![]
         };
-
+        log::debug!("is_correct_with_config: ‘{}’ ~ {:?}?; config: {:?}",
+            word, words, config);
         for word in std::iter::once(word.into()).chain(words.into_iter()) {
             let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
 
