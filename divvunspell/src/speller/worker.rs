@@ -485,6 +485,7 @@ where
     }
 
     pub(crate) fn is_correct(&self) -> bool {
+        log::trace!("is_correct");
         // let max_weight = speller_max_weight(&self.config);
         let pool = Pool::with_size_and_max(0, 0);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
@@ -501,6 +502,46 @@ where
         }
 
         false
+    }
+
+    pub(crate) fn analyze(&self) -> Vec<Suggestion> {
+        log::trace!("Beginning analyze");
+        let pool = Pool::with_size_and_max(0, 0);
+        let mut nodes = speller_start_node(&pool, self.state_size() as usize);
+        let mut lookups = HashMap::new();
+        let mut analyses: Vec<Suggestion> = vec![];
+        let best_weight = self.config.max_weight.unwrap_or(f32::MAX);
+
+        while let Some(next_node) = nodes.pop() {
+            let max_weight = self.update_weight_limit(best_weight, &analyses);
+
+            self.lexicon_epsilons(&pool, max_weight, &next_node, &mut nodes);
+            self.lexicon_consume(&pool, max_weight, &next_node, &mut nodes);
+            if self.speller.lexicon().is_final(next_node.lexicon_state) {
+                let weight = next_node.weight()
+                    + self
+                        .speller
+                        .lexicon()
+                        .final_weight(next_node.lexicon_state)
+                        .unwrap();
+
+                let string = self
+                    .speller
+                    .lexicon()
+                    .alphabet()
+                    .string_from_symbols(&next_node.string);
+
+                {
+                    let entry = lookups.entry(string).or_insert(weight);
+
+                    if *entry > weight {
+                        *entry = weight;
+                    }
+                }
+            }
+            analyses = self.generate_sorted_suggestions(&lookups);
+        }
+        analyses
     }
 
     pub(crate) fn suggest(&self) -> Vec<Suggestion> {
@@ -571,7 +612,7 @@ where
                 .lexicon()
                 .alphabet()
                 .string_from_symbols(&next_node.string);
-
+            // log::trace!("suggesting? {}::{}", string, weight);
             if weight < best_weight {
                 best_weight = weight;
             }
@@ -586,7 +627,6 @@ where
 
             suggestions = self.generate_sorted_suggestions(&corrections);
         }
-
         suggestions
     }
 
@@ -594,17 +634,24 @@ where
         &self,
         corrections: &HashMap<SmolStr, Weight>,
     ) -> Vec<Suggestion> {
-        let mut c: Vec<Suggestion> = corrections
-            .into_iter()
-            .map(|x| Suggestion::new(x.0.clone(), *x.1))
-            .collect();
-
+        log::trace!("Generating sorted suggestions");
+        let mut c: Vec<Suggestion>;
+        if let Some(s) = &self.config.continuation_marker {
+            c = corrections
+                .into_iter()
+                .map(|x| Suggestion::new(x.0.clone(), *x.1, Some(x.0.ends_with(s))))
+                .collect();
+        } else {
+            c = corrections
+                .into_iter()
+                .map(|x| Suggestion::new(x.0.clone(), *x.1, None))
+                .collect();
+        }
         c.sort();
 
         if let Some(n) = self.config.n_best {
             c.truncate(n);
         }
-
         c
     }
 }
