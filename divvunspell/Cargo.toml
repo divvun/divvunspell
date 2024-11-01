@@ -50,6 +50,7 @@ globwalk = "0.8.1"
 compression = ["zip/deflate"]
 logging = ["env_logger"]
 gpt2 = ["tch", "rust-bert", "rust_tokenizers"]
+cargo-clippy = []
 
 # Internal features: unstable, not for external use!
 internal_convert = []
