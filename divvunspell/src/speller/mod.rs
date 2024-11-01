@@ -5,12 +5,14 @@ use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 use unic_ucd_category::GeneralCategory;
+use unic_segment::Graphemes;
 
 use self::worker::SpellerWorker;
 use crate::speller::suggestion::Suggestion;
 use crate::tokenizer::case_handling::CaseHandler;
 use crate::transducer::Transducer;
 use crate::types::{SymbolNumber, Weight};
+
 
 pub mod suggestion;
 mod worker;
@@ -172,7 +174,8 @@ where
         let alphabet = self.mutator().alphabet();
         let key_table = alphabet.key_table();
 
-        word.chars()
+        log::trace!("to_input_vec: {}", word);
+        Graphemes::new(word)
             .map(|ch| {
                 let s = ch.to_string();
                 key_table
