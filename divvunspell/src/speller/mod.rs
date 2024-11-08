@@ -18,7 +18,7 @@ pub mod suggestion;
 mod worker;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CaseHandlingConfig {
+pub struct ReweightingConfig {
     start_penalty: f32,
     end_penalty: f32,
     mid_penalty: f32,
@@ -29,8 +29,9 @@ pub struct SpellerConfig {
     pub n_best: Option<usize>,
     pub max_weight: Option<Weight>,
     pub beam: Option<Weight>,
-    pub case_handling: Option<CaseHandlingConfig>,
+    pub reweight: Option<ReweightingConfig>,
     pub node_pool_size: usize,
+    pub recase: bool,
 }
 
 impl SpellerConfig {
@@ -39,15 +40,16 @@ impl SpellerConfig {
             n_best: Some(10),
             max_weight: Some(10000.0),
             beam: None,
-            case_handling: Some(CaseHandlingConfig::default()),
+            reweight: Some(ReweightingConfig::default()),
             node_pool_size: 128,
+            recase: true,
         }
     }
 }
 
-impl CaseHandlingConfig {
-    pub const fn default() -> CaseHandlingConfig {
-        CaseHandlingConfig {
+impl ReweightingConfig {
+    pub const fn default() -> ReweightingConfig {
+        ReweightingConfig {
             start_penalty: 10.0,
             end_penalty: 10.0,
             mid_penalty: 5.0,
@@ -82,7 +84,7 @@ where
             return true;
         }
 
-        let words = if config.case_handling.is_some() {
+        let words = if config.recase {
             let variants = word_variants(word);
             variants.words
         } else {
@@ -118,10 +120,10 @@ where
             return vec![];
         }
 
-        if let Some(case_handling) = config.case_handling.as_ref() {
+        if let Some(reweight) = config.reweight.as_ref() {
             let case_handler = word_variants(word);
 
-            self.suggest_case(case_handler, config, case_handling)
+            self.suggest_case(case_handler, config, reweight)
         } else {
             self.suggest_single(word, config)
         }
@@ -197,7 +199,7 @@ where
         self: Arc<Self>,
         case: CaseHandler,
         config: &SpellerConfig,
-        case_handling: &CaseHandlingConfig,
+        reweight: &ReweightingConfig,
     ) -> Vec<Suggestion> {
         use crate::tokenizer::case_handling::*;
 
@@ -232,13 +234,13 @@ where
                     for sugg in suggestions.into_iter() {
                         let penalty_start =
                             if !sugg.value().starts_with(word.chars().next().unwrap()) {
-                                case_handling.start_penalty
+                                reweight.start_penalty
                             } else {
                                 0.0
                             };
                         let penalty_end =
                             if !sugg.value().ends_with(word.chars().rev().next().unwrap()) {
-                                case_handling.end_penalty
+                                reweight.end_penalty
                             } else {
                                 0.0
                             };
@@ -246,7 +248,7 @@ where
                         let distance =
                             strsim::damerau_levenshtein(&words[0].as_str(), &word.as_str())
                                 + strsim::damerau_levenshtein(&word.as_str(), sugg.value());
-                        let penalty_middle = case_handling.mid_penalty * distance as f32;
+                        let penalty_middle = reweight.mid_penalty * distance as f32;
                         let additional_weight = penalty_start + penalty_end + penalty_middle;
 
                         best.entry(sugg.value.clone())
@@ -298,7 +300,7 @@ pub(crate) mod ffi {
 
     #[derive(Clone, Copy, Default, PartialEq)]
     #[repr(C)]
-    pub struct FfiCaseHandlingConfig {
+    pub struct FfiReweightingConfig {
         start_penalty: f32,
         end_penalty: f32,
         mid_penalty: f32,
@@ -310,7 +312,7 @@ pub(crate) mod ffi {
         pub n_best: usize,
         pub max_weight: Weight,
         pub beam: Weight,
-        pub case_handling: FfiCaseHandlingConfig,
+        pub reweight: FfiReweightingConfig,
         pub node_pool_size: usize,
     }
 
@@ -334,20 +336,20 @@ pub(crate) mod ffi {
         type Error = Infallible;
 
         fn to_foreign(config: SpellerConfig) -> Result<*const c_void, Self::Error> {
-            let case_handling = config
-                .case_handling
-                .map(|c| FfiCaseHandlingConfig {
+            let reweight = config
+                .reweight
+                .map(|c| FfiReweightingConfig {
                     start_penalty: c.start_penalty,
                     end_penalty: c.end_penalty,
                     mid_penalty: c.mid_penalty,
                 })
-                .unwrap_or_else(|| FfiCaseHandlingConfig::default());
+                .unwrap_or_else(|| FfiReweightingConfig::default());
 
             let out = FfiSpellerConfig {
                 n_best: config.n_best.unwrap_or(0),
                 max_weight: config.max_weight.unwrap_or(0.0),
                 beam: config.beam.unwrap_or(0.0),
-                case_handling,
+                reweight,
                 node_pool_size: config.node_pool_size,
             };
 
@@ -365,11 +367,11 @@ pub(crate) mod ffi {
 
             let config: &FfiSpellerConfig = &*ptr.cast();
 
-            let case_handling = if config.case_handling == FfiCaseHandlingConfig::default() {
+            let reweight = if config.case_handling == FfiReweightingConfig::default() {
                 None
             } else {
-                let c = config.case_handling;
-                Some(CaseHandlingConfig {
+                let c = config.reweight;
+                Some(ReweightingConfig {
                     start_penalty: c.start_penalty,
                     end_penalty: c.end_penalty,
                     mid_penalty: c.mid_penalty,
@@ -392,7 +394,7 @@ pub(crate) mod ffi {
                 } else {
                     None
                 },
-                case_handling,
+                reweight,
                 node_pool_size: config.node_pool_size,
             };
 

@@ -9,7 +9,7 @@ use std::{
 use distance::damerau_levenshtein;
 use divvunspell::archive;
 use divvunspell::speller::suggestion::Suggestion;
-use divvunspell::speller::{CaseHandlingConfig, SpellerConfig};
+use divvunspell::speller::{ReweightingConfig, SpellerConfig};
 use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::Serialize;
@@ -19,8 +19,9 @@ static CFG: SpellerConfig = SpellerConfig {
     n_best: Some(10),
     max_weight: Some(10000.0),
     beam: None,
-    case_handling: Some(CaseHandlingConfig::default()),
+    reweight: Some(ReweightingConfig::default()),
     node_pool_size: 128,
+    recase: true
 };
 
 fn load_words(

@@ -158,10 +158,17 @@ struct SuggestArgs {
 
     #[options(
         no_short,
-        long = "no-case-handling",
-        help = "disables case-handling algorithm (makes results more like hfst-ospell)"
+        long = "no-reweighting",
+        help = "disables reweighting algorithm (makes results more like hfst-ospell)"
     )]
-    disable_case_handling: bool,
+    disable_reweight: bool,
+
+    #[options(
+        no_short,
+        long = "no-recase",
+        help = "disables recasing algorithm (makes results more like hfst-ospell)"
+    )]
+    disable_recase: bool,
 
     #[options(no_short, long = "json", help = "output in JSON format")]
     use_json: bool,
@@ -280,8 +287,11 @@ fn load_archive(path: &Path) -> Result<Box<dyn SpellerArchive>, SpellerArchiveEr
 fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
     let mut suggest_cfg = SpellerConfig::default();
 
-    if args.disable_case_handling {
-        suggest_cfg.case_handling = None;
+    if args.disable_reweight {
+        suggest_cfg.reweight = None;
+    }
+    if args.disable_recase {
+        suggest_cfg.recase = false;
     }
 
     if let Some(v) = args.nbest {
