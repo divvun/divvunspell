@@ -17,6 +17,7 @@ use crate::types::{SymbolNumber, Weight};
 pub mod suggestion;
 mod worker;
 
+/// configurable extra penalties for edit distance
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ReweightingConfig {
     start_penalty: f32,
@@ -24,17 +25,31 @@ pub struct ReweightingConfig {
     mid_penalty: f32,
 }
 
+/// finetuning configuration of the spelling correction algorithms
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SpellerConfig {
+    /// upper limit for suggestions given
     pub n_best: Option<usize>,
+    /// upper limit for weight of any suggestion
     pub max_weight: Option<Weight>,
+    /// weight distance between best suggestion and worst
     pub beam: Option<Weight>,
+    /// extra penalties for different edit distance type errors
     pub reweight: Option<ReweightingConfig>,
+    /// some parallel stuff?
     pub node_pool_size: usize,
+    /// whether we try to recase mispelt word before other suggestions
     pub recase: bool,
 }
 
 impl SpellerConfig {
+    /// create a default configuration with following values:
+    /// * n_best = 10
+    /// * max_weight = 10000
+    /// * beam = None
+    /// * reweight = default (c.f. ReweightingConfig::default())
+    /// * node_pool_size = 128
+    /// * recase = true
     pub const fn default() -> SpellerConfig {
         SpellerConfig {
             n_best: Some(10),
@@ -48,6 +63,8 @@ impl SpellerConfig {
 }
 
 impl ReweightingConfig {
+    /// create a default configuration with following values:
+    /// * start = 10, end = 10, mid = 5
     pub const fn default() -> ReweightingConfig {
         ReweightingConfig {
             start_penalty: 10.0,
@@ -57,10 +74,16 @@ impl ReweightingConfig {
     }
 }
 
+/// can determine if string is a correct word or suggest corrections.
+/// Also with SpellerConfig.
 pub trait Speller {
+    /// check if the word is correctly spelled
     fn is_correct(self: Arc<Self>, word: &str) -> bool;
+    /// check if word is correctly spelled with config recasing etc.
     fn is_correct_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> bool;
+    /// suggest corrections to word
     fn suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
+    /// suggest corrections with recasing and reweighting from config
     fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion>;
 }
 
@@ -130,6 +153,7 @@ where
     }
 }
 
+/// a speller consisting of two HFST automata
 #[derive(Debug)]
 pub struct HfstSpeller<F, T, U>
 where
@@ -149,6 +173,7 @@ where
     T: Transducer<F>,
     U: Transducer<F>,
 {
+    /// create new speller from two automata
     pub fn new(mutator: T, mut lexicon: U) -> Arc<HfstSpeller<F, T, U>> {
         let alphabet_translator = lexicon.mut_alphabet().create_translator_from(&mutator);
 
@@ -160,10 +185,12 @@ where
         })
     }
 
+    /// get the error model automaton
     pub fn mutator(&self) -> &T {
         &self.mutator
     }
 
+    /// get the language model automaton
     pub fn lexicon(&self) -> &U {
         &self.lexicon
     }

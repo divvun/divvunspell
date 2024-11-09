@@ -1,3 +1,4 @@
+#![warn(missing_docs)]
 pub mod archive;
 #[cfg(feature = "internal_ffi")]
 pub mod ffi;
