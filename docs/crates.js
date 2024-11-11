@@ -1,0 +1,1 @@
+window.ALL_CRATES = ["accuracy","divvunspell","thfst_tools"];

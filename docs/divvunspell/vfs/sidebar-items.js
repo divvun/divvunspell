@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["boxf"],"struct":["Fs"],"trait":["File","Filesystem"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Command"],"fn":["load_archive","main","predict","run","suggest","tokenize"],"struct":["Args","JsonWriter","PredictArgs","StdoutWriter","SuggestArgs","SuggestionRequest","TokenizeArgs"],"trait":["OutputWriter"]};
