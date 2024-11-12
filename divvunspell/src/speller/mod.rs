@@ -394,7 +394,7 @@ pub(crate) mod ffi {
 
             let config: &FfiSpellerConfig = &*ptr.cast();
 
-            let reweight = if config.case_handling == FfiReweightingConfig::default() {
+            let reweight = if config.reweight == FfiReweightingConfig::default() {
                 None
             } else {
                 let c = config.reweight;
@@ -423,6 +423,7 @@ pub(crate) mod ffi {
                 },
                 reweight,
                 node_pool_size: config.node_pool_size,
+                recase: true,
             };
 
             Ok(out)
