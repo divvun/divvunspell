@@ -112,7 +112,7 @@ jobs:
           command: build
           args: --lib --release --features compression,internal_ffi --target x86_64-pc-windows-msvc
       - name: Upload artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: lib-windows-x86_64
           path: |
@@ -136,7 +136,7 @@ jobs:
           command: build
           args: --lib --release --features compression,internal_ffi --target i686-pc-windows-msvc
       - name: Upload artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: lib-windows-i686
           path: |
@@ -160,7 +160,7 @@ jobs:
           command: build
           args: --lib --release --features internal_ffi --target aarch64-apple-ios
       - name: Upload artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: lib-ios-aarch64
           path: |
@@ -184,7 +184,7 @@ jobs:
           command: build
           args: --lib --release --features internal_ffi --target x86_64-apple-ios
       - name: Upload artifacts
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: lib-ios-x86_64
           path: |
