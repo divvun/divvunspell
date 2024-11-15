@@ -284,7 +284,8 @@ where
                         best.entry(sugg.value.clone())
                             .and_modify(|entry| {
                                 let weight = sugg.weight + additional_weight;
-                                log::trace!("Reweighting: {} = {} + {}", weight,
+                                log::trace!("=> Reweighting: {} {} = {} + {}",
+                                    sugg.value, weight,
                                     sugg.weight, additional_weight);
                                 if entry as &_ > &weight {
                                     *entry = weight
