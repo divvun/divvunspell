@@ -277,10 +277,15 @@ where
                                 + strsim::damerau_levenshtein(&word.as_str(), sugg.value());
                         let penalty_middle = reweight.mid_penalty * distance as f32;
                         let additional_weight = penalty_start + penalty_end + penalty_middle;
+                        log::trace!("Penalty: +{} = {} + {} * {} + {}",
+                            additional_weight, penalty_start, distance,
+                            reweight.mid_penalty, penalty_end);
 
                         best.entry(sugg.value.clone())
                             .and_modify(|entry| {
                                 let weight = sugg.weight + additional_weight;
+                                log::trace!("Reweighting: {} = {} + {}", weight,
+                                    sugg.weight, additional_weight);
                                 if entry as &_ > &weight {
                                     *entry = weight
                                 }
