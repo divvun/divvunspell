@@ -67,6 +67,10 @@ Optional arguments:
   --json                 output in JSON format
 ```
 
+If you want to debug divvunspell behaviour, simply enable rust's logging
+features by setting `RUST_LOG=trace` on your commandline's environment
+variables.
+
 ### accuracy
 
 Building:
@@ -154,3 +158,8 @@ The crate `divvunspell` is licensed under either of
 at your option.
 
 The `divvunspell`, `thfst-tools` and `accuracy` binaries are licensed under the GPL version 3 license.
+
+## More docs?
+
+We have [GitHub pages site](https://divvun.github.io/divvunspell/) for
+divvunspell with some more tech docs and stuff (WIP).
