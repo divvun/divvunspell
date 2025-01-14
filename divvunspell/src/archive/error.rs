@@ -1,3 +1,4 @@
+//! Archive-related errors.
 use std::{ffi::OsString, io::Error};
 
 #[cfg(feature = "gpt2")]

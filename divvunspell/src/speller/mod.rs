@@ -1,3 +1,4 @@
+//! Speller model for spell-checking and corrections.
 use std::f32;
 use std::sync::Arc;
 

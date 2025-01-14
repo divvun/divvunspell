@@ -1,3 +1,4 @@
+//! Suggestion for a spelling correction.
 use crate::types::Weight;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;

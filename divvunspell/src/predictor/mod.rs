@@ -1,3 +1,4 @@
+//! Autocorrect type spell-checking that predicts next word.
 #[cfg(feature = "gpt2")]
 pub mod gpt2;
 

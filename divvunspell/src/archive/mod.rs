@@ -1,3 +1,4 @@
+//! Handling of archives of spell-checking models.
 use memmap2::Mmap;
 use std::{ffi::OsString, path::Path, sync::Arc};
 
@@ -38,24 +39,33 @@ impl MmapRef {
     }
 }
 
+/// Speller archive is a file read into spell-checker with metadata.
 pub trait SpellerArchive {
+    /// Read and parse a speller archive.
     fn open(path: &Path) -> Result<Self, SpellerArchiveError>
     where
         Self: Sized;
 
+    /// retrieve spell-checker.
     fn speller(&self) -> Arc<dyn Speller + Send + Sync>;
+    /// retrieve metadata.
     fn metadata(&self) -> Option<&SpellerMetadata>;
 }
 
+/// Predictor archive is a file read intoo a predictor with metadata.
 pub trait PredictorArchive {
+    /// Read and parse a predictor archive.
     fn open(path: &Path, predictor_name: Option<&str>) -> Result<Self, PredictorArchiveError>
     where
         Self: Sized;
 
+    /// Retrieve predictor.
     fn predictor(&self) -> Arc<dyn Predictor + Send + Sync>;
+    /// retrieve metadata.
     fn metadata(&self) -> Option<&PredictorMetadata>;
 }
 
+/// Reads a speller archive.
 pub fn open<P>(path: P) -> Result<Arc<dyn SpellerArchive + Send + Sync>, SpellerArchiveError>
 where
     P: AsRef<Path>,
