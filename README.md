@@ -63,7 +63,8 @@ Optional arguments:
   -S, --always-suggest   always show suggestions even if word is correct
   -w, --weight WEIGHT    maximum weight limit for suggestions
   -n, --nbest NBEST      maximum number of results
-  --no-case-handling     disables case-handling algorithm (makes results more like hfst-ospell)
+  --no-reweighting       disables reweighting algorithm (makes results more like hfst-ospell)
+  --no-recase            disables recasing algorithm (makes results more like hfst-ospell)
   --json                 output in JSON format
 ```
 
