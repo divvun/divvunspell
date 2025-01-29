@@ -197,6 +197,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .takes_value(true)
                 .help("Truncate typos list to max number of words specified"),
         )
+        .arg(
+            Arg::with_name("threshold")
+                .short("T")
+                .takes_value(true)
+                .help("Minimum precision @ 5 for automated testing"),
+        )
         .get_matches();
 
     let cfg: SpellerConfig = match matches.value_of("config") {
@@ -292,7 +298,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let report = Report {
             metadata: archive.metadata(),
             config: &cfg,
-            summary,
+            summary: summary.clone(),
             results,
             start_timestamp,
             total_time,
@@ -343,5 +349,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     println!("Done!");
-    Ok(())
+    match matches.value_of("threshold") {
+        Some(threshold) => {
+            if threshold.parse::<f32>().unwrap() < (summary.top_five as f32/
+                summary.total_words as f32 * 100.0) {
+                Ok(())
+            }
+            else {
+                Err("accuracy @5 lower threshold")?
+            }
+        },
+        None => Ok(())
+    }
 }
