@@ -5,6 +5,7 @@ members = [
   "accuracy",
   "divvunspell-bin",
   "thfst-tools",
+  "regtest",
 ]
 
 [profile.dev]
