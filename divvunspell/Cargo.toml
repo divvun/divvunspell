@@ -1,7 +1,7 @@
 [package]
 name = "divvunspell"
 description = "Spell checking library for ZHFST/BHFST spellers, with case handling and tokenization support."
-version = "1.0.0-beta.3"
+version = "1.0.0-beta.5"
 authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
@@ -23,8 +23,9 @@ unic-segment = "0.9.0"
 unic-char-range = "0.9.0"
 unic-char-property = "0.9.0"
 unic-ucd-category = "0.9.0"
-parking_lot = "0.12.1"
-hashbrown = { version = "0.14.3", features = ["serde"] }
+unic-emoji-char = "0.9.0"
+parking_lot = "0.11.2"
+hashbrown = { version = "0.11", features = ["serde"] }
 lifeguard = "0.6.1"
 smol_str = { version = "0.2.1", features = ["serde"] }
 box-format = { version = "0.3.2", features = ["reader"], default-features = false }
@@ -50,6 +51,7 @@ globwalk = "0.9.1"
 compression = ["zip/deflate"]
 logging = ["env_logger"]
 gpt2 = ["tch", "rust-bert", "rust_tokenizers"]
+cargo-clippy = []
 
 # Internal features: unstable, not for external use!
 internal_convert = []

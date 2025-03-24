@@ -1,3 +1,4 @@
+//! Archive metadata handling
 use serde::{Deserialize, Serialize};
 use serde_xml_rs::{from_reader, Error, ParserConfig};
 

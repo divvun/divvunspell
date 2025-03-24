@@ -1,3 +1,4 @@
+//! Tokenizer splits strings into words and punctuations.
 use unic_ucd_common::alphanumeric::is_alphanumeric;
 use word::{WordBoundIndices, Words};
 

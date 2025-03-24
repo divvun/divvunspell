@@ -1,3 +1,4 @@
+//! Finite-state automaton in optimised mmapped format.
 // We manually ensure alignment of reads in this file.
 #![allow(clippy::cast_ptr_alignment)]
 

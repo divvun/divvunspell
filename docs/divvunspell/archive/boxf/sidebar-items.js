@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["BoxSpellerArchive"],"type":["ThfstBoxSpeller","ThfstBoxSpellerArchive","ThfstChunkedBoxSpeller","ThfstChunkedBoxSpellerArchive"]};

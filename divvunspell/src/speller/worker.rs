@@ -399,6 +399,8 @@ where
 
         let input_sym = alphabet_translator[self.input[input_state as usize] as usize];
         let next_lexicon_state = next_node.lexicon_state + 1;
+        log::trace!("lexicon consuming {}: {}", input_sym,
+            self.speller.lexicon.alphabet().string_from_symbols(&[input_sym]));
 
         if !lexicon.has_transitions(next_lexicon_state, Some(input_sym)) {
             // we have no regular transitions for this
@@ -487,7 +489,7 @@ where
         // let max_weight = speller_max_weight(&self.config);
         let pool = Pool::with_size_and_max(0, 0);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
-
+        log::trace!("beginning is_correct {:?}?", self.input);
         while let Some(next_node) = nodes.pop() {
             if next_node.input_state as usize == self.input.len()
                 && self.speller.lexicon().is_final(next_node.lexicon_state)

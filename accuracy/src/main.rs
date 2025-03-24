@@ -1,3 +1,28 @@
+/*! Accuracy testing for Finite-State Spell-Checkers
+
+A tool to help testing quality of finite-state spell-checkers. Shows precision
+and recall and F scores.
+
+# Usage examples
+
+It's a command-line tool:
+```console
+$ cargo run -- typos.txt se.zhfst
+```
+will produce statistics of spelling corrections.
+
+It is possible to fine-tune the options using a configuration file in json
+format. The format of json file follows from the [`SpellerConfig`] definition in
+the main library:
+```console
+$ cargo run -- --config config.json typos.txt se.zhfst
+```
+For automated testing in CI there is a --threshold parametre:
+```console
+$ cargo run -- --threshold 0.9 typos.txt se.zhfst
+```
+*/
+
 use chrono::prelude::*;
 use std::error::Error;
 use std::{
@@ -9,7 +34,7 @@ use std::{
 use distance::damerau_levenshtein;
 use divvunspell::archive;
 use divvunspell::speller::suggestion::Suggestion;
-use divvunspell::speller::{CaseHandlingConfig, SpellerConfig};
+use divvunspell::speller::{ReweightingConfig, SpellerConfig};
 use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::Serialize;
@@ -19,9 +44,10 @@ static CFG: SpellerConfig = SpellerConfig {
     n_best: Some(10),
     max_weight: Some(10000.0),
     beam: None,
-    case_handling: Some(CaseHandlingConfig::default()),
+    reweight: Some(ReweightingConfig::default()),
     node_pool_size: 128,
     continuation_marker: None,
+    recase: true
 };
 
 fn load_words(
@@ -197,6 +223,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .takes_value(true)
                 .help("Truncate typos list to max number of words specified"),
         )
+        .arg(
+            Arg::with_name("threshold")
+                .short("T")
+                .takes_value(true)
+                .help("Minimum precision @ 5 for automated testing"),
+        )
         .get_matches();
 
     let cfg: SpellerConfig = match matches.value_of("config") {
@@ -292,7 +324,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let report = Report {
             metadata: archive.metadata(),
             config: &cfg,
-            summary,
+            summary: summary.clone(),
             results,
             start_timestamp,
             total_time,
@@ -343,5 +375,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     println!("Done!");
-    Ok(())
+    match matches.value_of("threshold") {
+        Some(threshold) => {
+            if threshold.parse::<f32>().unwrap() < (summary.top_five as f32/
+                summary.total_words as f32 * 100.0) {
+                Ok(())
+            }
+            else {
+                Err("accuracy @5 lower threshold")?
+            }
+        },
+        None => Ok(())
+    }
 }

@@ -1,3 +1,4 @@
+//! Some stuff for filesystems and different OSes.
 use fs_extra::dir::CopyOptions;
 use memmap2::{Mmap, MmapOptions};
 use std::fmt::Debug;
@@ -56,6 +57,7 @@ impl File for std::fs::File {
     }
 }
 
+/// File system.
 pub struct Fs;
 
 impl Filesystem for Fs {
@@ -74,6 +76,7 @@ impl Filesystem for Fs {
     }
 }
 
+/// Box file.
 pub mod boxf {
     use box_format::{BoxFileReader, BoxPath};
     use std::io::{Read, Result};

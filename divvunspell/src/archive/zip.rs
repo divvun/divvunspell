@@ -1,3 +1,4 @@
+//! Zip archive stuff.
 use ::zip::{CompressionMethod, ZipArchive};
 use memmap2::MmapOptions;
 use std::fs::File;

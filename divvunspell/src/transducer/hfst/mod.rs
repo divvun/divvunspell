@@ -1,3 +1,4 @@
+//! Finite-state automaton in HFST format.
 pub mod alphabet;
 pub mod header;
 pub mod index_table;

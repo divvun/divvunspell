@@ -1,5 +1,12 @@
+//! Handling of system paths containing spell-checkers on different OS.
+#[cfg(target_os = "macos")]
+use std::path::PathBuf;
+#[cfg(target_os = "windows")]
 use std::path::PathBuf;
 
+#[cfg(target_os = "macos")]
+use language_tags::LanguageTag;
+#[cfg(target_os = "windows")]
 use language_tags::LanguageTag;
 
 #[cfg(target_os = "macos")]

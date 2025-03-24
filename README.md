@@ -10,7 +10,7 @@ An implementation of [hfst-ospell](https://github.com/hfst/hfst-ospell) in Rust,
 # For the `divvunspell` binary:
 cargo install divvunspell-bin
 
-# For `thfst-tools` binary:
+# For `thfst-tools` binary (most people can skip this one):
 cargo install thfst-tools
 
 # To build the development version from this source, cd into the relevant directory and:
@@ -18,6 +18,8 @@ cargo install --path .
 ```
 
 ### Building with `gpt2` support on macOS aarch64
+
+(Skip this if you are not experimenting with gpt2 support. So skip. Now.)
 
 Clone this repo then:
 
@@ -38,38 +40,53 @@ cargo build --release
 ### divvunspell
 Usage:
 
+```sh
+Usage: divvunspell SUBCOMMAND [OPTIONS]
+
+Optional arguments:
+  -h, --help  print help message
+
+Available subcommands:
+  suggest   get suggestions for provided input
+  tokenize  print input in word-separated tokenized form
+  predict   predict next words using GPT2 model
+
+$ divvunspell suggest -h
+Usage: divvunspell suggest [OPTIONS]
+
+Positional arguments:
+  inputs                 words to be processed
+
+Optional arguments:
+  -h, --help             print help message
+  -a, --archive ARCHIVE  BHFST or ZHFST archive to be used
+  -S, --always-suggest   always show suggestions even if word is correct
+  -w, --weight WEIGHT    maximum weight limit for suggestions
+  -n, --nbest NBEST      maximum number of results
+  --no-reweighting       disables reweighting algorithm (makes results more like hfst-ospell)
+  --no-recase            disables recasing algorithm (makes results more like hfst-ospell)
+  --json                 output in JSON format
 ```
-divvunspell 0.5.0
-Testing frontend for the Divvunspell library
 
-USAGE:
-    divvunspell [FLAGS] [OPTIONS] <--zhfst <ZHFST>|--bhfst <BHFST>|--acceptor <acceptor>> [WORDS]...
-
-FLAGS:
-    -S, --always-suggest    Always show suggestions even if word is correct (implies -s)
-    -h, --help              Prints help information
-        --json              Output results in JSON
-    -s, --suggest           Show suggestions for given word(s)
-    -V, --version           Prints version information
-
-OPTIONS:
-        --acceptor <acceptor>    Use the given acceptor file
-    -b, --bhfst <BHFST>          Use the given BHFST file
-        --errmodel <errmodel>    Use the given errmodel file
-    -n, --nbest <nbest>          Maximum number of results for suggestions
-    -w, --weight <weight>        Maximum weight limit for suggestions
-    -z, --zhfst <ZHFST>          Use the given ZHFST file
-
-ARGS:
-    <WORDS>...    The words to be processed
-```
+If you want to debug divvunspell behaviour, simply enable rust's logging
+features by setting `RUST_LOG=trace` on your commandline's environment
+variables.
 
 ### accuracy
+
+Building:
+```sh
+cd accuracy/
+cargo install --path .
+```
+
+The resulting binary `accuracy` is placed in `$HOME/.cargo/bin/`, make sure it is on the path.
+
 Usage:
 
 ```
-divvunspell-accuracy 1.0.0-alpha.5
-Accuracy testing for Divvunspell.
+divvunspell-accuracy 1.0.0-beta.1
+Accuracy testing for DivvunSpell.
 
 USAGE:
     accuracy [OPTIONS] [ARGS]
@@ -82,6 +99,7 @@ OPTIONS:
     -c <config>             Provide JSON config file to override test defaults
     -o <JSON-OUTPUT>        The file path for the JSON report output
     -w <max-words>          Truncate typos list to max number of words specified
+    -t <TSV-OUTPUT>         The file path for the TSV line append
 
 ARGS:
     <WORDS>    The 'input -> expected' list in tab-delimited value file (TSV)
@@ -141,3 +159,8 @@ The crate `divvunspell` is licensed under either of
 at your option.
 
 The `divvunspell`, `thfst-tools` and `accuracy` binaries are licensed under the GPL version 3 license.
+
+## More docs?
+
+We have [GitHub pages site](https://divvun.github.io/divvunspell/) for
+divvunspell with some more tech docs and stuff (WIP).

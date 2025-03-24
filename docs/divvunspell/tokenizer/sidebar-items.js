@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["cursor_context"],"mod":["word"],"struct":["IndexedWord","WordContext","WordIndices"],"trait":["Tokenize"]};

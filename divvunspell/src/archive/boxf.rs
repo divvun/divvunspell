@@ -1,3 +1,4 @@
+//! Box-based archive stuff.
 use std::sync::Arc;
 
 use box_format::BoxFileReader;
@@ -18,28 +19,35 @@ use crate::transducer::{
 use crate::vfs::boxf::Filesystem as BoxFilesystem;
 use crate::vfs::Filesystem;
 
+/// An archive with mmaped language and error model THFST automata archive.
 pub type ThfstBoxSpellerArchive = BoxSpellerArchive<
     MemmapThfstTransducer<crate::vfs::boxf::File>,
     MemmapThfstTransducer<crate::vfs::boxf::File>,
 >;
 
+/// An archive with mmaped chunked language and error model THFST automata
+/// file.
 pub type ThfstChunkedBoxSpeller = HfstSpeller<
     crate::vfs::boxf::File,
     MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
     MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
 >;
 
+/// An archive with mmaped language and error model THFST automata file.
 pub type ThfstBoxSpeller = HfstSpeller<
     crate::vfs::boxf::File,
     MemmapThfstTransducer<crate::vfs::boxf::File>,
     MemmapThfstTransducer<crate::vfs::boxf::File>,
 >;
 
+/// An archive with mmaped chunked language and error model THFST automata
+/// archive.
 pub type ThfstChunkedBoxSpellerArchive = BoxSpellerArchive<
     MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
     MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
 >;
 
+/// Speller in box archive.
 pub struct BoxSpellerArchive<T, U>
 where
     T: Transducer<crate::vfs::boxf::File>,
@@ -54,6 +62,7 @@ where
     T: Transducer<crate::vfs::boxf::File> + Send + Sync + 'static,
     U: Transducer<crate::vfs::boxf::File> + Send + Sync + 'static,
 {
+    /// get the spell-checking component
     pub fn hfst_speller(&self) -> Arc<HfstSpeller<crate::vfs::boxf::File, T, U>> {
         self.speller.clone()
     }
