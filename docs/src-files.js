@@ -1,6 +1,3 @@
-var srcIndex = new Map(JSON.parse('[\
-["accuracy",["",[],["main.rs"]]],\
-["divvunspell",["",[],["main.rs"]]],\
-["thfst_tools",["",[],["main.rs"]]]\
-]'));
+var srcIndex = new Map(JSON.parse('[["accuracy",["",[],["main.rs"]]],["divvunspell",["",[["archive",[],["boxf.rs","error.rs","meta.rs","mod.rs","zip.rs"]],["predictor",[],["mod.rs"]],["speller",[],["mod.rs","suggestion.rs","worker.rs"]],["tokenizer",[],["case_handling.rs","mod.rs","word.rs","word_break.rs"]],["transducer",[["hfst",[],["alphabet.rs","header.rs","index_table.rs","mod.rs","transition_table.rs"]],["thfst",[],["chunked.rs","index_table.rs","mod.rs","transition_table.rs"]]],["alphabet.rs","convert.rs","mod.rs","symbol_transition.rs","tree_node.rs"]]],["constants.rs","lib.rs","paths.rs","types.rs","vfs.rs"]]],["divvunspell",["",[],["main.rs"]]],["regtest",["",[],["main.rs"]]],["thfst_tools",["",[],["main.rs"]]]]'));
 createSrcSidebar();
+//{"start":36,"fragment_lengths":[32,558,36,32,36]}

@@ -1,4 +1,5 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `divvunspell/src/transducer/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-c5d6553a23f1e5a6.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="divvunspell" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0 (eeb90cda1 2024-09-04) (gentoo)" data-channel="1.81.0" data-search-js="search-d234aafac6c221dd.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-d2fab2bf619172d3.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers"><a href="#1" id="1">1</a>
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Source of the Rust file `divvunspell/src/transducer/mod.rs`."><title>mod.rs - source</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-b0742ba02757f159.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="divvunspell" data-themes="" data-resource-suffix="" data-rustdoc-version="1.83.0 (90b35a623 2024-11-26) (gentoo)" data-channel="1.83.0" data-search-js="search-f0d225181b97f9a4.js" data-settings-js="settings-805db61a62df4bd2.js" ><script src="../../../static.files/storage-1d39b6787ed640ff.js"></script><script defer src="../../../static.files/src-script-e66d777a5a92e9b2.js"></script><script defer src="../../../src-files.js"></script><script defer src="../../../static.files/main-f070b9041d14864c.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-0111fcff984fae8f.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc src"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="sidebar"><div class="src-sidebar-title"><h2>Files</h2></div></nav><div class="sidebar-resizer"></div><main><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1><div class="sub-heading">divvunspell/transducer/</div>mod.rs</h1><rustdoc-toolbar></rustdoc-toolbar></div><div class="example-wrap"><div data-nosnippet><pre class="src-line-numbers">
+<a href="#1" id="1">1</a>
 <a href="#2" id="2">2</a>
 <a href="#3" id="3">3</a>
 <a href="#4" id="4">4</a>
@@ -97,7 +98,48 @@
 <a href="#97" id="97">97</a>
 <a href="#98" id="98">98</a>
 <a href="#99" id="99">99</a>
-</pre></div><pre class="rust"><code><span class="kw">pub mod </span>hfst;
+<a href="#100" id="100">100</a>
+<a href="#101" id="101">101</a>
+<a href="#102" id="102">102</a>
+<a href="#103" id="103">103</a>
+<a href="#104" id="104">104</a>
+<a href="#105" id="105">105</a>
+<a href="#106" id="106">106</a>
+<a href="#107" id="107">107</a>
+<a href="#108" id="108">108</a>
+<a href="#109" id="109">109</a>
+<a href="#110" id="110">110</a>
+<a href="#111" id="111">111</a>
+<a href="#112" id="112">112</a>
+<a href="#113" id="113">113</a>
+<a href="#114" id="114">114</a>
+<a href="#115" id="115">115</a>
+<a href="#116" id="116">116</a>
+<a href="#117" id="117">117</a>
+<a href="#118" id="118">118</a>
+<a href="#119" id="119">119</a>
+<a href="#120" id="120">120</a>
+<a href="#121" id="121">121</a>
+<a href="#122" id="122">122</a>
+<a href="#123" id="123">123</a>
+<a href="#124" id="124">124</a>
+<a href="#125" id="125">125</a>
+<a href="#126" id="126">126</a>
+<a href="#127" id="127">127</a>
+<a href="#128" id="128">128</a>
+<a href="#129" id="129">129</a>
+<a href="#130" id="130">130</a>
+<a href="#131" id="131">131</a>
+<a href="#132" id="132">132</a>
+<a href="#133" id="133">133</a>
+<a href="#134" id="134">134</a></pre></div><pre class="rust"><code><span class="doccomment">//! Transducer is a Finite-State Automaton with two tapes / two symbols per
+//! transition.
+//!
+//! Transducer in divvunspell is modeled after the C++ transducer in the
+//! hfst-ospell library. It may contain some complex optimisations and
+//! specifics to underlying finite-state systems and lot of this is
+//! pretty hacky.
+</span><span class="kw">pub mod </span>hfst;
 <span class="kw">pub mod </span>thfst;
 
 <span class="kw">mod </span>alphabet;
@@ -110,18 +152,23 @@
 <span class="kw">use </span><span class="kw">crate</span>::types::{SymbolNumber, TransitionTableIndex, Weight};
 <span class="kw">use </span><span class="kw">crate</span>::vfs::{<span class="self">self</span>, Filesystem};
 
-<span class="attr">#[derive(Debug, thiserror::Error)]
+<span class="doccomment">/// Error with transducer reading or processing.
+</span><span class="attr">#[derive(Debug, thiserror::Error)]
 </span><span class="kw">pub enum </span>TransducerError {
-    <span class="attr">#[error(<span class="string">"Memory mapping error"</span>)]
+    <span class="doccomment">/// Error with mmapping
+    </span><span class="attr">#[error(<span class="string">"Memory mapping error"</span>)]
     </span>Memmap(<span class="attr">#[source] </span>std::io::Error),
-    <span class="attr">#[error(<span class="string">"IO error"</span>)]
+    <span class="doccomment">/// Error with input/output.
+    </span><span class="attr">#[error(<span class="string">"IO error"</span>)]
     </span>Io(<span class="attr">#[source] </span>std::io::Error),
-    <span class="attr">#[error(<span class="string">"Alphabet error"</span>)]
+    <span class="doccomment">/// Error with FSA alphabets.
+    </span><span class="attr">#[error(<span class="string">"Alphabet error"</span>)]
     </span>Alphabet(<span class="attr">#[source] </span>Box&lt;<span class="kw">dyn </span>std::error::Error + Send + Sync&gt;),
 }
 
 <span class="kw">impl </span>TransducerError {
-    <span class="kw">pub fn </span>into_io_error(<span class="self">self</span>) -&gt; std::io::Error {
+    <span class="doccomment">/// Wrap into i/o error.
+    </span><span class="kw">pub fn </span>into_io_error(<span class="self">self</span>) -&gt; std::io::Error {
         <span class="kw">match </span><span class="self">self </span>{
             TransducerError::Memmap(v) =&gt; v,
             TransducerError::Io(v) =&gt; v,
@@ -132,54 +179,77 @@
     }
 }
 
-<span class="kw">pub trait </span>Transducer&lt;F: vfs::File&gt;: Sized {
-    <span class="kw">const </span>FILE_EXT: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str;
+<span class="doccomment">/// A file-based finite-state transducer.
+</span><span class="kw">pub trait </span>Transducer&lt;F: vfs::File&gt;: Sized {
+    <span class="doccomment">/// file extension.
+    </span><span class="kw">const </span>FILE_EXT: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str;
 
-    <span class="kw">fn </span>from_path&lt;P, FS&gt;(fs: <span class="kw-2">&amp;</span>FS, path: P) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>, TransducerError&gt;
+    <span class="doccomment">/// read a transducer from a file.
+    </span><span class="kw">fn </span>from_path&lt;P, FS&gt;(fs: <span class="kw-2">&amp;</span>FS, path: P) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>, TransducerError&gt;
     <span class="kw">where
         </span>P: AsRef&lt;std::path::Path&gt;,
         FS: Filesystem&lt;File = F&gt;;
 
-    <span class="kw">fn </span>alphabet(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>TransducerAlphabet;
-    <span class="kw">fn </span>mut_alphabet(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>TransducerAlphabet;
+    <span class="doccomment">/// get transducer's alphabet.
+    </span><span class="kw">fn </span>alphabet(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>TransducerAlphabet;
+    <span class="doccomment">/// get transducer's alphabet as mutable reference.
+    </span><span class="kw">fn </span>mut_alphabet(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;mut </span>TransducerAlphabet;
 
-    <span class="kw">fn </span>transition_input_symbol(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; <span class="prelude-ty">Option</span>&lt;SymbolNumber&gt;;
-    <span class="kw">fn </span>has_transitions(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex, s: <span class="prelude-ty">Option</span>&lt;SymbolNumber&gt;) -&gt; bool;
-    <span class="kw">fn </span>next(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex, symbol: SymbolNumber) -&gt; <span class="prelude-ty">Option</span>&lt;TransitionTableIndex&gt;;
-    <span class="kw">fn </span>has_epsilons_or_flags(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; bool;
-    <span class="kw">fn </span>take_epsilons_and_flags(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; <span class="prelude-ty">Option</span>&lt;SymbolTransition&gt;;
-    <span class="kw">fn </span>take_epsilons(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; <span class="prelude-ty">Option</span>&lt;SymbolTransition&gt;;
-    <span class="kw">fn </span>take_non_epsilons(
+    <span class="doccomment">/// get input symbol number of given transition arc.
+    </span><span class="kw">fn </span>transition_input_symbol(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; <span class="prelude-ty">Option</span>&lt;SymbolNumber&gt;;
+    <span class="doccomment">/// check if there are transitions at given index.
+    </span><span class="kw">fn </span>has_transitions(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex, s: <span class="prelude-ty">Option</span>&lt;SymbolNumber&gt;) -&gt; bool;
+    <span class="doccomment">/// get next transition with a symbol.
+    </span><span class="kw">fn </span>next(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex, symbol: SymbolNumber) -&gt; <span class="prelude-ty">Option</span>&lt;TransitionTableIndex&gt;;
+    <span class="doccomment">/// check if there are free transitions at index.
+    </span><span class="kw">fn </span>has_epsilons_or_flags(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; bool;
+    <span class="doccomment">/// follow free transitions.
+    </span><span class="kw">fn </span>take_epsilons_and_flags(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; <span class="prelude-ty">Option</span>&lt;SymbolTransition&gt;;
+    <span class="doccomment">/// follow epsilon transitions.
+    </span><span class="kw">fn </span>take_epsilons(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; <span class="prelude-ty">Option</span>&lt;SymbolTransition&gt;;
+    <span class="doccomment">/// follow transitions with given symbol.
+    </span><span class="kw">fn </span>take_non_epsilons(
         <span class="kw-2">&amp;</span><span class="self">self</span>,
         i: TransitionTableIndex,
         symbol: SymbolNumber,
     ) -&gt; <span class="prelude-ty">Option</span>&lt;SymbolTransition&gt;;
-    <span class="kw">fn </span>is_final(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; bool;
-    <span class="kw">fn </span>final_weight(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; <span class="prelude-ty">Option</span>&lt;Weight&gt;;
+    <span class="doccomment">/// check if given index is an end state.
+    </span><span class="kw">fn </span>is_final(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; bool;
+    <span class="doccomment">/// get end state weight of a state.
+    </span><span class="kw">fn </span>final_weight(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; <span class="prelude-ty">Option</span>&lt;Weight&gt;;
 }
 
-<span class="kw">pub trait </span>TransitionTable&lt;F: vfs::File&gt;: Sized {
-    <span class="kw">fn </span>from_path&lt;P, FS&gt;(fs: <span class="kw-2">&amp;</span>FS, path: P) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>, TransducerError&gt;
+<span class="doccomment">/// Transition table contains the arcs of the automaton (and states).
+</span><span class="kw">pub trait </span>TransitionTable&lt;F: vfs::File&gt;: Sized {
+    <span class="doccomment">/// read transition table from a file.
+    </span><span class="kw">fn </span>from_path&lt;P, FS&gt;(fs: <span class="kw-2">&amp;</span>FS, path: P) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>, TransducerError&gt;
     <span class="kw">where
         </span>P: AsRef&lt;std::path::Path&gt;,
         FS: Filesystem&lt;File = F&gt;;
-    <span class="kw">fn </span>input_symbol(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; <span class="prelude-ty">Option</span>&lt;SymbolNumber&gt;;
-    <span class="kw">fn </span>output_symbol(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; <span class="prelude-ty">Option</span>&lt;SymbolNumber&gt;;
-    <span class="kw">fn </span>target(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; <span class="prelude-ty">Option</span>&lt;TransitionTableIndex&gt;;
-    <span class="kw">fn </span>weight(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; <span class="prelude-ty">Option</span>&lt;Weight&gt;;
+    <span class="doccomment">/// get input symbol of a transition.
+    </span><span class="kw">fn </span>input_symbol(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; <span class="prelude-ty">Option</span>&lt;SymbolNumber&gt;;
+    <span class="doccomment">/// get output symbol of a transition.
+    </span><span class="kw">fn </span>output_symbol(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; <span class="prelude-ty">Option</span>&lt;SymbolNumber&gt;;
+    <span class="doccomment">/// get the target state in the index.
+    </span><span class="kw">fn </span>target(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; <span class="prelude-ty">Option</span>&lt;TransitionTableIndex&gt;;
+    <span class="doccomment">/// get the weight of the transition.
+    </span><span class="kw">fn </span>weight(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; <span class="prelude-ty">Option</span>&lt;Weight&gt;;
 
-    <span class="attr">#[inline(always)]
+    <span class="doccomment">/// check if the state is a final state.
+    </span><span class="attr">#[inline(always)]
     </span><span class="kw">fn </span>is_final(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; bool {
         <span class="self">self</span>.input_symbol(i) == <span class="prelude-val">None </span>&amp;&amp; <span class="self">self</span>.output_symbol(i) == <span class="prelude-val">None </span>&amp;&amp; <span class="self">self</span>.target(i) == <span class="prelude-val">Some</span>(<span class="number">1</span>)
     }
 
-    <span class="attr">#[inline(always)]
+    <span class="doccomment">/// ???
+    </span><span class="attr">#[inline(always)]
     </span><span class="kw">fn </span>symbol_transition(<span class="kw-2">&amp;</span><span class="self">self</span>, i: TransitionTableIndex) -&gt; SymbolTransition {
         SymbolTransition::new(<span class="self">self</span>.target(i), <span class="self">self</span>.output_symbol(i), <span class="self">self</span>.weight(i))
     }
 }
 
-<span class="kw">pub trait </span>IndexTable&lt;F: vfs::File&gt;: Sized {
+<span class="doccomment">/// Index table contains something.
+</span><span class="kw">pub trait </span>IndexTable&lt;F: vfs::File&gt;: Sized {
     <span class="kw">fn </span>from_path&lt;P, FS&gt;(fs: <span class="kw-2">&amp;</span>FS, path: P) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>, TransducerError&gt;
     <span class="kw">where
         </span>P: AsRef&lt;std::path::Path&gt;,

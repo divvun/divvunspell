@@ -1,0 +1,1 @@
+searchState.loadedDescShard("regtest", 0, "Regression testing for Finite-State Spell-Checkers\nReturns the argument unchanged.\nCalls <code>U::from(self)</code>.")
