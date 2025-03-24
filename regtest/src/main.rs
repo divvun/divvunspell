@@ -1,3 +1,19 @@
+/*! Regression testing for Finite-State Spell-Checkers
+
+A tool to help testing updates in finite-state spell-checkers. Simply shows the
+differences between two spell-checker language models. Can be used in automated
+scripts to cap amount of changes between two versions.
+
+# Usage examples
+
+It's a command-line tool:
+```console
+$ cargo run -- --old old.zhfst --new new.zhfst --words typos.txt --threshold 0.9
+```
+will expect there to be less than 10 % regressions between `old.zhfst` and
+`new.zhfst`.
+*/
+
 use std::path::PathBuf;
 use std::error::Error;
 

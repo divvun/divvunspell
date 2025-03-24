@@ -1,3 +1,28 @@
+/*! Accuracy testing for Finite-State Spell-Checkers
+
+A tool to help testing quality of finite-state spell-checkers. Shows precision
+and recall and F scores.
+
+# Usage examples
+
+It's a command-line tool:
+```console
+$ cargo run -- typos.txt se.zhfst
+```
+will produce statistics of spelling corrections.
+
+It is possible to fine-tune the options using a configuration file in json
+format. The format of json file follows from the [`SpellerConfig`] definition in
+the main library:
+```console
+$ cargo run -- --config config.json typos.txt se.zhfst
+```
+For automated testing in CI there is a --threshold parametre:
+```console
+$ cargo run -- --threshold 0.9 typos.txt se.zhfst
+```
+*/
+
 use chrono::prelude::*;
 use std::error::Error;
 use std::{
