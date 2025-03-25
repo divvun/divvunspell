@@ -22,7 +22,7 @@ use divvunspell::{
         boxf::ThfstBoxSpellerArchive, error::SpellerArchiveError, BoxSpellerArchive,
         SpellerArchive, ZipSpellerArchive,
     },
-    speller::{suggestion::Suggestion, Speller, SpellerConfig},
+    speller::{suggestion::Suggestion, Analyzer, SpellerConfig},
     tokenizer::Tokenize,
 };
 
@@ -159,7 +159,7 @@ impl OutputWriter for JsonWriter {
 }
 
 fn run(
-    speller: Arc<dyn Speller + Send>,
+    speller: Arc<dyn Analyzer + Send>,
     words: Vec<String>,
     writer: &mut dyn OutputWriter,
     is_analyzing: bool,
@@ -418,7 +418,7 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
 
     let speller = if let Some(archive_path) = args.archive_path {
         let archive = load_archive(&archive_path)?;
-        let speller = archive.speller();
+        let speller = archive.analyser();
         speller
     } else if let (Some(lexicon_path), Some(mutator_path)) = (args.lexicon_path, args.mutator_path)
     {

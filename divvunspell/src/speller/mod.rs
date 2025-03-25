@@ -40,6 +40,7 @@ pub struct SpellerConfig {
     pub reweight: Option<ReweightingConfig>,
     /// some parallel stuff?
     pub node_pool_size: usize,
+    /// used when suggesting unfinished word parts
     pub continuation_marker: Option<String>,
     /// whether we try to recase mispelt word before other suggestions
     pub recase: bool,
@@ -90,14 +91,19 @@ pub trait Speller {
     fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion>;
 }
 
+/// can provide in-depth analyses along with suggestions
 pub trait Analyzer {
+    /// analyse the input word form
     fn analyze_input(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
+    /// analyse input word form with recasing and stuff from configs
     fn analyze_input_with_config(
         self: Arc<Self>,
         word: &str,
         config: &SpellerConfig,
     ) -> Vec<Suggestion>;
+    /// analyse the suggested word forms
     fn analyze_output(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
+    /// analyse the suggested word forms with recasing and stuff from configs
     fn analyze_output_with_config(
         self: Arc<Self>,
         word: &str,

@@ -9,7 +9,7 @@ use std::sync::Arc;
 use super::error::SpellerArchiveError;
 use super::meta::SpellerMetadata;
 use super::{MmapRef, SpellerArchive, TempMmap};
-use crate::speller::{HfstSpeller, Speller};
+use crate::speller::{HfstSpeller, Speller, Analyzer};
 use crate::transducer::hfst::HfstTransducer;
 
 pub type HfstZipSpeller =
@@ -100,6 +100,10 @@ impl SpellerArchive for ZipSpellerArchive {
     }
 
     fn speller(&self) -> Arc<dyn Speller + Send + Sync> {
+        self.speller.clone()
+    }
+
+    fn analyser(&self) -> Arc<dyn Analyzer + Send + Sync> {
         self.speller.clone()
     }
 
