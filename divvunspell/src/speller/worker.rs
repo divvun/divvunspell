@@ -508,40 +508,35 @@ where
         log::trace!("Beginning analyze");
         let pool = Pool::with_size_and_max(0, 0);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
+        log::trace!("beginning analyze {:?}", self.input);
         let mut lookups = HashMap::new();
         let mut analyses: Vec<Suggestion> = vec![];
-        let best_weight = self.config.max_weight.unwrap_or(f32::MAX);
-
         while let Some(next_node) = nodes.pop() {
-            let max_weight = self.update_weight_limit(best_weight, &analyses);
-
-            self.lexicon_epsilons(&pool, max_weight, &next_node, &mut nodes);
-            self.lexicon_consume(&pool, max_weight, &next_node, &mut nodes);
-            if self.speller.lexicon().is_final(next_node.lexicon_state) {
-                let weight = next_node.weight()
-                    + self
-                        .speller
-                        .lexicon()
-                        .final_weight(next_node.lexicon_state)
-                        .unwrap();
-
+            if next_node.input_state as usize == self.input.len()
+                && self.speller.lexicon().is_final(next_node.lexicon_state)
+            {
                 let string = self
                     .speller
                     .lexicon()
                     .alphabet()
                     .string_from_symbols(&next_node.string);
-
-                {
-                    let entry = lookups.entry(string).or_insert(weight);
-
-                    if *entry > weight {
-                        *entry = weight;
-                    }
+                let weight = next_node.weight()
+                    + self
+                    .speller
+                    .lexicon()
+                    .final_weight(next_node.lexicon_state)
+                    .unwrap();
+                let entry = lookups.entry(string).or_insert(weight);
+                if *entry > weight {
+                    *entry = weight;
                 }
             }
+            self.lexicon_epsilons(&pool, f32::INFINITY, &next_node, &mut nodes);
+            self.lexicon_consume(&pool, f32::INFINITY, &next_node, &mut nodes);
             analyses = self.generate_sorted_suggestions(&lookups);
         }
         analyses
+
     }
 
     pub(crate) fn suggest(&self) -> Vec<Suggestion> {

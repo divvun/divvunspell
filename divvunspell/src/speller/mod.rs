@@ -92,7 +92,7 @@ pub trait Speller {
 }
 
 /// can provide in-depth analyses along with suggestions
-pub trait Analyzer {
+pub trait Analyzer: Speller {
     /// analyse the input word form
     fn analyze_input(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
     /// analyse input word form with recasing and stuff from configs
