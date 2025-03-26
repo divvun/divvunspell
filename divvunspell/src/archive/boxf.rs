@@ -11,7 +11,7 @@ use super::{error::PredictorArchiveError, meta::PredictorMetadata, PredictorArch
 
 use super::error::SpellerArchiveError;
 use super::{meta::SpellerMetadata, SpellerArchive};
-use crate::speller::{HfstSpeller, Speller};
+use crate::speller::{HfstSpeller, Speller, Analyzer};
 use crate::transducer::{
     thfst::{MemmapThfstChunkedTransducer, MemmapThfstTransducer},
     Transducer,
@@ -94,6 +94,10 @@ where
     }
 
     fn speller(&self) -> Arc<dyn Speller + Send + Sync> {
+        self.speller.clone()
+    }
+
+    fn analyser(&self) -> Arc<dyn Analyzer + Send + Sync> {
         self.speller.clone()
     }
 

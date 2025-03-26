@@ -16,7 +16,7 @@ use self::{
     error::SpellerArchiveError,
     meta::{PredictorMetadata, SpellerMetadata},
 };
-use crate::{predictor::Predictor, speller::Speller};
+use crate::{predictor::Predictor, speller::{Speller, Analyzer}};
 
 pub(crate) struct TempMmap {
     mmap: Arc<Mmap>,
@@ -48,6 +48,7 @@ pub trait SpellerArchive {
 
     /// retrieve spell-checker.
     fn speller(&self) -> Arc<dyn Speller + Send + Sync>;
+    fn analyser(&self) -> Arc<dyn Analyzer + Send + Sync>;
     /// retrieve metadata.
     fn metadata(&self) -> Option<&SpellerMetadata>;
 }
@@ -89,7 +90,7 @@ pub(crate) mod ffi {
     use cffi::{FromForeign, ToForeign};
     use std::error::Error;
 
-    #[cffi::marshal(return_marshaler = "cffi::ArcMarshaler::<dyn SpellerArchive + Send + Sync>")]
+    #[cffi::marshal(return_marshaler = cffi::ArcMarshaler::<dyn SpellerArchive + Send + Sync>)]
     pub extern "C" fn divvun_speller_archive_open(
         #[marshal(cffi::PathBufMarshaler)] path: std::path::PathBuf,
     ) -> Result<Arc<dyn SpellerArchive + Send + Sync>, Box<dyn Error>> {
