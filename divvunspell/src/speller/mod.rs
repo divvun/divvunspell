@@ -140,7 +140,8 @@ where
         log::debug!("is_correct_with_config: ‘{}’ ~ {:?}?; config: {:?}",
             word, words, config);
         for word in std::iter::once(word.into()).chain(words.into_iter()) {
-            let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
+            let worker = SpellerWorker::new(self.clone(),
+                self.to_input_vec(&word), config.clone(), false);
 
             if worker.is_correct() {
                 return true;
@@ -193,7 +194,8 @@ where
             return vec![];
         }
 
-        let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
+        let worker = SpellerWorker::new(self.clone(),
+            self.to_input_vec(&word), config.clone(), false);
 
         log::trace!("Beginning analyze with config in mod");
         worker.analyze()
@@ -218,7 +220,8 @@ where
             return vec![];
         }
         log::trace!("Beginning analyze suggest with config in mod");
-        let worker = SpellerWorker::new(self.clone(), self.to_input_vec(word), config.clone());
+        let worker = SpellerWorker::new(self.clone(),
+            self.to_input_vec(word), config.clone(), false);
 
         worker.suggest()
     }
@@ -288,7 +291,8 @@ where
     }
 
     fn suggest_single(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
-        let worker = SpellerWorker::new(self.clone(), self.to_input_vec(word), config.clone());
+        let worker = SpellerWorker::new(self.clone(), self.to_input_vec(word),
+            config.clone(), true);
 
         log::trace!("suggesting single {}", word);
         worker.suggest()
@@ -313,7 +317,8 @@ where
 
         for word in std::iter::once(&original_input).chain(words.iter()) {
             log::trace!("suggesting for word {}", word);
-            let worker = SpellerWorker::new(self.clone(), self.to_input_vec(&word), config.clone());
+            let worker = SpellerWorker::new(self.clone(),
+                self.to_input_vec(&word), config.clone(), true);
             let mut suggestions = worker.suggest();
 
             match mutation {

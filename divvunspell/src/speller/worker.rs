@@ -23,6 +23,7 @@ pub struct SpellerWorker<F: crate::vfs::File, T: Transducer<F>, U: Transducer<F>
     speller: Arc<HfstSpeller<F, T, U>>,
     input: Vec<SymbolNumber>,
     config: SpellerConfig,
+    mode_correcting: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -37,11 +38,13 @@ where
         speller: Arc<HfstSpeller<F, T, U>>,
         input: Vec<SymbolNumber>,
         config: SpellerConfig,
+        mode_correcting: bool,
     ) -> SpellerWorker<F, T, U> {
         SpellerWorker {
             speller,
             input,
             config,
+            mode_correcting,
         }
     }
 
@@ -70,7 +73,12 @@ where
                     if self
                         .is_under_weight_limit(max_weight, next_node.weight() + transition_weight)
                     {
-                        let new_node = next_node.update_lexicon(pool, transition);
+                        let new_node =  if self.mode_correcting {
+                            next_node.update_lexicon(pool,
+                                transition.clone_with_epsilon_symbol())
+                        } else {
+                            next_node.update_lexicon(pool, transition)
+                        };
                         output_nodes.push(new_node);
                     }
                 } else {
@@ -220,15 +228,27 @@ where
                 );
 
                 if is_under_weight_limit {
-                    let new_node = next_node.update(
+                    let new_node = if self.mode_correcting {
+                        next_node.update(
+                            pool,
+                            input_sym,
+                            Some(next_node.input_state + input_increment as
+                                u32),
+                            mutator_state,
+                            noneps_trans.target().unwrap(),
+                            noneps_trans.weight().unwrap() + mutator_weight,
+                        )
+
+                    } else {
+                        next_node.update(
                         pool,
                         sym,
                         Some(next_node.input_state + input_increment as u32),
                         mutator_state,
                         noneps_trans.target().unwrap(),
                         noneps_trans.weight().unwrap() + mutator_weight,
-                    );
-
+                        )
+                    };
                     output_nodes.push(new_node);
                 }
             }
