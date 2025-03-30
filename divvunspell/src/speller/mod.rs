@@ -37,7 +37,7 @@ impl Default for ReweightingConfig {
 }
 
 impl ReweightingConfig {
-    const fn default_const() -> Self {
+    pub const fn default_const() -> Self {
         Self {
             start_penalty: 10.0,
             end_penalty: 10.0,
