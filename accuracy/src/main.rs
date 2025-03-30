@@ -46,7 +46,7 @@ static CFG: SpellerConfig = SpellerConfig {
     beam: None,
     reweight: Some(ReweightingConfig::default()),
     node_pool_size: 128,
-    recase: true
+    recase: true,
 };
 
 fn load_words(
@@ -376,14 +376,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("Done!");
     match matches.value_of("threshold") {
         Some(threshold) => {
-            if threshold.parse::<f32>().unwrap() < (summary.top_five as f32/
-                summary.total_words as f32 * 100.0) {
+            if threshold.parse::<f32>().unwrap()
+                < (summary.top_five as f32 / summary.total_words as f32 * 100.0)
+            {
                 Ok(())
-            }
-            else {
+            } else {
                 Err("accuracy @5 lower threshold")?
             }
-        },
-        None => Ok(())
+        }
+        None => Ok(()),
     }
 }

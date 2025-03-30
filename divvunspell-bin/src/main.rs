@@ -170,6 +170,9 @@ struct SuggestArgs {
     )]
     disable_recase: bool,
 
+    #[options(help = "Uses supplied config file")]
+    config: Option<PathBuf>,
+
     #[options(no_short, long = "json", help = "output in JSON format")]
     use_json: bool,
 
@@ -286,6 +289,12 @@ fn load_archive(path: &Path) -> Result<Box<dyn SpellerArchive>, SpellerArchiveEr
 
 fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
     let mut suggest_cfg = SpellerConfig::default();
+
+    if let Some(config_path) = args.config {
+        let config_file = std::fs::File::open(config_path)?;
+        let config: SpellerConfig = serde_json::from_reader(config_file)?;
+        suggest_cfg = config;
+    }
 
     if args.disable_reweight {
         suggest_cfg.reweight = None;
