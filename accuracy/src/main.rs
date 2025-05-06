@@ -44,7 +44,7 @@ static CFG: SpellerConfig = SpellerConfig {
     n_best: Some(10),
     max_weight: Some(10000.0),
     beam: None,
-    reweight: Some(ReweightingConfig::default()),
+    reweight: Some(ReweightingConfig::default_const()),
     node_pool_size: 128,
     recase: true,
 };
