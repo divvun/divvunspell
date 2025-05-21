@@ -5,9 +5,9 @@ use std::sync::Arc;
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
-use unic_ucd_category::GeneralCategory;
-use unic_segment::Graphemes;
 use unic_emoji_char::is_emoji;
+use unic_segment::Graphemes;
+use unic_ucd_category::GeneralCategory;
 
 use self::worker::SpellerWorker;
 use crate::speller::suggestion::Suggestion;
@@ -15,34 +15,72 @@ use crate::tokenizer::case_handling::CaseHandler;
 use crate::transducer::Transducer;
 use crate::types::{SymbolNumber, Weight};
 
-
 pub mod suggestion;
 mod worker;
 
 /// configurable extra penalties for edit distance
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct ReweightingConfig {
+    #[serde(default = "default_start_penalty")]
     start_penalty: f32,
+    #[serde(default = "default_end_penalty")]
     end_penalty: f32,
+    #[serde(default = "default_mid_penalty")]
     mid_penalty: f32,
+}
+
+impl Default for ReweightingConfig {
+    fn default() -> Self {
+        Self::default_const()
+    }
+}
+
+impl ReweightingConfig {
+    pub const fn default_const() -> Self {
+        Self {
+            start_penalty: 10.0,
+            end_penalty: 10.0,
+            mid_penalty: 5.0,
+        }
+    }
+}
+
+const fn default_start_penalty() -> f32 {
+    10.0
+}
+
+const fn default_end_penalty() -> f32 {
+    10.0
+}
+
+const fn default_mid_penalty() -> f32 {
+    5.0
 }
 
 /// finetuning configuration of the spelling correction algorithms
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct SpellerConfig {
     /// upper limit for suggestions given
+    #[serde(default = "default_n_best")]
     pub n_best: Option<usize>,
     /// upper limit for weight of any suggestion
+    #[serde(default = "default_max_weight")]
     pub max_weight: Option<Weight>,
     /// weight distance between best suggestion and worst
+    #[serde(default = "default_beam")]
     pub beam: Option<Weight>,
     /// extra penalties for different edit distance type errors
+    #[serde(default = "default_reweight")]
     pub reweight: Option<ReweightingConfig>,
     /// some parallel stuff?
+    #[serde(default = "default_node_pool_size")]
     pub node_pool_size: usize,
     /// used when suggesting unfinished word parts
     pub continuation_marker: Option<String>,
     /// whether we try to recase mispelt word before other suggestions
+    #[serde(default = "default_recase")]
     pub recase: bool,
 }
 
@@ -56,27 +94,39 @@ impl SpellerConfig {
     /// * recase = true
     pub const fn default() -> SpellerConfig {
         SpellerConfig {
-            n_best: Some(10),
-            max_weight: Some(10000.0),
-            beam: None,
-            reweight: Some(ReweightingConfig::default()),
-            node_pool_size: 128,
+            n_best: default_n_best(),
+            max_weight: default_max_weight(),
+            beam: default_beam(),
+            reweight: default_reweight(),
+            node_pool_size: default_node_pool_size(),
             continuation_marker: None,
-            recase: true,
+            recase: default_recase(),
         }
     }
 }
 
-impl ReweightingConfig {
-    /// create a default configuration with following values:
-    /// * start = 10, end = 10, mid = 5
-    pub const fn default() -> ReweightingConfig {
-        ReweightingConfig {
-            start_penalty: 10.0,
-            end_penalty: 10.0,
-            mid_penalty: 5.0,
-        }
-    }
+const fn default_n_best() -> Option<usize> {
+    Some(10)
+}
+
+const fn default_max_weight() -> Option<Weight> {
+    Some(10000.0)
+}
+
+const fn default_beam() -> Option<Weight> {
+    None
+}
+
+const fn default_reweight() -> Option<ReweightingConfig> {
+    Some(ReweightingConfig::default_const())
+}
+
+const fn default_node_pool_size() -> usize {
+    128
+}
+
+const fn default_recase() -> bool {
+    true
 }
 /// can determine if string is a correct word or suggest corrections.
 /// Also with SpellerConfig.
@@ -137,8 +187,12 @@ where
         } else {
             vec![]
         };
-        log::debug!("is_correct_with_config: ‘{}’ ~ {:?}?; config: {:?}",
-            word, words, config);
+        log::debug!(
+            "is_correct_with_config: ‘{}’ ~ {:?}?; config: {:?}",
+            word,
+            words,
+            config
+        );
         for word in std::iter::once(word.into()).chain(words.into_iter()) {
             let worker = SpellerWorker::new(self.clone(),
                 self.to_input_vec(&word), config.clone(), false);
@@ -357,19 +411,30 @@ where
                             strsim::damerau_levenshtein(&words[0].as_str(), &word.as_str())
                                 + strsim::damerau_levenshtein(&word.as_str(), sugg.value());
                         let penalty_middle = reweight.mid_penalty * distance as f32;
-                        let additional_weight = if sugg.value.chars().all(|c|
-                            is_emoji(c)) { 0.0 }
-                            else {penalty_start + penalty_end + penalty_middle};
-                        log::trace!("Penalty: +{} = {} + {} * {} + {}",
-                            additional_weight, penalty_start, distance,
-                            reweight.mid_penalty, penalty_end);
+                        let additional_weight = if sugg.value.chars().all(|c| is_emoji(c)) {
+                            0.0
+                        } else {
+                            penalty_start + penalty_end + penalty_middle
+                        };
+                        log::trace!(
+                            "Penalty: +{} = {} + {} * {} + {}",
+                            additional_weight,
+                            penalty_start,
+                            distance,
+                            reweight.mid_penalty,
+                            penalty_end
+                        );
 
                         best.entry(sugg.value.clone())
                             .and_modify(|entry| {
                                 let weight = sugg.weight + additional_weight;
-                                log::trace!("=> Reweighting: {} {} = {} + {}",
-                                    sugg.value, weight,
-                                    sugg.weight, additional_weight);
+                                log::trace!(
+                                    "=> Reweighting: {} {} = {} + {}",
+                                    sugg.value,
+                                    weight,
+                                    sugg.weight,
+                                    additional_weight
+                                );
                                 if entry as &_ > &weight {
                                     *entry = weight
                                 }

@@ -14,8 +14,8 @@ will expect there to be less than 10 % regressions between `old.zhfst` and
 `new.zhfst`.
 */
 
-use std::path::PathBuf;
 use std::error::Error;
+use std::path::PathBuf;
 
 use divvunspell::archive;
 
@@ -26,7 +26,7 @@ use clap::Parser;
 struct Cli {
     #[arg(short, long, value_name = "OLDFILE")]
     old: PathBuf,
-    #[arg(short,long, value_name = "NEWFILE")]
+    #[arg(short, long, value_name = "NEWFILE")]
     new: PathBuf,
     #[arg(short, long, value_name = "WORDFILE")]
     words: PathBuf,
@@ -46,8 +46,8 @@ fn load_words(path: PathBuf) -> Result<Vec<(String, String)>, Box<dyn Error>> {
         .filter_map(Result::ok)
         .filter_map(|r| {
             r.get(0)
-                .and_then(|x| r.get(1).map(|y| (x.to_string(),
-                y.to_string())))})
+                .and_then(|x| r.get(1).map(|y| (x.to_string(), y.to_string())))
+        })
         .collect())
 }
 
@@ -65,36 +65,39 @@ fn main() -> Result<(), Box<dyn Error>> {
         if oldpos != newpos {
             match (oldpos, newpos) {
                 (None, Some(y)) => {
-                    println!("Regression: {} -> {} was uncorrected now {}",
-                        word.0, word.1, y);
-                },
+                    println!(
+                        "Regression: {} -> {} was uncorrected now {}",
+                        word.0, word.1, y
+                    );
+                }
                 (Some(x), None) => {
-                    println!("Regression: {} -> {} was {} now uncorrectable!",
-                        word.0, word.1, x);
-                },
+                    println!(
+                        "Regression: {} -> {} was {} now uncorrectable!",
+                        word.0, word.1, x
+                    );
+                }
                 (Some(x), Some(y)) => {
-                    println!("REGRESSION: {} -> {} was {} now {}",
-                        word.0, word.1, x, y);
-                },
+                    println!("REGRESSION: {} -> {} was {} now {}", word.0, word.1, x, y);
+                }
                 (None, None) => {
                     panic!("Shouldn't happen lol");
-                },
+                }
             }
             regressions = regressions + 1;
-        }
-        else {
+        } else {
             print!(".");
         }
-    };
+    }
     if words.len() == 0 {
         Err("Could not find any words from {}")?
     }
     let regressionrate = regressions as f32 / words.len() as f32;
     if cli.threshold > regressionrate {
         Ok(())
-    }
-    else {
-        Err(format!("regressions more than threshold {} > {}",
-                regressionrate, cli.threshold))?
+    } else {
+        Err(format!(
+            "regressions more than threshold {} > {}",
+            regressionrate, cli.threshold
+        ))?
     }
 }
