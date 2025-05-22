@@ -371,14 +371,35 @@ fn load_archive(path: &Path) -> Result<Box<dyn SpellerArchive>, SpellerArchiveEr
 }
 
 fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
+    // 1. default config
     let mut suggest_cfg = SpellerConfig::default();
 
+    let speller = if let Some(archive_path) = args.archive_path {
+        let archive = load_archive(&archive_path)?;
+        // 2. config from metadata
+        if let Some(metadata) = archive.metadata() {
+            if let Some(continuation) = &metadata.acceptor.continuation {
+                suggest_cfg.continuation_marker = Some(continuation.clone());
+            }
+        }
+        let speller = archive.analyser();
+        speller
+    } else if let (Some(lexicon_path), Some(mutator_path)) = (args.lexicon_path, args.mutator_path)
+    {
+        let acceptor = HfstTransducer::from_path(&Fs, lexicon_path)?;
+        let errmodel = HfstTransducer::from_path(&Fs, mutator_path)?;
+        HfstSpeller::new(errmodel, acceptor) as _
+    } else {
+        eprintln!("Either a BHFST or ZHFST archive must be provided, or a mutator and lexicon.");
+        process::exit(1);
+    };
+    // 3. config from explicit config file
     if let Some(config_path) = args.config {
         let config_file = std::fs::File::open(config_path)?;
         let config: SpellerConfig = serde_json::from_reader(config_file)?;
         suggest_cfg = config;
     }
-
+    // 4. config from other command line stuff
     if args.disable_reweight {
         suggest_cfg.reweight = None;
     }
@@ -425,20 +446,6 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
         args.inputs.into_iter().collect()
     };
 
-    let speller = if let Some(archive_path) = args.archive_path {
-        let archive = load_archive(&archive_path)?;
-        let speller = archive.analyser();
-        speller
-    } else if let (Some(lexicon_path), Some(mutator_path)) = (args.lexicon_path, args.mutator_path)
-    {
-        let acceptor = HfstTransducer::from_path(&Fs, lexicon_path)?;
-        let errmodel = HfstTransducer::from_path(&Fs, mutator_path)?;
-
-        HfstSpeller::new(errmodel, acceptor) as _
-    } else {
-        eprintln!("Either a BHFST or ZHFST archive must be provided, or a mutator and lexicon.");
-        process::exit(1);
-    };
 
     run(
         speller,
