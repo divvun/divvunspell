@@ -32,7 +32,7 @@ box-format = { version = "0.3.2", features = ["reader"], default-features = fals
 itertools = "0.12.1"
 strsim = "0.11.0"
 log = "0.4.11"
-cffi = { path = "../../../github/cffi", optional = true } #{ git = "https://github.com/cffi-rs/cffi", optional = true }
+cffi = { git = "https://github.com/cffi-rs/cffi", optional = true }
 unic-ucd-common = "0.9.0"
 flatbuffers = { version = "0.6.1", optional = true }
 env_logger = { version = "0.11.2", optional = true }
