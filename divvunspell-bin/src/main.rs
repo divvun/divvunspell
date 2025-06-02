@@ -186,6 +186,11 @@ fn run(
                 .clone()
                 .analyze_output_with_config(&word, &suggest_cfg);
             writer.write_output_analyses(&word, &output_analyses);
+
+            let final_suggs = speller
+                .clone()
+                .analyse_suggest_with_config(&word, &suggest_cfg);
+            writer.write_suggestions(&word, &final_suggs);
         }
     }
 }

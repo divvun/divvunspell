@@ -159,6 +159,14 @@ pub trait Analyzer: Speller {
         word: &str,
         config: &SpellerConfig,
     ) -> Vec<Suggestion>;
+    /// create suggestion list and use their analyses for finetununt
+    fn analyse_suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
+    /// create suggestion list and use analyses to finetune with config
+    fn analyse_suggest_with_config(
+        self: Arc<Self>,
+        word: &str,
+        config: &SpellerConfig,
+    ) -> Vec<Suggestion>;
 }
 
 impl<F, T, U> Speller for HfstSpeller<F, T, U>
@@ -265,6 +273,11 @@ where
         self.analyze_output_with_config(word, &SpellerConfig::default())
     }
 
+    #[inline]
+    fn analyse_suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
+        self.analyse_suggest_with_config(word, &SpellerConfig::default())
+    }
+
     fn analyze_output_with_config(
         self: Arc<Self>,
         word: &str,
@@ -279,6 +292,31 @@ where
 
         worker.suggest()
     }
+
+    fn analyse_suggest_with_config(
+        self: Arc<Self>,
+        word: &str,
+        config: &SpellerConfig
+    ) -> Vec<Suggestion> {
+        let mut suggs = self.clone().suggest_with_config(word, config);
+        suggs.retain(|sugg| {
+            log::trace!("suggestion {}", sugg.value);
+            let analyses = self.clone().analyze_input_with_config(sugg.value.as_str(),
+                                                          config);
+            let mut all_filtered = true;
+            for analysis in analyses {
+                log::trace!("-> {}", analysis.value);
+                if !analysis.value.contains("+Spell/NoSugg") {
+                    all_filtered = false;
+                } else {
+                    log::trace!("filtering=?");
+                }
+            }
+            !all_filtered
+        });
+        suggs
+    }
+
 }
 
 /// a speller consisting of two HFST automata

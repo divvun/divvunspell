@@ -419,14 +419,14 @@ where
 
         let input_sym = alphabet_translator[self.input[input_state as usize] as usize];
         let next_lexicon_state = next_node.lexicon_state + 1;
-        log::trace!(
-            "lexicon consuming {}: {}",
-            input_sym,
-            self.speller
-                .lexicon
-                .alphabet()
-                .string_from_symbols(&[input_sym])
-        );
+        //        log::trace!(
+        //            "lexicon consuming {}: {}",
+        //            input_sym,
+        //            self.speller
+        //                .lexicon
+        //                .alphabet()
+        //                .string_from_symbols(&[input_sym])
+        //        );
 
         if !lexicon.has_transitions(next_lexicon_state, Some(input_sym)) {
             // we have no regular transitions for this
@@ -655,7 +655,7 @@ where
         &self,
         corrections: &HashMap<SmolStr, Weight>,
     ) -> Vec<Suggestion> {
-        log::trace!("Generating sorted suggestions");
+        //log::trace!("Generating sorted suggestions");
         let mut c: Vec<Suggestion>;
         if let Some(s) = &self.config.continuation_marker {
             c = corrections
