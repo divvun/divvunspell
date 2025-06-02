@@ -46,6 +46,7 @@ static CFG: SpellerConfig = SpellerConfig {
     beam: None,
     reweight: Some(ReweightingConfig::default_const()),
     node_pool_size: 128,
+    continuation_marker: None,
     recase: true,
 };
 

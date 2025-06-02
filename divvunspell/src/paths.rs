@@ -3,10 +3,14 @@
 use std::path::PathBuf;
 #[cfg(target_os = "windows")]
 use std::path::PathBuf;
+#[cfg(target_os = "linux")]
+use std::path::PathBuf;
 
 #[cfg(target_os = "macos")]
 use language_tags::LanguageTag;
 #[cfg(target_os = "windows")]
+use language_tags::LanguageTag;
+#[cfg(target_os = "linux")]
 use language_tags::LanguageTag;
 
 #[cfg(target_os = "macos")]
@@ -47,4 +51,9 @@ pub fn find_speller_path(tag: LanguageTag) -> Option<PathBuf> {
         .filter_map(Result::ok)
         .next()
         .map(|x| x.path().to_path_buf())
+}
+
+#[cfg(target_os = "linux")]
+pub fn find_speller_path(tag: LanguageTag) -> Option<PathBuf> {
+    None
 }
