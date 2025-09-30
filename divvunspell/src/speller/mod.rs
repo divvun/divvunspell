@@ -23,11 +23,11 @@ mod worker;
 #[serde(rename_all = "kebab-case")]
 pub struct ReweightingConfig {
     #[serde(default = "default_start_penalty")]
-    start_penalty: f32,
+    pub start_penalty: f32,
     #[serde(default = "default_end_penalty")]
-    end_penalty: f32,
+    pub end_penalty: f32,
     #[serde(default = "default_mid_penalty")]
-    mid_penalty: f32,
+    pub mid_penalty: f32,
 }
 
 impl Default for ReweightingConfig {
