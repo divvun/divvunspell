@@ -656,7 +656,7 @@ where
     ) -> Vec<Suggestion> {
         //log::trace!("Generating sorted suggestions");
         let mut c: Vec<Suggestion>;
-        if let Some(s) = &self.config.continuation_marker {
+        if let Some(s) = &self.config.completion_marker {
             c = corrections
                 .into_iter()
                 .map(|x| Suggestion::new(x.0.clone(), *x.1, Some(x.0.ends_with(s))))

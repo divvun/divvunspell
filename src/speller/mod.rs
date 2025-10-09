@@ -102,7 +102,7 @@ pub struct SpellerConfig {
     pub recase: bool,
     /// used when suggesting unfinished word parts
     #[serde(default)]
-    pub continuation_marker: Option<String>,
+    pub completion_marker: Option<String>,
 }
 
 impl SpellerConfig {
@@ -121,7 +121,7 @@ impl SpellerConfig {
             reweight: default_reweight(),
             node_pool_size: default_node_pool_size(),
             recase: default_recase(),
-            continuation_marker: None,
+            completion_marker: None,
         }
     }
 }
@@ -555,7 +555,7 @@ where
             return vec![];
         }
         let mut out: Vec<Suggestion>;
-        if let Some(s) = &config.continuation_marker {
+        if let Some(s) = &config.completion_marker {
             out = best
                 .into_iter()
                 .map(|(k, v)| Suggestion {

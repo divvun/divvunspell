@@ -49,7 +49,6 @@ static CFG: SpellerConfig = SpellerConfig {
     node_pool_size: 128,
     recase: true,
     completion_marker: None,
-    continuation_marker: None,
 };
 
 fn load_words(

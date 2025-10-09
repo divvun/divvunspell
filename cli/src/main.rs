@@ -339,7 +339,7 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
         // 2. config from metadata
         if let Some(metadata) = archive.metadata() {
             if let Some(continuation) = metadata.acceptor().continuation() {
-                suggest_cfg.continuation_marker = Some(continuation.to_string());
+                suggest_cfg.completion_marker = Some(continuation.to_string());
             }
         }
         let speller = archive.speller();
@@ -366,7 +366,7 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
     if args.disable_recase {
         suggest_cfg.recase = false;
     }
-    suggest_cfg.continuation_marker = args.continuation_marker.clone();
+    suggest_cfg.completion_marker = args.continuation_marker.clone();
     if let Some(v) = args.nbest {
         if v == 0 {
             suggest_cfg.n_best = None;
