@@ -1009,7 +1009,7 @@
 
         <span class="kw">let </span>input_sym = alphabet_translator[<span class="self">self</span>.input[input_state <span class="kw">as </span>usize] <span class="kw">as </span>usize];
         <span class="kw">let </span>next_lexicon_state = next_node.lexicon_state + <span class="number">1</span>;
-        <span class="macro">log::trace!</span>(<span class="string">"lexicon consuming {}: {}"</span>, input_sym,
+        <span class="macro">tracing::trace!</span>(<span class="string">"lexicon consuming {}: {}"</span>, input_sym,
             <span class="self">self</span>.speller.lexicon.alphabet().string_from_symbols(<span class="kw-2">&amp;</span>[input_sym]));
 
         <span class="kw">if </span>!lexicon.has_transitions(next_lexicon_state, <span class="prelude-val">Some</span>(input_sym)) {
@@ -1098,7 +1098,7 @@
         <span class="comment">// let max_weight = speller_max_weight(&amp;self.config);
         </span><span class="kw">let </span>pool = Pool::with_size_and_max(<span class="number">0</span>, <span class="number">0</span>);
         <span class="kw">let </span><span class="kw-2">mut </span>nodes = speller_start_node(<span class="kw-2">&amp;</span>pool, <span class="self">self</span>.state_size() <span class="kw">as </span>usize);
-        <span class="macro">log::trace!</span>(<span class="string">"beginning is_correct {:?}?"</span>, <span class="self">self</span>.input);
+        <span class="macro">tracing::trace!</span>(<span class="string">"beginning is_correct {:?}?"</span>, <span class="self">self</span>.input);
         <span class="kw">while let </span><span class="prelude-val">Some</span>(next_node) = nodes.pop() {
             <span class="kw">if </span>next_node.input_state <span class="kw">as </span>usize == <span class="self">self</span>.input.len()
                 &amp;&amp; <span class="self">self</span>.speller.lexicon().is_final(next_node.lexicon_state)
@@ -1114,7 +1114,7 @@
     </span>}
 
     <span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>suggest(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Vec&lt;Suggestion&gt; {
-        <span class="macro">log::trace!</span>(<span class="string">"Beginning suggest"</span>);
+        <span class="macro">tracing::trace!</span>(<span class="string">"Beginning suggest"</span>);
 
         <span class="kw">let </span>pool = Pool::with_size_and_max(<span class="self">self</span>.config.node_pool_size, <span class="self">self</span>.config.node_pool_size);
         <span class="kw">let </span><span class="kw-2">mut </span>nodes = speller_start_node(<span class="kw-2">&amp;</span>pool, <span class="self">self</span>.state_size() <span class="kw">as </span>usize);
@@ -1136,9 +1136,9 @@
                     .iter()
                     .map(|s| <span class="kw-2">&amp;*</span>key_table[<span class="kw-2">*</span>s <span class="kw">as </span>usize])
                     .collect();
-                <span class="macro">log::warn!</span>(<span class="string">"{}: iteration count at {}"</span>, name, iteration_count);
-                <span class="macro">log::warn!</span>(<span class="string">"Node count: {}"</span>, nodes.len());
-                <span class="macro">log::warn!</span>(<span class="string">"Node weight: {}"</span>, next_node.weight());
+                <span class="macro">tracing::warn!</span>(<span class="string">"{}: iteration count at {}"</span>, name, iteration_count);
+                <span class="macro">tracing::warn!</span>(<span class="string">"Node count: {}"</span>, nodes.len());
+                <span class="macro">tracing::warn!</span>(<span class="string">"Node weight: {}"</span>, next_node.weight());
                 <span class="kw">break</span>;
             }
 

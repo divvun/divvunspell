@@ -49,11 +49,11 @@ impl File for std::fs::File {
     }
 
     unsafe fn memory_map(&self) -> Result<Mmap> {
-        MmapOptions::new().map(self)
+        unsafe { MmapOptions::new().map(self) }
     }
 
     unsafe fn partial_memory_map(&self, offset: u64, len: usize) -> Result<Mmap> {
-        MmapOptions::new().offset(offset).len(len).map(self)
+        unsafe { MmapOptions::new().offset(offset).len(len).map(self) }
     }
 }
 
@@ -119,17 +119,21 @@ pub mod boxf {
         }
 
         unsafe fn memory_map(&self) -> Result<memmap2::Mmap> {
-            memmap2::MmapOptions::new()
-                .offset(self.offset)
-                .len(self.len)
-                .map(&self.file)
+            unsafe {
+                memmap2::MmapOptions::new()
+                    .offset(self.offset)
+                    .len(self.len)
+                    .map(&self.file)
+            }
         }
 
         unsafe fn partial_memory_map(&self, offset: u64, len: usize) -> Result<memmap2::Mmap> {
-            memmap2::MmapOptions::new()
-                .offset(self.offset + offset)
-                .len(std::cmp::min(self.len - offset as usize, len))
-                .map(&self.file)
+            unsafe {
+                memmap2::MmapOptions::new()
+                    .offset(self.offset + offset)
+                    .len(std::cmp::min(self.len - offset as usize, len))
+                    .map(&self.file)
+            }
         }
     }
 

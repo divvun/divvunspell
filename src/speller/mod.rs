@@ -246,7 +246,7 @@ where
         } else {
             vec![]
         };
-        log::debug!(
+        tracing::debug!(
             "is_correct_with_config: ‘{}’ ~ {:?}?; config: {:?}",
             word,
             words,
@@ -298,7 +298,7 @@ where
             OutputMode::WithTags,
         );
 
-        log::trace!("Beginning analyze_input with config");
+        tracing::trace!("Beginning analyze_input with config");
         worker.analyze()
     }
 
@@ -327,17 +327,17 @@ where
     ) -> Vec<Suggestion> {
         let mut suggs = self.clone().suggest_with_config(word, config);
         suggs.retain(|sugg| {
-            log::trace!("suggestion {}", sugg.value);
+            tracing::trace!("suggestion {}", sugg.value);
             let analyses = self
                 .clone()
                 .analyze_input_with_config(sugg.value.as_str(), config);
             let mut all_filtered = true;
             for analysis in analyses {
-                log::trace!("-> {}", analysis.value);
+                tracing::trace!("-> {}", analysis.value);
                 if !analysis.value.contains("+Spell/NoSugg") {
                     all_filtered = false;
                 } else {
-                    log::trace!("filtering=?");
+                    tracing::trace!("filtering=?");
                 }
             }
             !all_filtered
@@ -421,7 +421,7 @@ where
         let alphabet = self.mutator().alphabet();
         let key_table = alphabet.key_table();
 
-        log::trace!("to_input_vec: {}", word);
+        tracing::trace!("to_input_vec: {}", word);
         Graphemes::new(word)
             .map(|ch| {
                 let s = ch.to_string();
@@ -443,7 +443,7 @@ where
         let worker =
             SpellerWorker::new(self.clone(), self.to_input_vec(word), config.clone(), mode);
 
-        log::trace!("suggesting single {}", word);
+        tracing::trace!("suggesting single {}", word);
         worker.suggest()
     }
 
@@ -456,7 +456,7 @@ where
     ) -> Vec<Suggestion> {
         use crate::tokenizer::case_handling::*;
 
-        log::trace!("suggesting cases...");
+        tracing::trace!("suggesting cases...");
         let CaseHandler {
             original_input,
             mutation,
@@ -466,7 +466,7 @@ where
         let mut best: HashMap<SmolStr, Weight> = HashMap::new();
 
         for word in std::iter::once(&original_input).chain(words.iter()) {
-            log::trace!("suggesting for word {}", word);
+            tracing::trace!("suggesting for word {}", word);
             let worker = SpellerWorker::new(
                 self.clone(),
                 self.to_input_vec(&word),
@@ -491,9 +491,9 @@ where
 
             match mode {
                 CaseMode::MergeAll => {
-                    log::trace!("Case merge all");
+                    tracing::trace!("Case merge all");
                     for sugg in suggestions.into_iter() {
-                        log::trace!("for {}", sugg.value);
+                        tracing::trace!("for {}", sugg.value);
                         let penalty_start =
                             if !sugg.value().starts_with(word.chars().next().unwrap()) {
                                 reweight.start_penalty - reweight.mid_penalty
@@ -517,7 +517,7 @@ where
                             } else {
                                 penalty_start + penalty_end + penalty_middle
                             });
-                        log::trace!(
+                        tracing::trace!(
                             "Penalty: +{} = {} + {} * {} + {}",
                             additional_weight,
                             penalty_start,
@@ -529,7 +529,7 @@ where
                         best.entry(sugg.value.clone())
                             .and_modify(|entry| {
                                 let weight = sugg.weight + additional_weight;
-                                log::trace!(
+                                tracing::trace!(
                                     "=> Reweighting: {} {} = {} + {}",
                                     sugg.value,
                                     weight,
@@ -641,8 +641,8 @@ pub(crate) mod ffi {
 
             let out = FfiSpellerConfig {
                 n_best: config.n_best.unwrap_or(0),
-                max_weight: config.max_weight.unwrap_or(0.0),
-                beam: config.beam.unwrap_or(0.0),
+                max_weight: config.max_weight.unwrap_or(Weight::ZERO),
+                beam: config.beam.unwrap_or(Weight::ZERO),
                 reweight,
                 node_pool_size: config.node_pool_size,
             };
@@ -659,7 +659,7 @@ pub(crate) mod ffi {
                 return Ok(SpellerConfig::default());
             }
 
-            let config: &FfiSpellerConfig = &*ptr.cast();
+            let config: &FfiSpellerConfig = unsafe { &*ptr.cast() };
 
             let reweight = if config.reweight == FfiReweightingConfig::default() {
                 None
@@ -678,12 +678,12 @@ pub(crate) mod ffi {
                 } else {
                     None
                 },
-                max_weight: if config.max_weight > 0.0 {
+                max_weight: if config.max_weight > Weight::ZERO {
                     Some(config.max_weight)
                 } else {
                     None
                 },
-                beam: if config.beam > 0.0 {
+                beam: if config.beam > Weight::ZERO {
                     Some(config.beam)
                 } else {
                     None
@@ -691,7 +691,7 @@ pub(crate) mod ffi {
                 reweight,
                 node_pool_size: config.node_pool_size,
                 recase: true,
-                continuation_marker: None,
+                completion_marker: None,
             };
 
             Ok(out)

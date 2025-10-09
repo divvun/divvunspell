@@ -5,7 +5,7 @@ use crate::tokenizer::{Tokenize, WordIndices};
 
 pub(crate) mod fbs;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn divvun_word_indices<'a>(utf8_string: *const c_char) -> *mut WordIndices<'a> {
     let c_str = unsafe { CStr::from_ptr(utf8_string) };
     let string = c_str.to_str().unwrap();
@@ -13,7 +13,7 @@ pub extern "C" fn divvun_word_indices<'a>(utf8_string: *const c_char) -> *mut Wo
     Box::into_raw(Box::new(iterator)) as *mut _
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn divvun_word_indices_next<'a>(
     iterator: *mut WordIndices<'a>,
     out_index: *mut u64,
@@ -34,12 +34,12 @@ pub extern "C" fn divvun_word_indices_next<'a>(
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn divvun_word_indices_free<'a>(handle: *mut WordIndices<'a>) {
     drop(unsafe { Box::from_raw(handle) });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn divvun_cstr_free(handle: *mut c_char) {
     drop(unsafe { CString::from_raw(handle) });
 }
@@ -69,23 +69,19 @@ impl<T: IntoFlatbuffer> ToForeign<T, Slice<u8>> for FbsMarshaler {
     }
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn divvun_fbs_free(slice: Slice<u8>) {
-    cffi::VecMarshaler::from_foreign(slice)
-        .map(|_| ())
-        .unwrap_or(());
-}
-
-#[cfg(feature = "logging")]
-#[no_mangle]
-pub unsafe extern "C" fn divvun_enable_logging() {
-    env_logger::init();
+    unsafe {
+        cffi::VecMarshaler::from_foreign(slice)
+            .map(|_| ())
+            .unwrap_or(())
+    };
 }
 
 #[doc(hidden)]
 /// This makes the cffi go brrr.
 pub unsafe extern "C" fn _cffi_string_free(ptr: Slice<u8>) {
-    cffi::ffi::cffi_string_free(ptr);
+    unsafe { cffi::ffi::cffi_string_free(ptr) };
 }
 
 #[cffi::marshal(return_marshaler = "FbsMarshaler")]

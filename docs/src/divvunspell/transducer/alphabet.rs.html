@@ -195,7 +195,7 @@
         </span>F: <span class="kw">crate</span>::vfs::File,
         T: Transducer&lt;F&gt;,
     {
-        <span class="macro">log::trace!</span>(<span class="string">"create_translator_from"</span>);
+        <span class="macro">tracing::trace!</span>(<span class="string">"create_translator_from"</span>);
         <span class="kw">let </span>from = mutator.alphabet();
         <span class="kw">let </span>from_keys = from.key_table();
 
@@ -203,7 +203,7 @@
         translator.push(<span class="number">0</span>);
 
         <span class="kw">for </span>from_sym <span class="kw">in </span>from_keys.iter().skip(<span class="number">1</span>) {
-            <span class="macro">log::trace!</span>(<span class="string">"key {}"</span>, from_sym);
+            <span class="macro">tracing::trace!</span>(<span class="string">"key {}"</span>, from_sym);
             <span class="kw">if let </span><span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span>sym) = <span class="self">self</span>.string_to_symbol.get(from_sym) {
                 translator.push(sym);
             } <span class="kw">else </span>{

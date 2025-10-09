@@ -90,7 +90,7 @@ impl TransducerAlphabet {
         F: crate::vfs::File,
         T: Transducer<F>,
     {
-        log::trace!("create_translator_from");
+        tracing::trace!("create_translator_from");
         let from = mutator.alphabet();
         let from_keys = from.key_table();
 
@@ -98,7 +98,7 @@ impl TransducerAlphabet {
         translator.push(SymbolNumber::ZERO);
 
         for from_sym in from_keys.iter().skip(1) {
-            log::trace!("key {}", from_sym);
+            tracing::trace!("key {}", from_sym);
             if let Some(sym) = self.string_to_symbol.get(from_sym) {
                 translator.push(*sym);
             } else {

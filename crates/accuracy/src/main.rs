@@ -32,6 +32,7 @@ use std::{
     time::{Instant, SystemTime},
 };
 
+use clap::Parser;
 use distance::damerau_levenshtein;
 use divvunspell::archive;
 use divvunspell::speller::suggestion::Suggestion;
@@ -39,7 +40,7 @@ use divvunspell::speller::{ReweightingConfig, SpellerConfig};
 use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::Serialize;
-use structopt::clap::{App, AppSettings, Arg};
+use std::path::PathBuf;
 
 static CFG: SpellerConfig = SpellerConfig {
     n_best: Some(10),
@@ -178,61 +179,46 @@ impl Summary {
     }
 }
 
+#[derive(Debug, Parser)]
+#[command(
+    name = "divvunspell-accuracy",
+    version,
+    about = "Accuracy testing for DivvunSpell."
+)]
+struct Args {
+    /// Provide JSON config file to override test defaults
+    #[arg(short = 'c', long)]
+    config: Option<PathBuf>,
+
+    /// The 'input -> expected' list in tab-delimited value file (TSV)
+    words: Option<String>,
+
+    /// Use the given ZHFST file
+    zhfst: Option<String>,
+
+    /// The file path for the JSON report output
+    #[arg(short = 'o', long = "json-output")]
+    json_output: Option<String>,
+
+    /// The file path for the TSV line append
+    #[arg(short = 't', long = "tsv-output")]
+    tsv_output: Option<String>,
+
+    /// Truncate typos list to max number of words specified
+    #[arg(short = 'w', long = "max-words")]
+    max_words: Option<usize>,
+
+    /// Minimum precision @ 5 for automated testing
+    #[arg(short = 'T', long)]
+    threshold: Option<f32>,
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
-    pretty_env_logger::init();
+    tracing_subscriber::fmt::init();
 
-    let matches = App::new("divvunspell-accuracy")
-        .setting(AppSettings::ArgRequiredElseHelp)
-        .version(env!("CARGO_PKG_VERSION"))
-        .about("Accuracy testing for DivvunSpell.")
-        .arg(
-            Arg::with_name("config")
-                .short("c")
-                .takes_value(true)
-                .help("Provide JSON config file to override test defaults"),
-        )
-        .arg(
-            Arg::with_name("words")
-                .value_name("WORDS")
-                .help("The 'input -> expected' list in tab-delimited value file (TSV)"),
-        )
-        // .arg(
-        //     Arg::with_name("bhfst")
-        //         .value_name("BHFST")
-        //         .help("Use the given BHFST file"),
-        // )
-        .arg(
-            Arg::with_name("zhfst")
-                .value_name("ZHFST")
-                .help("Use the given ZHFST file"),
-        )
-        .arg(
-            Arg::with_name("json-output")
-                .short("o")
-                .value_name("JSON-OUTPUT")
-                .help("The file path for the JSON report output"),
-        )
-        .arg(
-            Arg::with_name("tsv-output")
-                .short("t")
-                .value_name("TSV-OUTPUT")
-                .help("The file path for the TSV line append"),
-        )
-        .arg(
-            Arg::with_name("max-words")
-                .short("w")
-                .takes_value(true)
-                .help("Truncate typos list to max number of words specified"),
-        )
-        .arg(
-            Arg::with_name("threshold")
-                .short("T")
-                .takes_value(true)
-                .help("Minimum precision @ 5 for automated testing"),
-        )
-        .get_matches();
+    let args = Args::parse();
 
-    let cfg: SpellerConfig = match matches.value_of("config") {
+    let cfg: SpellerConfig = match args.config {
         Some(path) => {
             let file = std::fs::File::open(path)?;
             serde_json::from_reader(file)?
@@ -240,30 +226,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         None => CFG.clone(),
     };
 
-    // let archive: BoxSpellerArchive<ThfstTransducer, ThfstTransducer> =
-    //     match matches.value_of("bhfst") {
-    //         Some(path) => BoxSpellerArchive::open(path)?,
-    //         None => {
-    //             eprintln!("No BHFST found for given path; aborting.");
-    //             std::process::exit(1);
-    //         }
-    //     };
-
-    let archive = match matches.value_of("zhfst") {
-        Some(path) => archive::open(Path::new(path))?,
+    let archive = match args.zhfst {
+        Some(path) => archive::open(Path::new(&path))?,
         None => {
             eprintln!("No ZHFST found for given path; aborting.");
             std::process::exit(1);
         }
     };
 
-    let words = match matches.value_of("words") {
-        Some(path) => load_words(
-            path,
-            matches
-                .value_of("max-words")
-                .and_then(|x| x.parse::<usize>().ok()),
-        )?,
+    let words = match args.words {
+        Some(path) => load_words(&path, args.max_words)?,
         None => {
             eprintln!("No word list for given path; aborting.");
             std::process::exit(1);
@@ -320,7 +292,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let summary = Summary::new(&results);
     println!("{}", summary);
 
-    if let Some(path) = matches.value_of("json-output") {
+    if let Some(path) = args.json_output {
         let output = std::fs::File::create(path)?;
         let report = Report {
             metadata: archive.metadata(),
@@ -332,13 +304,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         };
         println!("Writing JSON report…");
         serde_json::to_writer_pretty(output, &report)?;
-    } else if let Some(path) = matches.value_of("tsv-output") {
-        let mut output = match std::fs::OpenOptions::new().append(true).open(path) {
+    } else if let Some(path) = args.tsv_output {
+        let mut output = match std::fs::OpenOptions::new().append(true).open(&path) {
             Ok(f) => Ok(f),
             Err(_) => std::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
-                .open(path),
+                .open(&path),
         }?;
         let md = output.metadata()?;
         if md.len() == 0 {
@@ -376,11 +348,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     println!("Done!");
-    match matches.value_of("threshold") {
+    match args.threshold {
         Some(threshold) => {
-            if threshold.parse::<f32>().unwrap()
-                < (summary.top_five as f32 / summary.total_words as f32 * 100.0)
-            {
+            if threshold < (summary.top_five as f32 / summary.total_words as f32 * 100.0) {
                 Ok(())
             } else {
                 Err("accuracy @5 lower threshold")?

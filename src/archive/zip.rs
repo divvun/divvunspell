@@ -2,8 +2,8 @@
 use ::zip::{CompressionMethod, ZipArchive};
 use memmap2::MmapOptions;
 use std::fs::File;
-use std::io::prelude::*;
 use std::io::Seek;
+use std::io::prelude::*;
 use std::sync::Arc;
 
 use super::error::SpellerArchiveError;

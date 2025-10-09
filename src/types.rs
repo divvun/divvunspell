@@ -182,7 +182,6 @@ impl Div for TransitionTableIndex {
 
 impl TransitionTableIndex {
     pub(crate) const MAX: Self = TransitionTableIndex(u32::MAX);
-    pub(crate) const ZERO: Self = TransitionTableIndex(0);
     pub(crate) const ONE: Self = TransitionTableIndex(1);
 
     #[inline(always)]

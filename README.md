@@ -1,154 +1,214 @@
 # divvunspell
 
-An implementation of [hfst-ospell](https://github.com/hfst/hfst-ospell) in Rust, with added features like tokenization, case handling, and parallelisation.
+[![CI](https://builds.giellalt.org/api/badge/divvunspell)](https://builds.giellalt.org/pipelines/divvunspell)
+[![Crates.io](https://img.shields.io/crates/v/divvunspell.svg)](https://crates.io/crates/divvunspell)
+[![Documentation](https://docs.rs/divvunspell/badge.svg)](https://docs.rs/divvunspell)
 
-[![CI](https://github.com/divvun/divvunspell/actions/workflows/ci.yml/badge.svg)](https://github.com/divvun/divvunspell/actions/workflows/ci.yml)
+A fast, feature-rich spell checking library and toolset for HFST-based spell checkers. Written in Rust, divvunspell is a modern reimplementation and extension of [hfst-ospell](https://github.com/hfst/hfst-ospell) with additional features like parallel processing, comprehensive tokenization, case handling, and morphological analysis.
 
-## Building and installing commandline tools
+## Features
+
+- **High Performance**: Memory-mapped transducers and parallel suggestion generation
+- **ZHFST/BHFST Support**: Load standard HFST spell checker archives
+- **Smart Tokenization**: Unicode-aware word boundary detection with customizable alphabets
+- **Case Handling**: Intelligent case preservation and suggestion recasing
+- **Morphological Analysis**: Extract and filter suggestions based on morphological tags
+- **Cross-Platform**: Works on macOS, Linux, Windows, iOS and Android
+
+## Quick Start
+
+### As a Command-Line Tool
 
 ```sh
-# For the `divvunspell` binary:
-cargo install divvunspell-bin
+# Install the CLI
+cargo install divvunspell-cli
 
-# For `thfst-tools` binary (most people can skip this one):
-cargo install thfst-tools
-
-# To build the development version from this source, cd into the relevant directory and:
-cargo install --path .
+# Check spelling and get suggestions
+divvunspell suggest --archive speller.zhfst --json "sámi"
 ```
 
-### No Rust?
+### As a Rust Library
+
+Add to your `Cargo.toml`:
+
+```toml
+[dependencies]
+divvunspell = "1.0.0-beta.5"
+```
+
+Basic usage:
+
+```rust
+use divvunspell::archive::{SpellerArchive, ZipSpellerArchive};
+use divvunspell::speller::{Speller, SpellerConfig, OutputMode};
+
+// Load a spell checker archive
+let archive = ZipSpellerArchive::open("language.zhfst")?;
+let speller = archive.speller();
+
+// Check if a word is correct
+if !speller.clone().is_correct("wordd") {
+    // Get spelling suggestions
+    let config = SpellerConfig::default();
+    let suggestions = speller.clone().suggest("wordd");
+
+    for suggestion in suggestions {
+        println!("{} (weight: {})", suggestion.value, suggestion.weight);
+    }
+}
+
+// Morphological analysis
+let analyses = speller.analyze_input("running");
+for analysis in analyses {
+    println!("{}", analysis.value); // e.g., "run+V+PresPartc"
+}
+```
+
+## Command-Line Tools
+
+### divvunspell
+
+The main spell checking tool with support for suggestions, analysis, and tokenization.
+
+```sh
+# Get suggestions for a word
+divvunspell suggest --archive language.zhfst "wordd"
+
+# Always show suggestions even for correct words
+divvunspell suggest --archive language.zhfst --always-suggest "word"
+
+# Limit number and weight of suggestions
+divvunspell suggest --archive language.zhfst --nbest 5 --weight 20.0 "wordd"
+
+# JSON output
+divvunspell suggest --archive language.zhfst --json "wordd"
+
+# Tokenize text
+divvunspell tokenize --archive language.zhfst "This is some text."
+
+# Analyze word forms morphologically
+divvunspell analyze-input --archive language.zhfst "running"
+divvunspell analyze-output --archive language.zhfst "runing"
+```
+
+**Options:**
+- `-a, --archive <FILE>` - BHFST or ZHFST archive to use
+- `-S, --always-suggest` - Show suggestions even if word is correct
+- `-w, --weight <WEIGHT>` - Maximum weight limit for suggestions
+- `-n, --nbest <N>` - Maximum number of suggestions to return
+- `--no-reweighting` - Disable suggestion reweighting (closer to hfst-ospell behavior)
+- `--no-recase` - Disable case-aware suggestion handling
+- `--json` - Output results as JSON
+
+**Debugging:**
+
+Set `RUST_LOG=trace` to enable detailed logging:
+
+```sh
+RUST_LOG=trace divvunspell suggest --archive language.zhfst "wordd"
+```
+
+### thfst-tools
+
+Convert HFST and ZHFST files to optimized THFST and BHFST formats.
+
+**THFST** (Tromsø-Helsinki FST): A byte-aligned HFST format optimized for fast loading and memory mapping, required for ARM processors.
+
+**BHFST** (Box HFST): THFST files packaged in a [box](https://github.com/bbqsrc/box) container with JSON metadata for efficient processing.
+
+```sh
+# Convert HFST to THFST
+thfst-tools hfst-to-thfst acceptor.hfst acceptor.thfst
+
+# Convert ZHFST to BHFST (recommended for distribution)
+thfst-tools zhfst-to-bhfst language.zhfst language.bhfst
+
+# Convert THFST pair to BHFST
+thfst-tools thfsts-to-bhfst --errmodel errmodel.thfst --lexicon lexicon.thfst output.bhfst
+
+# View BHFST metadata
+thfst-tools bhfst-info language.bhfst
+```
+
+### accuracy
+
+Test spell checker accuracy against known typo/correction pairs.
+
+```sh
+# Install
+cd crates/accuracy
+cargo install --path .
+
+# Run accuracy test
+accuracy typos.tsv language.zhfst
+
+# Save detailed JSON report
+accuracy -o report.json typos.tsv language.zhfst
+
+# Limit test size and save TSV summary
+accuracy -w 1000 -t results.tsv typos.tsv language.zhfst
+
+# Use custom config
+accuracy -c config.json typos.tsv language.zhfst
+```
+
+**Input format** (`typos.tsv`): Tab-separated values with typo in first column, expected correction in second:
+
+```
+wordd    word
+recieve  receive
+teh      the
+```
+
+**Accuracy viewer** (prototype web UI):
+
+```sh
+accuracy -o support/accuracy-viewer/public/report.json typos.txt language.zhfst
+cd support/accuracy-viewer
+npm i && npm run dev
+# Open http://localhost:5000
+```
+
+## Building from Source
+
+### Install Rust
 
 ```sh
 curl https://sh.rustup.rs -sSf | sh
 source $HOME/.cargo/env
 rustup default stable
+```
+
+### Build Everything
+
+```sh
+# Build all crates
 cargo build --release
+
+# Install specific tools
+cargo install --path ./cli          # divvunspell CLI
+cargo install --path ./crates/thfst-tools
+cargo install --path ./crates/accuracy
 ```
 
-### divvunspell
-Usage:
+### Run Tests
 
 ```sh
-Usage: divvunspell SUBCOMMAND [OPTIONS]
-
-Optional arguments:
-  -h, --help  print help message
-
-Available subcommands:
-  suggest   get suggestions for provided input
-  tokenize  print input in word-separated tokenized form
-
-$ divvunspell suggest -h
-Usage: divvunspell suggest [OPTIONS]
-
-Positional arguments:
-  inputs                 words to be processed
-
-Optional arguments:
-  -h, --help             print help message
-  -a, --archive ARCHIVE  BHFST or ZHFST archive to be used
-  -S, --always-suggest   always show suggestions even if word is correct
-  -w, --weight WEIGHT    maximum weight limit for suggestions
-  -n, --nbest NBEST      maximum number of results
-  --no-reweighting       disables reweighting algorithm (makes results more like hfst-ospell)
-  --no-recase            disables recasing algorithm (makes results more like hfst-ospell)
-  --json                 output in JSON format
+cargo test
 ```
 
-If you want to debug divvunspell behaviour, simply enable rust's logging
-features by setting `RUST_LOG=trace` on your commandline's environment
-variables.
+## Documentation
 
-### accuracy
-
-Building:
-```sh
-cd accuracy/
-cargo install --path .
-```
-
-The resulting binary `accuracy` is placed in `$HOME/.cargo/bin/`, make sure it is on the path.
-
-Usage:
-
-```
-divvunspell-accuracy 1.0.0-beta.1
-Accuracy testing for DivvunSpell.
-
-USAGE:
-    accuracy [OPTIONS] [ARGS]
-
-FLAGS:
-    -h, --help       Prints help information
-    -V, --version    Prints version information
-
-OPTIONS:
-    -c <config>             Provide JSON config file to override test defaults
-    -o <JSON-OUTPUT>        The file path for the JSON report output
-    -w <max-words>          Truncate typos list to max number of words specified
-    -t <TSV-OUTPUT>         The file path for the TSV line append
-
-ARGS:
-    <WORDS>    The 'input -> expected' list in tab-delimited value file (TSV)
-    <ZHFST>    Use the given ZHFST file
-```
-
-### thfst-tools
-
-Convert hfst and zhfst files to thfst and bhfst formats.
-
-- **thfst**: byte-aligned hfst for fast and efficient loading and memory mapping, required to run `divvunspell` on ARM processors
-- **bhfst**: thfst files wrapped in a [box](https://github.com/bbqsrc/box) container; in the case of zhfst files converted to bhfst, the metadata file (`index.xml` in the zhfst archive) is converted to a json file for faster and leaner processing by the `divvunspell` library.
-
-Usage:
-
-```
-thfst-tools 1.0.0-alpha.5
-Tromsø-Helsinki Finite State Transducer toolkit.
-
-USAGE:
-    thfst-tools <SUBCOMMAND>
-
-FLAGS:
-    -h, --help       Prints help information
-    -V, --version    Prints version information
-
-SUBCOMMANDS:
-    bhfst-info         Print metadata for BHFST
-    help               Prints this message or the help of the given subcommand(s)
-    hfst-to-thfst      Convert an HFST file to THFST
-    thfsts-to-bhfst    Convert a THFST acceptor/errmodel pair to BHFST
-    zhfst-to-bhfst     Convert a ZHFST file to BHFST
-```
-
-## Speller testing
-
-There's a prototype-level testing tool in `support/accuracy-viewer`. Use it like:
-
-```
-accuracy -o support/accuracy-viewer/public/report.json typos.txt sma.zhfst
-cd support/accuracy-viewer
-npm i && npm run dev
-```
-
-View in `http://localhost:5000`.
-
-`typos.txt` is a TSV file with typos in the first column and expected correction in the second.
-More info by `accuracy --help`.
+- **API Documentation**: [docs.rs/divvunspell](https://docs.rs/divvunspell)
+- **GitHub Pages**: [divvun.github.io/divvunspell](https://divvun.github.io/divvunspell/)
 
 ## License
 
-The crate `divvunspell` is licensed under either of
+The **divvunspell library** is dual-licensed under:
 
- * Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
+- MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
-at your option.
+You may choose either license for library use.
 
-The `divvunspell`, `thfst-tools` and `accuracy` binaries are licensed under the GPL version 3 license.
-
-## More docs?
-
-We have [GitHub pages site](https://divvun.github.io/divvunspell/) for
-divvunspell with some more tech docs and stuff (WIP).
+The **command-line tools** (`divvunspell`, `thfst-tools`, `accuracy`) are licensed under **GPL-3.0** ([LICENSE-GPL](LICENSE-GPL)).

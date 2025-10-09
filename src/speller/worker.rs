@@ -6,8 +6,8 @@ use lifeguard::{Pool, Recycled};
 
 use super::{HfstSpeller, OutputMode, SpellerConfig};
 use crate::speller::suggestion::Suggestion;
-use crate::transducer::tree_node::TreeNode;
 use crate::transducer::Transducer;
+use crate::transducer::tree_node::TreeNode;
 use crate::types::{SymbolNumber, TransitionTableIndex, ValueNumber, Weight};
 
 #[inline(always)]
@@ -419,7 +419,7 @@ where
 
         let input_sym = alphabet_translator[self.input[input_state as usize].0 as usize];
         let next_lexicon_state = next_node.lexicon_state.incr();
-        //        log::trace!(
+        //        tracing::trace!(
         //            "lexicon consuming {}: {}",
         //            input_sym,
         //            self.speller
@@ -511,11 +511,11 @@ where
     }
 
     pub(crate) fn is_correct(&self) -> bool {
-        log::trace!("is_correct");
+        tracing::trace!("is_correct");
         // let max_weight = speller_max_weight(&self.config);
         let pool = Pool::with_size_and_max(0, 0);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
-        log::trace!("beginning is_correct {:?}?", self.input);
+        tracing::trace!("beginning is_correct {:?}?", self.input);
         while let Some(next_node) = nodes.pop() {
             if next_node.input_state.0 as usize == self.input.len()
                 && self.speller.lexicon().is_final(next_node.lexicon_state)
@@ -531,10 +531,10 @@ where
     }
 
     pub(crate) fn analyze(&self) -> Vec<Suggestion> {
-        log::trace!("Beginning analyze");
+        tracing::trace!("Beginning analyze");
         let pool = Pool::with_size_and_max(0, 0);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
-        log::trace!("beginning analyze {:?}", self.input);
+        tracing::trace!("beginning analyze {:?}", self.input);
         let mut lookups = HashMap::new();
         let mut analyses: Vec<Suggestion> = vec![];
         while let Some(next_node) = nodes.pop() {
@@ -565,7 +565,7 @@ where
     }
 
     pub(crate) fn suggest(&self) -> Vec<Suggestion> {
-        log::trace!("Beginning suggest");
+        tracing::trace!("Beginning suggest");
 
         let pool = Pool::with_size_and_max(self.config.node_pool_size, self.config.node_pool_size);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
@@ -587,9 +587,9 @@ where
                     .iter()
                     .map(|s| &*key_table[s.0 as usize])
                     .collect();
-                log::warn!("{}: iteration count at {}", name, iteration_count);
-                log::warn!("Node count: {}", nodes.len());
-                log::warn!("Node weight: {}", next_node.weight());
+                tracing::warn!("{}: iteration count at {}", name, iteration_count);
+                tracing::warn!("Node count: {}", nodes.len());
+                tracing::warn!("Node weight: {}", next_node.weight());
                 break;
             }
 
@@ -632,7 +632,7 @@ where
                 .lexicon()
                 .alphabet()
                 .string_from_symbols(&next_node.string);
-            // log::trace!("suggesting? {}::{}", string, weight);
+            // tracing::trace!("suggesting? {}::{}", string, weight);
             if weight < best_weight {
                 best_weight = weight;
             }
@@ -654,7 +654,7 @@ where
         &self,
         corrections: &HashMap<SmolStr, Weight>,
     ) -> Vec<Suggestion> {
-        //log::trace!("Generating sorted suggestions");
+        //tracing::trace!("Generating sorted suggestions");
         let mut c: Vec<Suggestion>;
         if let Some(s) = &self.config.completion_marker {
             c = corrections

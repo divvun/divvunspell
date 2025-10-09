@@ -1,5 +1,5 @@
 use std::fs::File;
-use std::io::{prelude::*, BufWriter};
+use std::io::{BufWriter, prelude::*};
 use std::path::Path;
 
 use byteorder::{LittleEndian, WriteBytesExt};

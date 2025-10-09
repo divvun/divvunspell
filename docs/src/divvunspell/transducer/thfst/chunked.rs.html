@@ -432,7 +432,7 @@
             _file: std::marker::PhantomData::&lt;F&gt;,
         };
 
-        <span class="macro">log::debug!</span>(<span class="string">"{:#?}"</span>, transducer);
+        <span class="macro">tracing::debug!</span>(<span class="string">"{:#?}"</span>, transducer);
 
         <span class="prelude-val">Ok</span>(transducer)
     }
@@ -492,9 +492,9 @@
                 <span class="prelude-val">None </span>=&gt; <span class="bool-val">false</span>,
             }
         } <span class="kw">else </span>{
-            <span class="macro">log::trace!</span>(<span class="string">"has_transitions: i:{} s:{:?}"</span>, i, s);
+            <span class="macro">tracing::trace!</span>(<span class="string">"has_transitions: i:{} s:{:?}"</span>, i, s);
             <span class="kw">let </span>(page, index) = <span class="macro">index_rel_index!</span>(<span class="self">self</span>, i + u32::from(sym));
-            <span class="macro">log::trace!</span>(<span class="string">"has_transitions: page:{} index:{:?}"</span>, page, index);
+            <span class="macro">tracing::trace!</span>(<span class="string">"has_transitions: page:{} index:{:?}"</span>, page, index);
             <span class="kw">if </span>page &gt;= <span class="self">self</span>.index_tables.len() {
                 <span class="kw">return </span><span class="bool-val">false</span>;
             }

@@ -29,7 +29,7 @@ where
 pub type MemmapThfstChunkedTransducer<F> = ThfstChunkedTransducer<F>;
 
 macro_rules! transition_rel_index {
-    ($self:expr, $x:expr) => {{
+    ($self:expr_2021, $x:expr_2021) => {{
         let index_page = $x / $self.transitions_per_chunk;
         let relative_index = $x - ($self.transitions_per_chunk * index_page);
         (index_page.0 as usize, relative_index)
@@ -37,7 +37,7 @@ macro_rules! transition_rel_index {
 }
 
 macro_rules! index_rel_index {
-    ($self:expr, $x:expr) => {{
+    ($self:expr_2021, $x:expr_2021) => {{
         let index_page = $x / $self.indexes_per_chunk;
         let relative_index = $x - ($self.indexes_per_chunk * index_page);
         (index_page.0 as usize, relative_index)
@@ -45,7 +45,7 @@ macro_rules! index_rel_index {
 }
 
 macro_rules! error {
-    ($path:path, $name:expr) => {
+    ($path:path, $name:expr_2021) => {
         TransducerError::Io(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             format!(
@@ -140,7 +140,7 @@ impl<F: crate::vfs::File> Transducer<F> for ThfstChunkedTransducer<F> {
             _file: std::marker::PhantomData::<F>,
         };
 
-        log::debug!("{:#?}", transducer);
+        tracing::debug!("{:#?}", transducer);
 
         Ok(transducer)
     }
@@ -200,9 +200,9 @@ impl<F: crate::vfs::File> Transducer<F> for ThfstChunkedTransducer<F> {
                 None => false,
             }
         } else {
-            log::trace!("has_transitions: i:{} s:{:?}", i, s);
+            tracing::trace!("has_transitions: i:{} s:{:?}", i, s);
             let (page, index) = index_rel_index!(self, i + TransitionTableIndex(sym.0 as u32));
-            log::trace!("has_transitions: page:{} index:{:?}", page, index);
+            tracing::trace!("has_transitions: page:{} index:{:?}", page, index);
             if page >= self.index_tables.len() {
                 return false;
             }

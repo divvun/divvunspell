@@ -430,7 +430,6 @@ impl<'a> Iterator for WordBounds<'a> {
 impl<'a> DoubleEndedIterator for WordBounds<'a> {
     #[inline]
     #[allow(clippy::cognitive_complexity)]
-    #[cfg_attr(feature = "cargo-clippy", allow(cyclomatic_complexity))]
     fn next_back(&mut self) -> Option<&'a str> {
         use self::FormatExtendType::*;
         use self::WordBoundsState::*;
@@ -653,11 +652,7 @@ impl<'a> DoubleEndedIterator for WordBounds<'a> {
             None
         } else {
             idx = previdx;
-            if take_cat {
-                Some(cat)
-            } else {
-                None
-            }
+            if take_cat { Some(cat) } else { None }
         };
 
         let retstr = &self.string[idx..];
@@ -738,7 +733,9 @@ mod tests {
     fn test_word_bounds() {
         assert_eq!(
             WordBounds::new("The quick (\"brown\")  fox").collect::<Vec<&str>>(),
-            &["The", " ", "quick", " ", "(", "\"", "brown", "\"", ")", " ", " ", "fox"]
+            &[
+                "The", " ", "quick", " ", "(", "\"", "brown", "\"", ")", " ", " ", "fox"
+            ]
         );
     }
 
@@ -750,7 +747,9 @@ mod tests {
                 |s: &&str| s.chars().any(|ch| ch.is_alphanumeric()),
             )
             .collect::<Vec<&str>>(),
-            &["The", "quick", "brown", "fox", "can't", "jump", "32.3", "feet", "right"]
+            &[
+                "The", "quick", "brown", "fox", "can't", "jump", "32.3", "feet", "right"
+            ]
         );
     }
 }

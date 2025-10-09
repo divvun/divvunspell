@@ -1,53 +1,39 @@
+use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
-use structopt::StructOpt;
 
 use divvunspell::archive::{
-    boxf::ThfstBoxSpellerArchive, BoxSpellerArchive, SpellerArchive, ZipSpellerArchive,
+    BoxSpellerArchive, SpellerArchive, ZipSpellerArchive, boxf::ThfstBoxSpellerArchive,
 };
 use divvunspell::transducer::{
+    Transducer,
     convert::ConvertFile,
     hfst::HfstTransducer,
     thfst::{self, MemmapThfstTransducer},
-    Transducer,
 };
 
 use box_format::{BoxFileWriter, BoxPath, Compression};
 
-#[derive(Debug, StructOpt)]
-#[structopt(
+#[derive(Debug, Parser)]
+#[command(
     name = "thfst-tools",
     about = "Tromsø-Helsinki Finite State Transducer toolkit."
 )]
 enum Opts {
-    #[structopt(about = "Convert an HFST file to THFST")]
-    HfstToThfst {
-        #[structopt(parse(from_os_str))]
-        from: PathBuf,
-    },
+    /// Convert an HFST file to THFST
+    HfstToThfst { from: PathBuf },
 
-    #[structopt(about = "Convert a ZHFST file to BHFST")]
-    ZhfstToBhfst {
-        #[structopt(parse(from_os_str))]
-        from: PathBuf,
-    },
+    /// Convert a ZHFST file to BHFST
+    ZhfstToBhfst { from: PathBuf },
 
-    #[structopt(about = "Convert a THFST acceptor/errmodel pair to BHFST")]
+    /// Convert a THFST acceptor/errmodel pair to BHFST
     ThfstsToBhfst {
-        #[structopt(parse(from_os_str))]
         acceptor: PathBuf,
-
-        #[structopt(parse(from_os_str))]
         errmodel: PathBuf,
-
-        #[structopt(parse(from_os_str))]
         output: PathBuf,
     },
 
-    #[structopt(about = "Print metadata for BHFST")]
-    BhfstInfo {
-        #[structopt(parse(from_os_str))]
-        path: PathBuf,
-    },
+    /// Print metadata for BHFST
+    BhfstInfo { path: PathBuf },
 }
 
 const ALIGNMENT: u64 = 8;
@@ -175,7 +161,7 @@ fn convert_zhfst_to_bhfst(zhfst_path: &Path) -> Result<(), std::io::Error> {
 }
 
 fn main() -> Result<(), std::io::Error> {
-    let opts = Opts::from_args();
+    let opts = Opts::parse();
 
     match opts {
         Opts::HfstToThfst { from } => convert_hfst_to_thfst(&from),

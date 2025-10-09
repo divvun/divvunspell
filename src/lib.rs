@@ -8,26 +8,16 @@ ospell`]
 [`HFST`]: (https://hfst.github.io)
 [`HFST ospell`]: (https://github.com/hfst/hfst-ospell)
 
-# Usage examples
-
-```
-use divvunspell::archive::ZipSpellerArchive
-
-let path = Path();
-let speller = ZipSpellerArchive::open(path)
-let cfg = SpellerConfig::default();
-let words = vec!("words", "schmords");
-todo!
-```
-
 Further examples of how to use divvunspell library can be found in the
-[`divvunspell-bin`] in the same repository.
+[`cli`] in the same repository.
 
-[`divvunspell-bin`]: (https://github.com/divvun/divvunspell)
-
+[`cli`]: (https://github.com/divvun/divvunspell)
 */
 
-#![warn(missing_docs)]
+// #![warn(missing_docs)]
+
+#![deny(unsafe_op_in_unsafe_fn)]
+
 pub mod archive;
 #[cfg(feature = "internal_ffi")]
 pub mod ffi;

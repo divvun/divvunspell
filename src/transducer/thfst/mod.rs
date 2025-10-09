@@ -6,7 +6,7 @@ use std::path::Path;
 use std::{u16, u32};
 
 use crate::constants::TARGET_TABLE;
-use crate::transducer::{symbol_transition::SymbolTransition, TransducerError};
+use crate::transducer::{TransducerError, symbol_transition::SymbolTransition};
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use serde::{Deserialize, Serialize};
 
@@ -73,7 +73,7 @@ where
 }
 
 macro_rules! error {
-    ($path:path, $name:expr) => {
+    ($path:path, $name:expr_2021) => {
         TransducerError::Io(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             format!(

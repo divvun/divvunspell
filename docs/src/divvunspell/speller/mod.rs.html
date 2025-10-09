@@ -605,7 +605,7 @@
         } <span class="kw">else </span>{
             <span class="macro">vec!</span>[]
         };
-        <span class="macro">log::debug!</span>(<span class="string">"is_correct_with_config: ‘{}’ ~ {:?}?; config: {:?}"</span>,
+        <span class="macro">tracing::debug!</span>(<span class="string">"is_correct_with_config: ‘{}’ ~ {:?}?; config: {:?}"</span>,
             word, words, config);
         <span class="kw">for </span>word <span class="kw">in </span>std::iter::once(word.into()).chain(words.into_iter()) {
             <span class="kw">let </span>worker = SpellerWorker::new(<span class="self">self</span>.clone(), <span class="self">self</span>.to_input_vec(<span class="kw-2">&amp;</span>word), config.clone());
@@ -695,7 +695,7 @@
         <span class="kw">let </span>alphabet = <span class="self">self</span>.mutator().alphabet();
         <span class="kw">let </span>key_table = alphabet.key_table();
 
-        <span class="macro">log::trace!</span>(<span class="string">"to_input_vec: {}"</span>, word);
+        <span class="macro">tracing::trace!</span>(<span class="string">"to_input_vec: {}"</span>, word);
         Graphemes::new(word)
             .map(|ch| {
                 <span class="kw">let </span>s = ch.to_string();
@@ -771,14 +771,14 @@
                         <span class="kw">let </span>additional_weight = <span class="kw">if </span>sugg.value.chars().all(|c|
                             is_emoji(c)) { <span class="number">0.0 </span>}
                             <span class="kw">else </span>{penalty_start + penalty_end + penalty_middle};
-                        <span class="macro">log::trace!</span>(<span class="string">"Penalty: +{} = {} + {} * {} + {}"</span>,
+                        <span class="macro">tracing::trace!</span>(<span class="string">"Penalty: +{} = {} + {} * {} + {}"</span>,
                             additional_weight, penalty_start, distance,
                             reweight.mid_penalty, penalty_end);
 
                         best.entry(sugg.value.clone())
                             .and_modify(|entry| {
                                 <span class="kw">let </span>weight = sugg.weight + additional_weight;
-                                <span class="macro">log::trace!</span>(<span class="string">"=&gt; Reweighting: {} {} = {} + {}"</span>,
+                                <span class="macro">tracing::trace!</span>(<span class="string">"=&gt; Reweighting: {} {} = {} + {}"</span>,
                                     sugg.value, weight,
                                     sugg.weight, additional_weight);
                                 <span class="kw">if </span>entry <span class="kw">as </span><span class="kw-2">&amp;</span><span class="kw">_ </span>&gt; <span class="kw-2">&amp;</span>weight {

@@ -16,8 +16,8 @@
 //! * <https://www.unicode.org/reports/tr29/#Word_Boundaries>
 //! * <https://www.unicode.org/reports/tr29/#Table_Word_Break_Property_Values>
 
-use unic_char_property::char_property;
 use unic_char_property::TotalCharProperty;
+use unic_char_property::char_property;
 
 char_property! {
     /// Represents the Unicode character

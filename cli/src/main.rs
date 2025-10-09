@@ -5,20 +5,20 @@ use std::{
     sync::Arc,
 };
 
+use clap::{Parser, Subcommand};
 use divvunspell::speller::HfstSpeller;
-use divvunspell::transducer::hfst::HfstTransducer;
 use divvunspell::transducer::Transducer;
+use divvunspell::transducer::hfst::HfstTransducer;
 use divvunspell::types::Weight;
 use divvunspell::vfs::Fs;
-use gumdrop::Options;
 use serde::Serialize;
 
 use divvunspell::{
     archive::{
-        boxf::ThfstBoxSpellerArchive, error::SpellerArchiveError, BoxSpellerArchive,
-        SpellerArchive, ZipSpellerArchive,
+        BoxSpellerArchive, SpellerArchive, ZipSpellerArchive, boxf::ThfstBoxSpellerArchive,
+        error::SpellerArchiveError,
     },
-    speller::{suggestion::Suggestion, Speller, SpellerConfig},
+    speller::{Speller, SpellerConfig, suggestion::Suggestion},
     tokenizer::Tokenize,
 };
 
@@ -178,86 +178,86 @@ fn run(
         }
     }
 }
-#[derive(Debug, Options)]
+#[derive(Debug, Parser)]
+#[command(
+    name = "divvunspell",
+    about = "Spell checking tool for ZHFST/BHFST spellers"
+)]
 struct Args {
-    #[options(help = "print help message")]
-    help: bool,
-
-    #[options(command)]
+    #[command(subcommand)]
     command: Option<Command>,
 }
 
-#[derive(Debug, Options)]
+#[derive(Debug, Subcommand)]
 enum Command {
-    #[options(help = "get suggestions for provided input")]
+    /// Get suggestions for provided input
     Suggest(SuggestArgs),
 
-    #[options(help = "print input in word-separated tokenized form")]
+    /// Print input in word-separated tokenized form
     Tokenize(TokenizeArgs),
 }
 
-#[derive(Debug, Options)]
+#[derive(Debug, Parser)]
 struct SuggestArgs {
-    #[options(help = "print help message")]
-    help: bool,
-
-    #[options(short = "a", help = "BHFST or ZHFST archive to be used")]
+    /// BHFST or ZHFST archive to be used
+    #[arg(short = 'a', long = "archive")]
     archive_path: Option<PathBuf>,
 
-    #[options(long = "mutator", help = "mutator to use (if archive not provided)")]
+    /// Mutator to use (if archive not provided)
+    #[arg(long)]
     mutator_path: Option<PathBuf>,
 
-    #[options(long = "lexicon", help = "lexicon to use (if archive not provided)")]
+    /// Lexicon to use (if archive not provided)
+    #[arg(long)]
     lexicon_path: Option<PathBuf>,
 
-    #[options(short = "S", help = "always show suggestions even if word is correct")]
+    /// Always show suggestions even if word is correct
+    #[arg(short = 'S', long = "always-suggest")]
     always_suggest: bool,
 
-    #[options(short = "A", help = "analyze words and suggestions")]
+    /// Analyze words and suggestions
+    #[arg(short = 'A', long)]
     analyze: bool,
 
-    #[options(help = "maximum weight limit for suggestions")]
+    /// Maximum weight limit for suggestions
+    #[arg(short = 'w', long)]
     weight: Option<f32>,
 
-    #[options(help = "maximum number of results")]
+    /// Maximum number of results
+    #[arg(short = 'n', long)]
     nbest: Option<usize>,
 
-    #[options(help = "character for incomplete suggestions")]
+    /// Character for incomplete suggestions
+    #[arg(long)]
     continuation_marker: Option<String>,
 
-    #[options(
-        no_short,
-        long = "no-reweighting",
-        help = "disables reweighting algorithm (makes results more like hfst-ospell)"
-    )]
+    /// Disables reweighting algorithm (makes results more like hfst-ospell)
+    #[arg(long = "no-reweighting")]
     disable_reweight: bool,
 
-    #[options(
-        no_short,
-        long = "no-recase",
-        help = "disables recasing algorithm (makes results more like hfst-ospell)"
-    )]
+    /// Disables recasing algorithm (makes results more like hfst-ospell)
+    #[arg(long = "no-recase")]
     disable_recase: bool,
 
-    #[options(help = "Uses supplied config file")]
+    /// Uses supplied config file
+    #[arg(short = 'c', long)]
     config: Option<PathBuf>,
 
-    #[options(no_short, long = "json", help = "output in JSON format")]
-    use_json: bool,
+    /// Output in JSON format
+    #[arg(long)]
+    json: bool,
 
-    #[options(free, help = "words to be processed")]
+    /// Words to be processed
     inputs: Vec<String>,
 }
 
-#[derive(Debug, Options)]
+#[derive(Debug, Parser)]
 struct TokenizeArgs {
-    #[options(help = "print help message")]
-    help: bool,
-
-    #[options(short = "w", long = "words", help = "show words only")]
+    /// Show words only
+    #[arg(short = 'w', long = "words")]
     is_words_only: bool,
 
-    #[options(free, help = "text to be tokenized")]
+    /// Text to be tokenized
     inputs: Vec<String>,
 }
 
@@ -297,7 +297,7 @@ fn load_archive(path: &Path) -> Result<Box<dyn SpellerArchive>, SpellerArchiveEr
                     "Unsupported archive (missing .zhfst or .bhfst)",
                 )
                 .into(),
-            ))
+            ));
         }
     };
 
@@ -384,7 +384,7 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
         }
     }
 
-    let mut writer: Box<dyn OutputWriter> = if args.use_json {
+    let mut writer: Box<dyn OutputWriter> = if args.json {
         Box::new(JsonWriter::new())
     } else {
         Box::new(StdoutWriter {
@@ -423,9 +423,9 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
 }
 
 fn main() -> anyhow::Result<()> {
-    pretty_env_logger::init();
+    tracing_subscriber::fmt::init();
 
-    let args = Args::parse_args_default_or_exit();
+    let args = Args::parse();
 
     match args.command {
         None => Ok(()),

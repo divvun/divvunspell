@@ -4,14 +4,14 @@ use std::sync::Arc;
 use box_format::BoxFileReader;
 
 use super::error::SpellerArchiveError;
-use super::{meta::SpellerMetadata, SpellerArchive};
+use super::{SpellerArchive, meta::SpellerMetadata};
 use crate::speller::{HfstSpeller, Speller};
 use crate::transducer::{
-    thfst::{MemmapThfstChunkedTransducer, MemmapThfstTransducer},
     Transducer,
+    thfst::{MemmapThfstChunkedTransducer, MemmapThfstTransducer},
 };
-use crate::vfs::boxf::Filesystem as BoxFilesystem;
 use crate::vfs::Filesystem;
+use crate::vfs::boxf::Filesystem as BoxFilesystem;
 
 /// An archive with mmaped language and error model THFST automata archive.
 pub type ThfstBoxSpellerArchive = BoxSpellerArchive<

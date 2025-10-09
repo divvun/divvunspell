@@ -1,9 +1,9 @@
 //! Data structures of speller metadata.
 //!
-//! These are usually read from the speller archives, in xml or json files or
-//! such. XML format is described here and json format there.
+//! These are usually read from the speller archives, in XML or JSON files or
+//! such.
 use serde::{Deserialize, Serialize};
-use serde_xml_rs::{from_reader, Error, ParserConfig};
+use serde_xml_rs::{Error, ParserConfig, from_reader};
 
 /// Speller metadata
 #[derive(Serialize, Deserialize, Debug, Clone)]
