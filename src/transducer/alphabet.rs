@@ -20,7 +20,9 @@ pub struct TransducerAlphabet {
 impl TransducerAlphabet {
     #[inline(always)]
     pub fn string_from_symbols(&self, syms: &[SymbolNumber]) -> SmolStr {
-        syms.iter().map(|s| &*self.key_table[*s as usize]).collect()
+        syms.iter()
+            .map(|s| &*self.key_table[s.0 as usize])
+            .collect()
     }
 
     #[inline(always)]
@@ -50,8 +52,10 @@ impl TransducerAlphabet {
 
     #[inline(always)]
     pub fn add_symbol(&mut self, string: &str) {
-        self.string_to_symbol
-            .insert(string.into(), self.key_table.len() as u16);
+        self.string_to_symbol.insert(
+            string.into(),
+            SymbolNumber(self.key_table.len().try_into().expect("too many symbols")),
+        );
         self.key_table.push(string.into());
     }
 
@@ -91,14 +95,14 @@ impl TransducerAlphabet {
         let from_keys = from.key_table();
 
         let mut translator = Vec::with_capacity(64);
-        translator.push(0);
+        translator.push(SymbolNumber::ZERO);
 
         for from_sym in from_keys.iter().skip(1) {
             log::trace!("key {}", from_sym);
-            if let Some(&sym) = self.string_to_symbol.get(from_sym) {
-                translator.push(sym);
+            if let Some(sym) = self.string_to_symbol.get(from_sym) {
+                translator.push(*sym);
             } else {
-                let lexicon_key = self.key_table.len() as SymbolNumber;
+                let lexicon_key = SymbolNumber(self.key_table.len() as u16);
                 translator.push(lexicon_key);
                 self.add_symbol(from_sym);
             }

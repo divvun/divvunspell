@@ -19,9 +19,9 @@ where
 {
     // meta: MetaRecord,
     index_tables: Vec<MemmapIndexTable<F>>,
-    indexes_per_chunk: u32,
+    indexes_per_chunk: TransitionTableIndex,
     transition_tables: Vec<MemmapTransitionTable<F>>,
-    transitions_per_chunk: u32,
+    transitions_per_chunk: TransitionTableIndex,
     alphabet: TransducerAlphabet,
     _file: std::marker::PhantomData<F>,
 }
@@ -32,7 +32,7 @@ macro_rules! transition_rel_index {
     ($self:expr, $x:expr) => {{
         let index_page = $x / $self.transitions_per_chunk;
         let relative_index = $x - ($self.transitions_per_chunk * index_page);
-        (index_page as usize, relative_index)
+        (index_page.0 as usize, relative_index)
     }};
 }
 
@@ -40,7 +40,7 @@ macro_rules! index_rel_index {
     ($self:expr, $x:expr) => {{
         let index_page = $x / $self.indexes_per_chunk;
         let relative_index = $x - ($self.indexes_per_chunk * index_page);
-        (index_page as usize, relative_index)
+        (index_page.0 as usize, relative_index)
     }};
 }
 
@@ -201,7 +201,7 @@ impl<F: crate::vfs::File> Transducer<F> for ThfstChunkedTransducer<F> {
             }
         } else {
             log::trace!("has_transitions: i:{} s:{:?}", i, s);
-            let (page, index) = index_rel_index!(self, i + u32::from(sym));
+            let (page, index) = index_rel_index!(self, i + TransitionTableIndex(sym.0 as u32));
             log::trace!("has_transitions: page:{} index:{:?}", page, index);
             if page >= self.index_tables.len() {
                 return false;
@@ -218,12 +218,12 @@ impl<F: crate::vfs::File> Transducer<F> for ThfstChunkedTransducer<F> {
         if i >= TARGET_TABLE {
             let (page, index) = transition_rel_index!(self, i - TARGET_TABLE);
             match self.transition_tables[page].input_symbol(index) {
-                Some(sym) => sym == 0 || self.alphabet.is_flag(sym),
+                Some(sym) => sym == SymbolNumber::ZERO || self.alphabet.is_flag(sym),
                 None => false,
             }
         } else {
             let (page, index) = index_rel_index!(self, i);
-            if let Some(0) = self.index_tables[page].input_symbol(index) {
+            if let Some(SymbolNumber::ZERO) = self.index_tables[page].input_symbol(index) {
                 true
             } else {
                 false
@@ -235,7 +235,7 @@ impl<F: crate::vfs::File> Transducer<F> for ThfstChunkedTransducer<F> {
     fn take_epsilons(&self, i: TransitionTableIndex) -> Option<SymbolTransition> {
         let (page, index) = transition_rel_index!(self, i);
 
-        if let Some(0) = self.transition_tables[page].input_symbol(index) {
+        if let Some(SymbolNumber::ZERO) = self.transition_tables[page].input_symbol(index) {
             Some(self.transition_tables[page].symbol_transition(index))
         } else {
             None
@@ -247,7 +247,7 @@ impl<F: crate::vfs::File> Transducer<F> for ThfstChunkedTransducer<F> {
         let (page, index) = transition_rel_index!(self, i);
 
         if let Some(sym) = self.transition_tables[page].input_symbol(index) {
-            if sym != 0 && !self.alphabet.is_flag(sym) {
+            if sym != SymbolNumber::ZERO && !self.alphabet.is_flag(sym) {
                 None
             } else {
                 Some(self.transition_tables[page].symbol_transition(index))
@@ -278,9 +278,10 @@ impl<F: crate::vfs::File> Transducer<F> for ThfstChunkedTransducer<F> {
     #[inline(always)]
     fn next(&self, i: TransitionTableIndex, symbol: SymbolNumber) -> Option<TransitionTableIndex> {
         if i >= TARGET_TABLE {
-            Some(i - TARGET_TABLE + 1)
+            Some(i - TARGET_TABLE + TransitionTableIndex(1))
         } else {
-            let (page, index) = index_rel_index!(self, i + 1 + u32::from(symbol));
+            let (page, index) =
+                index_rel_index!(self, i + TransitionTableIndex(symbol.0 as u32 + 1));
 
             if let Some(v) = self.index_tables[page].target(index) {
                 Some(v - TARGET_TABLE)

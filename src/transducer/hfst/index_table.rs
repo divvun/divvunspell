@@ -6,7 +6,6 @@ use std::fmt;
 use std::io::Cursor;
 use std::mem;
 use std::ptr;
-use std::{u16, u32};
 
 use crate::constants::INDEX_TABLE_SIZE;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
@@ -59,18 +58,17 @@ impl MappedIndexTable {
             return None;
         }
 
-        let index = self.offset + INDEX_TABLE_SIZE * i as usize;
+        let index = self.offset + INDEX_TABLE_SIZE * i.0 as usize;
 
-        let input_symbol: SymbolNumber =
-            if cfg!(all(target_arch = "arm", target_pointer_width = "32")) {
-                let mut cursor = self.make_cursor();
-                cursor.set_position(index as u64);
-                cursor.read_u16::<LittleEndian>().unwrap()
-            } else {
-                unsafe { ptr::read(self.mmap.as_ptr().add(index) as *const _) }
-            };
+        let input_symbol = if cfg!(all(target_arch = "arm", target_pointer_width = "32")) {
+            let mut cursor = self.make_cursor();
+            cursor.set_position(index as u64);
+            SymbolNumber(cursor.read_u16::<LittleEndian>().unwrap())
+        } else {
+            SymbolNumber(unsafe { ptr::read(self.mmap.as_ptr().add(index) as *const _) })
+        };
 
-        if input_symbol == u16::MAX {
+        if input_symbol == SymbolNumber::MAX {
             None
         } else {
             Some(input_symbol)
@@ -83,17 +81,18 @@ impl MappedIndexTable {
             return None;
         }
 
-        let index = self.offset + INDEX_TABLE_SIZE * i as usize;
-        let target: TransitionTableIndex =
-            if cfg!(all(target_arch = "arm", target_pointer_width = "32")) {
-                let mut cursor = self.make_cursor();
-                cursor.set_position((index + mem::size_of::<SymbolNumber>()) as u64);
-                cursor.read_u32::<LittleEndian>().unwrap()
-            } else {
-                unsafe { ptr::read(self.mmap.as_ptr().add(index + 2) as *const _) }
-            };
+        let index = self.offset + INDEX_TABLE_SIZE * i.0 as usize;
+        let target = if cfg!(all(target_arch = "arm", target_pointer_width = "32")) {
+            let mut cursor = self.make_cursor();
+            cursor.set_position((index + mem::size_of::<SymbolNumber>()) as u64);
+            TransitionTableIndex(cursor.read_u32::<LittleEndian>().unwrap())
+        } else {
+            TransitionTableIndex(unsafe {
+                ptr::read(self.mmap.as_ptr().add(index + 2) as *const _)
+            })
+        };
 
-        if target == u32::MAX {
+        if target == TransitionTableIndex::MAX {
             None
         } else {
             Some(target)
@@ -108,11 +107,11 @@ impl MappedIndexTable {
             return None;
         }
 
-        let index = self.offset + INDEX_TABLE_SIZE * i as usize;
+        let index = self.offset + INDEX_TABLE_SIZE * i.0 as usize;
         let weight: Weight = {
             let mut cursor = self.make_cursor();
             cursor.set_position((index + mem::size_of::<SymbolNumber>()) as u64);
-            cursor.read_f32::<LittleEndian>().unwrap()
+            Weight(cursor.read_f32::<LittleEndian>().unwrap())
         };
 
         Some(weight)

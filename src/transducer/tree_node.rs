@@ -4,16 +4,16 @@ use std::hash::{Hash, Hasher};
 
 use super::symbol_transition::SymbolTransition;
 use crate::types::{
-    FlagDiacriticOperation, FlagDiacriticOperator, FlagDiacriticState, SymbolNumber,
-    TransitionTableIndex, Weight,
+    FlagDiacriticOperation, FlagDiacriticOperator, FlagDiacriticState, InputIndex, SymbolNumber,
+    TransitionTableIndex, ValueNumber, Weight,
 };
 
 #[derive(Debug, Clone)]
 pub(crate) struct TreeNode {
     pub(crate) lexicon_state: TransitionTableIndex,
     pub(crate) mutator_state: TransitionTableIndex,
-    pub(crate) input_state: u32,
-    pub(crate) weight: f32,
+    pub(crate) input_state: InputIndex,
+    pub(crate) weight: Weight,
     pub(crate) flag_state: FlagDiacriticState,
     pub(crate) string: Vec<SymbolNumber>,
 }
@@ -52,9 +52,9 @@ impl std::cmp::Eq for TreeNode {}
 
 impl Hash for TreeNode {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u32(self.input_state);
-        state.write_u32(self.mutator_state);
-        state.write_u32(self.lexicon_state);
+        self.input_state.hash(state);
+        self.mutator_state.hash(state);
+        self.lexicon_state.hash(state);
     }
 }
 
@@ -62,11 +62,11 @@ impl lifeguard::Recycleable for TreeNode {
     fn new() -> Self {
         TreeNode {
             string: Vec::with_capacity(1),
-            input_state: 0,
-            mutator_state: 0,
-            lexicon_state: 0,
+            input_state: InputIndex(0),
+            mutator_state: TransitionTableIndex(0),
+            lexicon_state: TransitionTableIndex(0),
             flag_state: vec![],
-            weight: 0.0,
+            weight: Weight(0.0),
         }
     }
 
@@ -105,11 +105,11 @@ impl TreeNode {
     ) -> Recycled<'a, TreeNode> {
         pool.attach(TreeNode {
             string: vec![],
-            input_state: 0,
-            mutator_state: 0,
-            lexicon_state: 0,
+            input_state: InputIndex(0),
+            mutator_state: TransitionTableIndex(0),
+            lexicon_state: TransitionTableIndex(0),
             flag_state: start_state,
-            weight: 0.0,
+            weight: Weight(0.0),
         })
     }
 
@@ -132,7 +132,7 @@ impl TreeNode {
         }
 
         if let Some(value) = transition.symbol() {
-            if value != 0 {
+            if value.0 != 0 {
                 node.string.push(value);
             }
         }
@@ -182,7 +182,7 @@ impl TreeNode {
         &self,
         pool: &'a Pool<TreeNode>,
         output_symbol: SymbolNumber,
-        next_input: Option<u32>,
+        next_input: Option<InputIndex>,
         next_mutator: TransitionTableIndex,
         next_lexicon: TransitionTableIndex,
         weight: Weight,
@@ -194,7 +194,7 @@ impl TreeNode {
             node.string.extend(&self.string);
         }
 
-        if output_symbol != 0 {
+        if output_symbol.0 != 0 {
             node.string.push(output_symbol);
         }
 
@@ -223,11 +223,11 @@ impl TreeNode {
         &self,
         pool: &'a Pool<TreeNode>,
         feature: SymbolNumber,
-        value: i16,
+        value: ValueNumber,
         transition: &SymbolTransition,
     ) -> Recycled<'a, TreeNode> {
         let mut node = self.apply_transition(pool, transition);
-        node.flag_state[feature as usize] = value;
+        node.flag_state[feature.0 as usize] = value;
         node
     }
 
@@ -270,13 +270,13 @@ impl TreeNode {
                 Some(self.update_flag(pool, op.feature, op.value, transition))
             }
             FlagDiacriticOperator::NegativeSet => {
-                Some(self.update_flag(pool, op.feature, -op.value, transition))
+                Some(self.update_flag(pool, op.feature, op.value.invert(), transition))
             }
             FlagDiacriticOperator::Require => {
-                let res = if op.value == 0 {
-                    self.flag_state[op.feature as usize] != 0
+                let res = if op.value.0 == 0 {
+                    self.flag_state[op.feature.0 as usize] != ValueNumber(0)
                 } else {
-                    self.flag_state[op.feature as usize] == op.value
+                    self.flag_state[op.feature.0 as usize] == op.value
                 };
 
                 if res {
@@ -286,10 +286,10 @@ impl TreeNode {
                 }
             }
             FlagDiacriticOperator::Disallow => {
-                let res = if op.value == 0 {
-                    self.flag_state[op.feature as usize] == 0
+                let res = if op.value.0 == 0 {
+                    self.flag_state[op.feature.0 as usize] == ValueNumber(0)
                 } else {
-                    self.flag_state[op.feature as usize] != op.value
+                    self.flag_state[op.feature.0 as usize] != op.value
                 };
 
                 if res {
@@ -298,13 +298,15 @@ impl TreeNode {
                     None
                 }
             }
-            FlagDiacriticOperator::Clear => Some(self.update_flag(pool, op.feature, 0, transition)),
+            FlagDiacriticOperator::Clear => {
+                Some(self.update_flag(pool, op.feature, ValueNumber(0), transition))
+            }
             FlagDiacriticOperator::Unification => {
                 // if the feature is unset OR the feature is to this value already OR
                 // the feature is negatively set to something else than this value
-                let f = self.flag_state[op.feature as usize];
+                let f = self.flag_state[op.feature.0 as usize];
 
-                if f == 0 || f == op.value || (f < 0 && -f != op.value) {
+                if f.0 == 0 || f == op.value || (f.0 < 0 && f.invert() != op.value) {
                     Some(self.update_flag(pool, op.feature, op.value, transition))
                 } else {
                     None

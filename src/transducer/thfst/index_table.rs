@@ -9,7 +9,7 @@ use crate::vfs::{self, Filesystem};
 #[derive(Debug)]
 pub struct MemmapIndexTable<F> {
     buf: Mmap,
-    pub(crate) size: u32,
+    pub(crate) size: TransitionTableIndex,
     _file: std::marker::PhantomData<F>,
 }
 
@@ -32,7 +32,7 @@ impl<F: vfs::File> MemmapIndexTable<F> {
             file.partial_memory_map(chunk * len, len as usize)
                 .map_err(TransducerError::Memmap)?
         };
-        let size = (buf.len() / INDEX_TABLE_SIZE) as u32;
+        let size = TransitionTableIndex((buf.len() / INDEX_TABLE_SIZE) as u32);
         Ok(MemmapIndexTable {
             buf,
             size,
@@ -49,7 +49,7 @@ impl<F: vfs::File> crate::transducer::IndexTable<F> for MemmapIndexTable<F> {
     {
         let file = fs.open_file(path).map_err(TransducerError::Io)?;
         let buf = unsafe { file.memory_map().map_err(TransducerError::Memmap)? };
-        let size = (buf.len() / INDEX_TABLE_SIZE) as u32;
+        let size = TransitionTableIndex((buf.len() / INDEX_TABLE_SIZE) as u32);
         Ok(MemmapIndexTable {
             buf,
             size,
@@ -62,12 +62,12 @@ impl<F: vfs::File> crate::transducer::IndexTable<F> for MemmapIndexTable<F> {
             return None;
         }
 
-        let index = INDEX_TABLE_SIZE * i as usize;
+        let index = INDEX_TABLE_SIZE * i.0 as usize;
 
         let input_symbol: SymbolNumber =
             unsafe { ptr::read(self.buf.as_ptr().add(index) as *const _) };
 
-        if input_symbol == std::u16::MAX {
+        if input_symbol == SymbolNumber::MAX {
             None
         } else {
             Some(input_symbol)
@@ -79,11 +79,11 @@ impl<F: vfs::File> crate::transducer::IndexTable<F> for MemmapIndexTable<F> {
             return None;
         }
 
-        let index = (INDEX_TABLE_SIZE * i as usize) + 4;
+        let index = (INDEX_TABLE_SIZE * i.0 as usize) + 4;
         let target: TransitionTableIndex =
             unsafe { ptr::read(self.buf.as_ptr().add(index) as *const _) };
 
-        if target == std::u32::MAX {
+        if target == TransitionTableIndex::MAX {
             None
         } else {
             Some(target)
@@ -95,7 +95,7 @@ impl<F: vfs::File> crate::transducer::IndexTable<F> for MemmapIndexTable<F> {
             return None;
         }
 
-        let index = (INDEX_TABLE_SIZE * i as usize) + 4;
+        let index = (INDEX_TABLE_SIZE * i.0 as usize) + 4;
         let weight: Weight = unsafe { ptr::read(self.buf.as_ptr().add(index) as *const _) };
 
         Some(weight)
@@ -113,7 +113,7 @@ mod unix {
 
     pub struct FileIndexTable<F: vfs::File> {
         file: F,
-        size: u32,
+        size: TransitionTableIndex,
     }
 
     impl<F: vfs::File> FileIndexTable<F> {
@@ -144,7 +144,7 @@ mod unix {
         {
             let file = fs.open_file(path).map_err(TransducerError::Io)?;
             Ok(FileIndexTable {
-                size: file.len().map_err(TransducerError::Io)? as u32,
+                size: TransitionTableIndex(file.len().map_err(TransducerError::Io)? as u32),
                 file,
             })
         }
@@ -154,11 +154,11 @@ mod unix {
                 return None;
             }
 
-            let index = INDEX_TABLE_SIZE * i as usize;
+            let index = INDEX_TABLE_SIZE * i.0 as usize;
 
-            let input_symbol: SymbolNumber = self.read_u16_at(index as u64);
+            let input_symbol = SymbolNumber(self.read_u16_at(index as u64));
 
-            if input_symbol == std::u16::MAX {
+            if input_symbol == SymbolNumber::MAX {
                 None
             } else {
                 Some(input_symbol)
@@ -170,10 +170,10 @@ mod unix {
                 return None;
             }
 
-            let index = (INDEX_TABLE_SIZE * i as usize) + 4;
-            let target: TransitionTableIndex = self.read_u32_at(index as u64);
+            let index = (INDEX_TABLE_SIZE * i.0 as usize) + 4;
+            let target = TransitionTableIndex(self.read_u32_at(index as u64));
 
-            if target == std::u32::MAX {
+            if target == TransitionTableIndex::MAX {
                 None
             } else {
                 Some(target)
@@ -185,9 +185,9 @@ mod unix {
                 return None;
             }
 
-            let index = (INDEX_TABLE_SIZE * i as usize) + 4;
+            let index = (INDEX_TABLE_SIZE * i.0 as usize) + 4;
             let x = self.read_u32_at(index as u64);
-            let weight: Weight = f32::from_bits(x);
+            let weight = Weight(f32::from_bits(x));
 
             Some(weight)
         }

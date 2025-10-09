@@ -9,7 +9,7 @@ use memmap2::Mmap;
 #[derive(Debug)]
 pub struct MemmapTransitionTable<F> {
     buf: Mmap,
-    pub(crate) size: u32,
+    pub(crate) size: TransitionTableIndex,
     _file: std::marker::PhantomData<F>,
 }
 
@@ -32,7 +32,7 @@ impl<F: vfs::File> MemmapTransitionTable<F> {
             file.partial_memory_map(chunk * len, len as usize)
                 .map_err(TransducerError::Memmap)?
         };
-        let size = (buf.len() / TRANS_TABLE_SIZE) as u32;
+        let size = TransitionTableIndex((buf.len() / TRANS_TABLE_SIZE) as u32);
         Ok(MemmapTransitionTable {
             buf,
             size,
@@ -43,7 +43,7 @@ impl<F: vfs::File> MemmapTransitionTable<F> {
     #[inline]
     fn read_symbol_from_cursor(&self, index: usize) -> Option<SymbolNumber> {
         let x = unsafe { ptr::read(self.buf.as_ptr().add(index) as *const _) };
-        if x == std::u16::MAX {
+        if x == SymbolNumber::MAX {
             None
         } else {
             Some(x)
@@ -62,7 +62,7 @@ impl<F: vfs::File> TransitionTable<F> for MemmapTransitionTable<F> {
         let size = (buf.len() / TRANS_TABLE_SIZE) as u32;
         Ok(MemmapTransitionTable {
             buf,
-            size,
+            size: TransitionTableIndex(size),
             _file: std::marker::PhantomData::<F>,
         })
     }
@@ -72,7 +72,7 @@ impl<F: vfs::File> TransitionTable<F> for MemmapTransitionTable<F> {
             return None;
         }
 
-        let index = TRANS_TABLE_SIZE as usize * i as usize;
+        let index = TRANS_TABLE_SIZE as usize * i.0 as usize;
         self.read_symbol_from_cursor(index)
     }
 
@@ -81,7 +81,7 @@ impl<F: vfs::File> TransitionTable<F> for MemmapTransitionTable<F> {
             return None;
         }
 
-        let index = ((TRANS_TABLE_SIZE * i as usize) + mem::size_of::<SymbolNumber>()) as usize;
+        let index = ((TRANS_TABLE_SIZE * i.0 as usize) + mem::size_of::<SymbolNumber>()) as usize;
         self.read_symbol_from_cursor(index)
     }
 
@@ -90,11 +90,11 @@ impl<F: vfs::File> TransitionTable<F> for MemmapTransitionTable<F> {
             return None;
         }
 
-        let index = (TRANS_TABLE_SIZE * i as usize) + (2 * mem::size_of::<SymbolNumber>());
+        let index = (TRANS_TABLE_SIZE * i.0 as usize) + (2 * mem::size_of::<SymbolNumber>());
 
         let x: TransitionTableIndex =
             unsafe { ptr::read(self.buf.as_ptr().add(index) as *const _) };
-        if x == std::u32::MAX {
+        if x == TransitionTableIndex::MAX {
             None
         } else {
             Some(x)
@@ -106,7 +106,7 @@ impl<F: vfs::File> TransitionTable<F> for MemmapTransitionTable<F> {
             return None;
         }
 
-        let index = (TRANS_TABLE_SIZE * i as usize)
+        let index = (TRANS_TABLE_SIZE * i.0 as usize)
             + (2 * mem::size_of::<SymbolNumber>())
             + mem::size_of::<TransitionTableIndex>();
 
@@ -127,7 +127,7 @@ mod unix {
 
     pub struct FileTransitionTable<F: vfs::File> {
         file: F,
-        size: u32,
+        size: TransitionTableIndex,
     }
 
     impl<F: vfs::File> FileTransitionTable<F> {
@@ -158,7 +158,7 @@ mod unix {
         {
             let file = fs.open_file(path).map_err(TransducerError::Io)?;
             Ok(FileTransitionTable {
-                size: file.len().map_err(TransducerError::Io)? as u32,
+                size: TransitionTableIndex(file.len().map_err(TransducerError::Io)? as u32),
                 file,
             })
         }
@@ -169,9 +169,9 @@ mod unix {
                 return None;
             }
 
-            let index = TRANS_TABLE_SIZE as usize * i as usize;
-            let x = self.read_u16_at(index as u64);
-            if x == std::u16::MAX {
+            let index = TRANS_TABLE_SIZE as usize * i.0 as usize;
+            let x = SymbolNumber(self.read_u16_at(index as u64));
+            if x == SymbolNumber::MAX {
                 None
             } else {
                 Some(x)
@@ -184,9 +184,10 @@ mod unix {
                 return None;
             }
 
-            let index = ((TRANS_TABLE_SIZE * i as usize) + mem::size_of::<SymbolNumber>()) as usize;
-            let x = self.read_u16_at(index as u64);
-            if x == std::u16::MAX {
+            let index =
+                ((TRANS_TABLE_SIZE * i.0 as usize) + mem::size_of::<SymbolNumber>()) as usize;
+            let x = SymbolNumber(self.read_u16_at(index as u64));
+            if x == SymbolNumber::MAX {
                 None
             } else {
                 Some(x)
@@ -199,10 +200,10 @@ mod unix {
                 return None;
             }
 
-            let index = (TRANS_TABLE_SIZE * i as usize) + (2 * mem::size_of::<SymbolNumber>());
+            let index = (TRANS_TABLE_SIZE * i.0 as usize) + (2 * mem::size_of::<SymbolNumber>());
 
-            let x = self.read_u32_at(index as u64);
-            if x == std::u32::MAX {
+            let x = TransitionTableIndex(self.read_u32_at(index as u64));
+            if x == TransitionTableIndex::MAX {
                 None
             } else {
                 Some(x)
@@ -215,11 +216,11 @@ mod unix {
                 return None;
             }
 
-            let index = (TRANS_TABLE_SIZE * i as usize)
+            let index = (TRANS_TABLE_SIZE * i.0 as usize)
                 + (2 * mem::size_of::<SymbolNumber>())
                 + mem::size_of::<TransitionTableIndex>();
             let x = self.read_u32_at(index as u64);
-            let x = f32::from_bits(x);
+            let x = Weight(f32::from_bits(x));
             Some(x)
         }
     }

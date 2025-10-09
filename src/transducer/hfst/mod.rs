@@ -55,19 +55,17 @@ impl<F: vfs::File> HfstTransducer<F> {
 
         let index_table_offset = alphabet_offset + alphabet.len();
 
-        let index_table_end = index_table_offset + INDEX_TABLE_SIZE * header.index_table_size();
+        let index_table_end =
+            index_table_offset + INDEX_TABLE_SIZE * header.index_table_size().0 as usize;
         let index_table = MappedIndexTable::new(
             buf.clone(),
             index_table_offset,
             index_table_end,
-            header.index_table_size() as u32,
+            header.index_table_size(),
         );
 
-        let trans_table = MappedTransitionTable::new(
-            buf.clone(),
-            index_table_end,
-            header.target_table_size() as u32,
-        );
+        let trans_table =
+            MappedTransitionTable::new(buf.clone(), index_table_end, header.target_table_size());
 
         HfstTransducer {
             buf,
@@ -139,7 +137,10 @@ impl<F: vfs::File> Transducer<F> for HfstTransducer<F> {
                 None => false,
             }
         } else {
-            match self.index_table.input_symbol(i + u32::from(sym)) {
+            match self
+                .index_table
+                .input_symbol(i + TransitionTableIndex(sym.0 as u32))
+            {
                 Some(res) => sym == res,
                 None => false,
             }
@@ -150,10 +151,10 @@ impl<F: vfs::File> Transducer<F> for HfstTransducer<F> {
     fn has_epsilons_or_flags(&self, i: TransitionTableIndex) -> bool {
         if i >= TARGET_TABLE {
             match self.transition_table.input_symbol(i - TARGET_TABLE) {
-                Some(sym) => sym == 0 || self.alphabet.is_flag(sym),
+                Some(sym) => sym == SymbolNumber::ZERO || self.alphabet.is_flag(sym),
                 None => false,
             }
-        } else if let Some(0) = self.index_table.input_symbol(i) {
+        } else if let Some(SymbolNumber::ZERO) = self.index_table.input_symbol(i) {
             true
         } else {
             false
@@ -162,7 +163,7 @@ impl<F: vfs::File> Transducer<F> for HfstTransducer<F> {
 
     #[inline(always)]
     fn take_epsilons(&self, i: TransitionTableIndex) -> Option<SymbolTransition> {
-        if let Some(0) = self.transition_table.input_symbol(i) {
+        if let Some(SymbolNumber::ZERO) = self.transition_table.input_symbol(i) {
             Some(self.transition_table.symbol_transition(i))
         } else {
             None
@@ -172,7 +173,7 @@ impl<F: vfs::File> Transducer<F> for HfstTransducer<F> {
     #[inline(always)]
     fn take_epsilons_and_flags(&self, i: TransitionTableIndex) -> Option<SymbolTransition> {
         if let Some(sym) = self.transition_table.input_symbol(i) {
-            if sym != 0 && !self.alphabet.is_flag(sym) {
+            if sym != SymbolNumber::ZERO && !self.alphabet.is_flag(sym) {
                 None
             } else {
                 Some(self.transition_table.symbol_transition(i))
@@ -202,8 +203,11 @@ impl<F: vfs::File> Transducer<F> for HfstTransducer<F> {
     #[inline(always)]
     fn next(&self, i: TransitionTableIndex, symbol: SymbolNumber) -> Option<TransitionTableIndex> {
         if i >= TARGET_TABLE {
-            Some(i - TARGET_TABLE + 1)
-        } else if let Some(v) = self.index_table.target(i + 1 + u32::from(symbol)) {
+            Some(i - TARGET_TABLE + TransitionTableIndex::ONE)
+        } else if let Some(v) = self
+            .index_table
+            .target(i + TransitionTableIndex(symbol.0 as u32 + 1))
+        {
             Some(v - TARGET_TABLE)
         } else {
             None

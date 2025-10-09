@@ -1,6 +1,8 @@
+use crate::types::TransitionTableIndex;
+
 pub(crate) const INDEX_TABLE_SIZE: usize = 6;
 pub(crate) const TRANS_TABLE_SIZE: usize = 12;
-pub(crate) const TARGET_TABLE: u32 = 2_147_483_648;
+pub(crate) const TARGET_TABLE: TransitionTableIndex = TransitionTableIndex(2_147_483_648);
 
 #[cfg(test)]
 mod tests {

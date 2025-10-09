@@ -7,8 +7,8 @@ use crate::types::{HeaderFlag, SymbolNumber, TransitionTableIndex};
 pub struct TransducerHeader {
     symbols: SymbolNumber,
     input_symbols: SymbolNumber,
-    trans_index_table: usize,
-    trans_target_table: usize,
+    trans_index_table: TransitionTableIndex,
+    trans_target_table: TransitionTableIndex,
     states: TransitionTableIndex,
     transitions: TransitionTableIndex,
 
@@ -31,12 +31,12 @@ impl TransducerHeader {
         let pos = rdr.position() + u64::from(header_len);
         rdr.set_position(pos);
 
-        let input_symbols = rdr.read_u16::<LittleEndian>().unwrap();
-        let symbols = rdr.read_u16::<LittleEndian>().unwrap();
-        let trans_index_table = rdr.read_u32::<LittleEndian>().unwrap() as usize;
-        let trans_target_table = rdr.read_u32::<LittleEndian>().unwrap() as usize;
-        let states = rdr.read_u32::<LittleEndian>().unwrap();
-        let transitions = rdr.read_u32::<LittleEndian>().unwrap();
+        let input_symbols = SymbolNumber(rdr.read_u16::<LittleEndian>().unwrap());
+        let symbols = SymbolNumber(rdr.read_u16::<LittleEndian>().unwrap());
+        let trans_index_table = TransitionTableIndex(rdr.read_u32::<LittleEndian>().unwrap());
+        let trans_target_table = TransitionTableIndex(rdr.read_u32::<LittleEndian>().unwrap());
+        let states = TransitionTableIndex(rdr.read_u32::<LittleEndian>().unwrap());
+        let transitions = TransitionTableIndex(rdr.read_u32::<LittleEndian>().unwrap());
 
         let mut props = [false; 9];
 
@@ -65,11 +65,11 @@ impl TransducerHeader {
         self.input_symbols
     }
 
-    pub fn index_table_size(&self) -> usize {
+    pub fn index_table_size(&self) -> TransitionTableIndex {
         self.trans_index_table
     }
 
-    pub fn target_table_size(&self) -> usize {
+    pub fn target_table_size(&self) -> TransitionTableIndex {
         self.trans_target_table
     }
 

@@ -7,6 +7,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use super::hfst;
 use super::thfst;
 use crate::transducer::Transducer;
+use crate::types::{SymbolNumber, TransitionTableIndex};
 
 pub trait ConvertFile<T> {
     fn convert_file(transducer: &T, path: &Path) -> Result<(), std::io::Error>;
@@ -48,20 +49,17 @@ impl ConvertFrom<hfst::MappedIndexTable> for thfst::MemmapIndexTable<std::fs::Fi
         table: &hfst::MappedIndexTable,
         writer: &mut W,
     ) -> Result<(), std::io::Error> {
-        use std::{u16, u32};
+        for index in 0..table.size.0 {
+            let input_symbol = table
+                .input_symbol(TransitionTableIndex(index))
+                .unwrap_or(SymbolNumber::MAX);
+            let targetish = table
+                .target(TransitionTableIndex(index))
+                .unwrap_or(TransitionTableIndex::MAX);
 
-        // eprintln!(
-        //     "size: {}, len: {}, offset: {}",
-        //     table.size, table.len, table.offset
-        // );
-
-        for index in 0..table.size {
-            let input_symbol = table.input_symbol(index).unwrap_or(u16::MAX);
-            let targetish = table.target(index).unwrap_or(u32::MAX);
-
-            writer.write_u16::<LittleEndian>(input_symbol).unwrap();
+            writer.write_u16::<LittleEndian>(input_symbol.0).unwrap();
             writer.write_u16::<LittleEndian>(0).unwrap();
-            writer.write_u32::<LittleEndian>(targetish).unwrap();
+            writer.write_u32::<LittleEndian>(targetish.0).unwrap();
         }
 
         Ok(())
@@ -73,23 +71,19 @@ impl ConvertFrom<hfst::MappedTransitionTable> for thfst::MemmapTransitionTable<s
         table: &hfst::MappedTransitionTable,
         writer: &mut W,
     ) -> Result<(), std::io::Error> {
-        use std::{u16, u32};
-
-        // eprintln!(
-        //     "size: {}, len: {}, offset: {}",
-        //     table.size, table.len, table.offset
-        // );
-
-        for index in 0..table.size {
-            let input_symbol = table.input_symbol(index).unwrap_or(u16::MAX);
-            let output_symbol = table.output_symbol(index).unwrap_or(u16::MAX);
-            let target = table.target(index).unwrap_or(u32::MAX);
+        for index in 0..table.size.0 {
+            let index = TransitionTableIndex(index);
+            let input_symbol = table.input_symbol(index).unwrap_or(SymbolNumber::MAX);
+            let output_symbol = table.output_symbol(index).unwrap_or(SymbolNumber::MAX);
+            let target = table.target(index).unwrap_or(TransitionTableIndex::MAX);
             let weight = table.weight(index).unwrap();
 
-            writer.write_u16::<LittleEndian>(input_symbol).unwrap();
-            writer.write_u16::<LittleEndian>(output_symbol).unwrap();
-            writer.write_u32::<LittleEndian>(target).unwrap();
-            writer.write_u32::<LittleEndian>(weight.to_bits()).unwrap();
+            writer.write_u16::<LittleEndian>(input_symbol.0).unwrap();
+            writer.write_u16::<LittleEndian>(output_symbol.0).unwrap();
+            writer.write_u32::<LittleEndian>(target.0).unwrap();
+            writer
+                .write_u32::<LittleEndian>(weight.0.to_bits())
+                .unwrap();
         }
 
         Ok(())

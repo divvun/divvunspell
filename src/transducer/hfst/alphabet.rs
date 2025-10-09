@@ -25,14 +25,14 @@ impl std::default::Default for TransducerAlphabetParser {
     fn default() -> Self {
         TransducerAlphabetParser {
             key_table: Vec::with_capacity(64),
-            flag_state_size: 0,
+            flag_state_size: SymbolNumber::ZERO,
             length: 0,
             string_to_symbol: HashMap::new(),
             operations: HashMap::new(),
             feature_bucket: HashMap::new(),
             value_bucket: HashMap::new(),
-            val_n: 0i16,
-            feat_n: 0u16,
+            val_n: ValueNumber::ZERO,
+            feat_n: SymbolNumber::ZERO,
             identity_symbol: None,
             unknown_symbol: None,
         }
@@ -64,12 +64,12 @@ impl TransducerAlphabetParser {
 
         if !self.feature_bucket.contains_key(&feature) {
             self.feature_bucket.insert(feature.clone(), self.feat_n);
-            self.feat_n += 1;
+            self.feat_n = self.feat_n.incr();
         }
 
         if !self.value_bucket.contains_key(&value) {
             self.value_bucket.insert(value.clone(), self.val_n);
-            self.val_n += 1;
+            self.val_n = self.val_n.incr();
         }
 
         let op = FlagDiacriticOperation {
@@ -85,7 +85,8 @@ impl TransducerAlphabetParser {
     fn parse_inner(&mut self, buf: &[u8], symbols: SymbolNumber) {
         let mut offset = 0usize;
 
-        for i in 0..symbols {
+        for i in 0..symbols.0 {
+            let i = SymbolNumber(i);
             let mut end = 0usize;
 
             while buf[offset + end] != 0 {
@@ -100,7 +101,7 @@ impl TransducerAlphabetParser {
                 } else if key == "@_EPSILON_SYMBOL_@" {
                     self.value_bucket.insert("".into(), self.val_n);
                     self.key_table.push("".into());
-                    self.val_n += 1;
+                    self.val_n = self.val_n.incr();
                 } else if key == "@_IDENTITY_SYMBOL_@" {
                     self.identity_symbol = Some(i);
                     self.key_table.push(key);
@@ -120,7 +121,12 @@ impl TransducerAlphabetParser {
             offset += end + 1;
         }
 
-        self.flag_state_size = self.feature_bucket.len() as SymbolNumber;
+        self.flag_state_size = SymbolNumber(
+            self.feature_bucket
+                .len()
+                .try_into()
+                .expect("Too many features in the alphabet, cannot fit into SymbolNumber"),
+        );
 
         // Count remaining null padding bytes
         while buf[offset] == b'\0' {

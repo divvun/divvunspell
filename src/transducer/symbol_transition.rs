@@ -45,7 +45,7 @@ impl SymbolTransition {
     pub fn clone_with_epsilon_symbol(&self) -> SymbolTransition {
         SymbolTransition {
             target: self.target,
-            symbol: Some(0),
+            symbol: Some(SymbolNumber(0)),
             weight: self.weight,
         }
     }
