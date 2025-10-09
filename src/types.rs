@@ -54,7 +54,7 @@ pub struct FlagDiacriticOperation {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 #[serde(transparent)]
-pub struct SymbolNumber(pub(crate) u16);
+pub struct SymbolNumber(pub u16);
 
 impl SymbolNumber {
     pub(crate) const ZERO: Self = SymbolNumber(0);
@@ -69,7 +69,7 @@ impl SymbolNumber {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 #[serde(transparent)]
-pub struct ValueNumber(pub(crate) i16);
+pub struct ValueNumber(pub i16);
 
 impl ValueNumber {
     pub const ZERO: Self = ValueNumber(0);
@@ -88,7 +88,7 @@ impl ValueNumber {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 #[serde(transparent)]
-pub struct InputIndex(pub(crate) u32);
+pub struct InputIndex(pub u32);
 
 impl InputIndex {
     #[inline(always)]
@@ -100,7 +100,7 @@ impl InputIndex {
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 #[serde(transparent)]
-pub struct TransitionTableIndex(pub(crate) u32);
+pub struct TransitionTableIndex(pub u32);
 
 impl Display for TransitionTableIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
