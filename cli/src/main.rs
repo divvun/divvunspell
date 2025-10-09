@@ -8,6 +8,7 @@ use std::{
 use divvunspell::speller::HfstSpeller;
 use divvunspell::transducer::hfst::HfstTransducer;
 use divvunspell::transducer::Transducer;
+use divvunspell::types::Weight;
 use divvunspell::vfs::Fs;
 use gumdrop::Options;
 use serde::Serialize;
@@ -379,7 +380,7 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
         if v == 0.0 {
             suggest_cfg.max_weight = None;
         } else {
-            suggest_cfg.max_weight = Some(v);
+            suggest_cfg.max_weight = Some(Weight(v));
         }
     }
 
