@@ -227,7 +227,7 @@ dependencies = [
 [[package]]
 name = "cffi"
 version = "0.2.0-dev"
-source = "git+https://github.com/cffi-rs/cffi?branch=next#74c9c77e372e8682e45c840c27cd6e2cac3cd29b"
+source = "git+https://github.com/cffi-rs/cffi?branch=next#34c5b678bc30de472a9ca86dfaa4bae5e2b2bc5e"
 dependencies = [
  "cffi-impl",
  "libc",
@@ -237,7 +237,7 @@ dependencies = [
 [[package]]
 name = "cffi-impl"
 version = "0.2.0-dev"
-source = "git+https://github.com/cffi-rs/cffi?branch=next#74c9c77e372e8682e45c840c27cd6e2cac3cd29b"
+source = "git+https://github.com/cffi-rs/cffi?branch=next#34c5b678bc30de472a9ca86dfaa4bae5e2b2bc5e"
 dependencies = [
  "ctor",
  "darling",
@@ -632,11 +632,12 @@ checksum = "0399f9d26e5191ce32c498bebd31e7a3ceabc2745f0ac54af3f335126c3f24b3"
 
 [[package]]
 name = "flatbuffers"
-version = "0.6.1"
+version = "25.9.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a788f068dd10687940565bf4b5480ee943176cbd114b12e811074bcf7c04e4b9"
+checksum = "09b6620799e7340ebd9968d2e0708eb82cf1971e9a16821e2091b6d6e475eed5"
 dependencies = [
- "smallvec",
+ "bitflags",
+ "rustc_version",
 ]
 
 [[package]]
@@ -1259,6 +1260,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba39f3699c378cd8970968dcbff9c43159ea4cfbd88d43c00b22f2ef10a435d2"
 
 [[package]]
+name = "rustc_version"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92"
+dependencies = [
+ "semver",
+]
+
+[[package]]
 name = "rustix"
 version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1297,6 +1307,12 @@ name = "scopeguard"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
+name = "semver"
+version = "1.0.27"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d767eb0aabc880b29956c35734170f26ed551a859dbd361d140cdbeca61ab1e2"
 
 [[package]]
 name = "serde"

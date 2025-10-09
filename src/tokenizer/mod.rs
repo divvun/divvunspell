@@ -115,7 +115,7 @@ impl crate::ffi::fbs::IntoFlatbuffer for WordContext {
             }};
         }
 
-        let mut builder = flatbuffers::FlatBufferBuilder::new_with_capacity(1024);
+        let mut builder = flatbuffers::FlatBufferBuilder::with_capacity(1024);
         let current = add_indexed_word!(builder, Some(self.current));
         let first_before = add_indexed_word!(builder, self.first_before);
         let second_before = add_indexed_word!(builder, self.second_before);

@@ -47,7 +47,7 @@ anyhow = "1"
 
 [dependencies]
 cffi = { git = "https://github.com/cffi-rs/cffi", branch = "next", optional = true }
-flatbuffers = { version = "0.6.1", optional = true }
+flatbuffers = { version = "25.9.23", optional = true }
 libc.workspace = true
 memmap2.workspace = true
 byteorder.workspace = true

@@ -1,0 +1,14 @@
+table IndexedWord {
+  index: uint64;
+  value: string;
+}
+
+table WordContext {
+  current: IndexedWord (required);
+  first_before: IndexedWord;
+  second_before: IndexedWord;
+  first_after: IndexedWord;
+  second_after: IndexedWord;
+}
+
+root_type WordContext;
