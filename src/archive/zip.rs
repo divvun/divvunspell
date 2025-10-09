@@ -12,9 +12,16 @@ use super::{MmapRef, SpellerArchive, TempMmap};
 use crate::speller::{HfstSpeller, Speller};
 use crate::transducer::hfst::HfstTransducer;
 
+/// Type alias for HFST-based speller loaded from a zip archive.
+///
+/// Uses memory-mapped HFST transducers for both the error model and lexicon.
 pub type HfstZipSpeller =
     HfstSpeller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>;
 
+/// Speller archive backed by a zip file.
+///
+/// This is the standard format for distributing spell-checkers (`.zhfst` files).
+/// The archive contains metadata, an error model transducer, and a lexicon transducer.
 pub struct ZipSpellerArchive {
     metadata: SpellerMetadata,
     speller: Arc<HfstZipSpeller>,
@@ -61,6 +68,10 @@ fn mmap_by_name<R: Read + Seek>(
 }
 
 impl ZipSpellerArchive {
+    /// Get a reference to the HFST speller.
+    ///
+    /// Returns the underlying `HfstSpeller` with its concrete transducer types.
+    /// This is useful when you need access to HFST-specific functionality.
     pub fn hfst_speller(
         &self,
     ) -> Arc<HfstSpeller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>>

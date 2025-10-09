@@ -6,6 +6,10 @@ pub(crate) mod case_handling;
 pub mod word;
 mod word_break;
 
+/// Iterator over word indices in a string, filtering out non-alphanumeric tokens.
+///
+/// Returns tuples of (byte_offset, word_str) for each word containing at least
+/// one alphanumeric character.
 pub struct WordIndices<'a> {
     iter: WordBoundIndices<'a>,
 }
@@ -24,10 +28,21 @@ impl<'a> Iterator for WordIndices<'a> {
     }
 }
 
+/// Trait for tokenizing strings into words.
+///
+/// Provides methods to split text into words with various options for
+/// alphabet customization and boundary detection.
 pub trait Tokenize {
+    /// Get an iterator over word boundaries with byte indices.
     fn word_bound_indices(&self) -> WordBoundIndices<'_>;
+
+    /// Get an iterator over words with byte indices (alphanumeric words only).
     fn word_indices(&self) -> WordIndices<'_>;
+
+    /// Get word boundaries using a custom alphabet.
     fn word_bound_indices_with_alphabet(&self, alphabet: Vec<char>) -> WordBoundIndices<'_>;
+
+    /// Get words using a custom alphabet.
     fn words_with_alphabet(&self, alphabet: Vec<char>) -> Words<'_>;
 }
 
@@ -51,17 +66,28 @@ impl Tokenize for str {
     }
 }
 
+/// A word with its byte offset in the original string.
 pub struct IndexedWord {
+    /// Byte offset of the word in the original string
     pub index: usize,
+    /// The word text
     pub word: String,
 }
 
+/// Context information for a word, including surrounding words.
+///
+/// Useful for context-sensitive spell-checking and analysis.
 #[derive(Debug, Clone)]
 pub struct WordContext {
+    /// The current word (byte_offset, text)
     pub current: (usize, String),
+    /// The word immediately before, if any
     pub first_before: Option<(usize, String)>,
+    /// The second word before, if any
     pub second_before: Option<(usize, String)>,
+    /// The word immediately after, if any
     pub first_after: Option<(usize, String)>,
+    /// The second word after, if any
     pub second_after: Option<(usize, String)>,
 }
 
@@ -110,6 +136,16 @@ impl crate::ffi::fbs::IntoFlatbuffer for WordContext {
     }
 }
 
+/// Extract word context around a cursor position.
+///
+/// Given text split at a cursor position (first_half, second_half),
+/// returns the word at the cursor and up to 2 words before/after.
+///
+/// # Example
+/// ```ignore
+/// let context = cursor_context("hello wo", "rld goodbye");
+/// // context.current would be ("hello ".len(), "world")
+/// ```
 pub fn cursor_context(first_half: &str, second_half: &str) -> WordContext {
     // Find the point in the first half where the first "word" happens
     let mut first_half_iter = first_half.word_bound_indices().rev();

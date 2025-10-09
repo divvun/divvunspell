@@ -200,6 +200,15 @@ impl std::str::FromStr for SpellerMetadata {
 }
 
 impl SpellerMetadata {
+    /// Parse speller metadata from XML bytes.
+    ///
+    /// The XML format follows the HFST speller specification with `<info>`,
+    /// `<acceptor>`, and `<errmodel>` elements containing metadata about
+    /// the spell-checker and its component transducers.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the XML is malformed or doesn't match the expected schema.
     pub fn from_bytes(bytes: &[u8]) -> Result<SpellerMetadata, Error> {
         let mut reader = ParserConfig::new()
             .trim_whitespace(true)

@@ -5,13 +5,23 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+/// Flag diacritic operator for morphological constraints.
+///
+/// Flag diacritics are used in finite-state morphology to enforce complex
+/// constraints during analysis and generation.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum FlagDiacriticOperator {
+    /// Positive set - sets a feature to a value
     PositiveSet,
+    /// Negative set - sets a feature to disallowed
     NegativeSet,
+    /// Require - requires a feature to have a value
     Require,
+    /// Disallow - requires a feature to not have a value
     Disallow,
+    /// Clear - clears a feature value
     Clear,
+    /// Unification - unifies feature values
     Unification,
 }
 
@@ -31,26 +41,48 @@ impl std::str::FromStr for FlagDiacriticOperator {
     }
 }
 
+/// Transducer header property flags.
+///
+/// These flags describe properties of the finite-state transducer.
 #[derive(Debug)]
 pub enum HeaderFlag {
+    /// Transducer has weighted transitions
     Weighted,
+    /// Transducer is deterministic
     Deterministic,
+    /// Input side is deterministic
     InputDeterministic,
+    /// Transducer is minimized
     Minimized,
+    /// Transducer contains cycles
     Cyclic,
+    /// Has epsilon-epsilon transitions
     HasEpsilonEpsilonTransitions,
+    /// Has input epsilon transitions
     HasInputEpsilonTransitions,
+    /// Has input epsilon cycles
     HasInputEpsilonCycles,
+    /// Has unweighted input epsilon cycles
     HasUnweightedInputEpsilonCycles,
 }
 
+/// A flag diacritic operation in a finite-state transducer.
+///
+/// Combines an operation, feature, and value to enforce morphological constraints.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FlagDiacriticOperation {
+    /// The operation to perform
     pub operation: FlagDiacriticOperator,
+    /// The feature being operated on
     pub feature: SymbolNumber,
+    /// The value for the feature
     pub value: ValueNumber,
 }
 
+/// Symbol number in a transducer alphabet.
+///
+/// Represents an index into the symbol table of a finite-state transducer.
+/// Symbol 0 is typically epsilon (empty string).
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 #[serde(transparent)]
@@ -66,12 +98,16 @@ impl SymbolNumber {
     }
 }
 
+/// Value number for flag diacritics.
+///
+/// Represents the value assigned to a feature in flag diacritic operations.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(transparent)]
 #[serde(transparent)]
 pub struct ValueNumber(pub i16);
 
 impl ValueNumber {
+    /// Zero value constant
     pub const ZERO: Self = ValueNumber(0);
 
     #[inline(always)]
@@ -85,6 +121,7 @@ impl ValueNumber {
     }
 }
 
+/// Index into the input string being processed.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 #[serde(transparent)]
@@ -97,6 +134,9 @@ impl InputIndex {
     }
 }
 
+/// Index into a transducer's transition table.
+///
+/// Identifies a specific state or transition in the finite-state transducer.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 #[serde(transparent)]
@@ -151,14 +191,21 @@ impl TransitionTableIndex {
     }
 }
 
+/// Weight (cost) of a transducer transition.
+///
+/// Lower weights represent more preferred paths through the FST.
+/// Used for ranking spelling suggestions and morphological analyses.
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, PartialOrd)]
 #[repr(transparent)]
 #[serde(transparent)]
 pub struct Weight(pub f32);
 
 impl Weight {
+    /// Zero weight (no cost)
     pub const ZERO: Self = Weight(0.0);
+    /// Maximum finite weight
     pub const MAX: Self = Weight(f32::MAX);
+    /// Infinite weight (blocked path)
     pub const INFINITE: Self = Weight(f32::INFINITY);
 }
 
@@ -200,5 +247,8 @@ impl Div for Weight {
     }
 }
 
+/// State vector for flag diacritics during FST traversal.
 pub type FlagDiacriticState = Vec<ValueNumber>;
+
+/// Map from symbol numbers to their flag diacritic operations.
 pub type OperationsMap = hashbrown::HashMap<SymbolNumber, FlagDiacriticOperation>;
