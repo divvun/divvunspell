@@ -9,13 +9,13 @@ use crate::types::{
 };
 
 #[derive(Debug, Clone)]
-pub struct TreeNode {
-    pub lexicon_state: TransitionTableIndex,
-    pub mutator_state: TransitionTableIndex,
-    pub input_state: u32,
-    pub weight: f32,
-    pub flag_state: FlagDiacriticState,
-    pub string: Vec<SymbolNumber>,
+pub(crate) struct TreeNode {
+    pub(crate) lexicon_state: TransitionTableIndex,
+    pub(crate) mutator_state: TransitionTableIndex,
+    pub(crate) input_state: u32,
+    pub(crate) weight: f32,
+    pub(crate) flag_state: FlagDiacriticState,
+    pub(crate) string: Vec<SymbolNumber>,
 }
 
 impl std::cmp::PartialEq for TreeNode {

@@ -5,14 +5,14 @@ use std::sync::Arc;
 
 use lifeguard::{Pool, Recycled};
 
-use super::{HfstSpeller, SpellerConfig};
+use super::{HfstSpeller, OutputMode, SpellerConfig};
 use crate::speller::suggestion::Suggestion;
 use crate::transducer::tree_node::TreeNode;
 use crate::transducer::Transducer;
 use crate::types::{SymbolNumber, Weight};
 
 #[inline(always)]
-fn speller_start_node(pool: &Pool<TreeNode>, size: usize) -> Vec<Recycled<TreeNode>> {
+fn speller_start_node(pool: &Pool<TreeNode>, size: usize) -> Vec<Recycled<'_, TreeNode>> {
     let start_node = TreeNode::empty(pool, vec![0; size]);
     let mut nodes = Vec::with_capacity(256);
     nodes.push(start_node);
@@ -23,7 +23,7 @@ pub struct SpellerWorker<F: crate::vfs::File, T: Transducer<F>, U: Transducer<F>
     speller: Arc<HfstSpeller<F, T, U>>,
     input: Vec<SymbolNumber>,
     config: SpellerConfig,
-    mode_correcting: bool,
+    output_mode: OutputMode,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -38,13 +38,13 @@ where
         speller: Arc<HfstSpeller<F, T, U>>,
         input: Vec<SymbolNumber>,
         config: SpellerConfig,
-        mode_correcting: bool,
+        output_mode: OutputMode,
     ) -> SpellerWorker<F, T, U> {
         SpellerWorker {
             speller,
             input,
             config,
-            mode_correcting,
+            output_mode,
         }
     }
 
@@ -73,11 +73,10 @@ where
                     if self
                         .is_under_weight_limit(max_weight, next_node.weight() + transition_weight)
                     {
-                        let new_node =  if self.mode_correcting {
-                            next_node.update_lexicon(pool,
-                                transition.clone_with_epsilon_symbol())
-                        } else {
-                            next_node.update_lexicon(pool, transition)
+                        let new_node = match self.output_mode {
+                            OutputMode::WithoutTags => next_node
+                                .update_lexicon(pool, transition.clone_with_epsilon_symbol()),
+                            OutputMode::WithTags => next_node.update_lexicon(pool, transition),
                         };
                         output_nodes.push(new_node);
                     }
@@ -228,26 +227,23 @@ where
                 );
 
                 if is_under_weight_limit {
-                    let new_node = if self.mode_correcting {
-                        next_node.update(
+                    let new_node = match self.output_mode {
+                        OutputMode::WithoutTags => next_node.update(
                             pool,
                             input_sym,
-                            Some(next_node.input_state + input_increment as
-                                u32),
+                            Some(next_node.input_state + input_increment as u32),
                             mutator_state,
                             noneps_trans.target().unwrap(),
                             noneps_trans.weight().unwrap() + mutator_weight,
-                        )
-
-                    } else {
-                        next_node.update(
-                        pool,
-                        sym,
-                        Some(next_node.input_state + input_increment as u32),
-                        mutator_state,
-                        noneps_trans.target().unwrap(),
-                        noneps_trans.weight().unwrap() + mutator_weight,
-                        )
+                        ),
+                        OutputMode::WithTags => next_node.update(
+                            pool,
+                            sym,
+                            Some(next_node.input_state + input_increment as u32),
+                            mutator_state,
+                            noneps_trans.target().unwrap(),
+                            noneps_trans.weight().unwrap() + mutator_weight,
+                        ),
                     };
                     output_nodes.push(new_node);
                 }
@@ -548,10 +544,10 @@ where
                     .string_from_symbols(&next_node.string);
                 let weight = next_node.weight()
                     + self
-                    .speller
-                    .lexicon()
-                    .final_weight(next_node.lexicon_state)
-                    .unwrap();
+                        .speller
+                        .lexicon()
+                        .final_weight(next_node.lexicon_state)
+                        .unwrap();
                 let entry = lookups.entry(string).or_insert(weight);
                 if *entry > weight {
                     *entry = weight;
@@ -562,7 +558,6 @@ where
             analyses = self.generate_sorted_suggestions(&lookups);
         }
         analyses
-
     }
 
     pub(crate) fn suggest(&self) -> Vec<Suggestion> {

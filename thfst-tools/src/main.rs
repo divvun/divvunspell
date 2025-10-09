@@ -142,8 +142,10 @@ fn convert_zhfst_to_bhfst(zhfst_path: &Path) -> Result<(), std::io::Error> {
         Some(metadata) => {
             println!("Converting \"index.xml\" to \"meta.json\"...");
             let mut m = metadata.to_owned();
-            m.acceptor.id = metadata.acceptor.id.replace(".hfst", ".thfst");
-            m.errmodel.id = metadata.errmodel.id.replace(".hfst", ".thfst");
+            m.acceptor_mut()
+                .set_id(metadata.acceptor().id().replace(".hfst", ".thfst"));
+            m.errmodel_mut()
+                .set_id(metadata.errmodel().id().replace(".hfst", ".thfst"));
             Some(serde_json::to_string_pretty(&m)?)
         }
         None => None,

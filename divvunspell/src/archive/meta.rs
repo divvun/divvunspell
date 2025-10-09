@@ -9,19 +9,48 @@ use serde_xml_rs::{from_reader, Error, ParserConfig};
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SpellerMetadata {
     /// speller info
-    pub info: SpellerMetadataInfo,
+    info: SpellerMetadataInfo,
     /// acceptor metadata
-    pub acceptor: SpellerMetadataAcceptor,
+    acceptor: SpellerMetadataAcceptor,
     /// error model metadata
-    pub errmodel: SpellerMetadataErrmodel,
+    errmodel: SpellerMetadataErrmodel,
 }
 
-/// Predictor metadata
-#[derive(Serialize, Deserialize, Debug, Default, Clone)]
-pub struct PredictorMetadata {
-    /// whether speller is
-    #[serde(default)]
-    pub speller: bool,
+impl SpellerMetadata {
+    /// Get the speller information
+    pub fn info(&self) -> &SpellerMetadataInfo {
+        &self.info
+    }
+
+    /// Get the acceptor metadata
+    pub fn acceptor(&self) -> &SpellerMetadataAcceptor {
+        &self.acceptor
+    }
+
+    /// Get the error model metadata
+    pub fn errmodel(&self) -> &SpellerMetadataErrmodel {
+        &self.errmodel
+    }
+
+    /// Get mutable reference to acceptor metadata
+    ///
+    /// # Warning
+    /// This method is only for internal tooling use and should not be used in normal applications.
+    /// It may be removed in a future version.
+    #[doc(hidden)]
+    pub fn acceptor_mut(&mut self) -> &mut SpellerMetadataAcceptor {
+        &mut self.acceptor
+    }
+
+    /// Get mutable reference to error model metadata
+    ///
+    /// # Warning
+    /// This method is only for internal tooling use and should not be used in normal applications.
+    /// It may be removed in a future version.
+    #[doc(hidden)]
+    pub fn errmodel_mut(&mut self) -> &mut SpellerMetadataErrmodel {
+        &mut self.errmodel
+    }
 }
 
 /// localised speller title
@@ -38,13 +67,35 @@ pub struct SpellerTitle {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SpellerMetadataInfo {
     /// ISO-639 code of speller language
-    pub locale: String,
+    locale: String,
     /// localised, human readable titles of speller
-    pub title: Vec<SpellerTitle>,
+    title: Vec<SpellerTitle>,
     /// human readable description of speller
-    pub description: String,
+    description: String,
     /// creator and copyright owner of the speller
-    pub producer: String,
+    producer: String,
+}
+
+impl SpellerMetadataInfo {
+    /// Get the ISO-639 locale code
+    pub fn locale(&self) -> &str {
+        &self.locale
+    }
+
+    /// Get the localized titles
+    pub fn title(&self) -> &[SpellerTitle] {
+        &self.title
+    }
+
+    /// Get the description
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+
+    /// Get the producer/creator
+    pub fn producer(&self) -> &str {
+        &self.producer
+    }
 }
 
 /// Acceptor metadata
@@ -52,28 +103,92 @@ pub struct SpellerMetadataInfo {
 pub struct SpellerMetadataAcceptor {
     /// acceptor type:
     /// - `blah` if normal dictionary automaton
-    /// - `foo` if analyser
+    /// - `foo` if analyzer
     #[serde(rename = "type", default)]
-    pub type_: String,
+    type_: String,
     /// locally unique id for this acceptor
-    pub id: String,
+    id: String,
     /// localised human readable titles of speller
-    pub title: Vec<SpellerTitle>,
+    title: Vec<SpellerTitle>,
     /// human readable description of the acceptor
-    pub description: String,
+    description: String,
     /// marker for incomplete strings
-    pub continuation: Option<String>,
+    continuation: Option<String>,
+}
+
+impl SpellerMetadataAcceptor {
+    /// Get the acceptor type
+    pub fn type_(&self) -> &str {
+        &self.type_
+    }
+
+    /// Get the acceptor ID
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Get the localized titles
+    pub fn title(&self) -> &[SpellerTitle] {
+        &self.title
+    }
+
+    /// Get the description
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+
+    /// Get the continuation marker for incomplete strings
+    pub fn continuation(&self) -> Option<&str> {
+        self.continuation.as_deref()
+    }
+
+    /// Set the acceptor ID
+    ///
+    /// # Warning
+    /// This method is only for internal tooling use and should not be used in normal applications.
+    /// It may be removed in a future version.
+    #[doc(hidden)]
+    pub fn set_id(&mut self, id: String) {
+        self.id = id;
+    }
 }
 
 /// Error model metadata
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SpellerMetadataErrmodel {
     /// locally unique id for the error model
-    pub id: String,
+    id: String,
     /// localised human readable titles for the error model
-    pub title: Vec<SpellerTitle>,
+    title: Vec<SpellerTitle>,
     /// human readable description of the error model
-    pub description: String,
+    description: String,
+}
+
+impl SpellerMetadataErrmodel {
+    /// Get the error model ID
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Get the localized titles
+    pub fn title(&self) -> &[SpellerTitle] {
+        &self.title
+    }
+
+    /// Get the description
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+
+    /// Set the error model ID
+    ///
+    /// # Warning
+    /// This method is only for internal tooling use and should not be used in normal applications.
+    /// It may be removed in a future version.
+    #[doc(hidden)]
+    pub fn set_id(&mut self, id: String) {
+        self.id = id;
+    }
 }
 
 impl std::str::FromStr for SpellerMetadata {
@@ -86,19 +201,6 @@ impl std::str::FromStr for SpellerMetadata {
 
 impl SpellerMetadata {
     pub fn from_bytes(bytes: &[u8]) -> Result<SpellerMetadata, Error> {
-        let mut reader = ParserConfig::new()
-            .trim_whitespace(true)
-            .ignore_comments(true)
-            .coalesce_characters(true)
-            .create_reader(bytes)
-            .into_inner();
-
-        from_reader(&mut reader)
-    }
-}
-
-impl PredictorMetadata {
-    pub fn from_bytes(bytes: &[u8]) -> Result<PredictorMetadata, Error> {
         let mut reader = ParserConfig::new()
             .trim_whitespace(true)
             .ignore_comments(true)
