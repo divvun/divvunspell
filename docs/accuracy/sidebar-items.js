@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["load_words","main"],"static":["CFG"],"struct":["AccuracyResult","Report","Summary","Time"]};

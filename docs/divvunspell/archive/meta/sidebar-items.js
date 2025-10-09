@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"struct":["PredictorMetadata","SpellerMetadata","SpellerMetadataAcceptor","SpellerMetadataErrmodel","SpellerMetadataInfo","SpellerTitle"]};

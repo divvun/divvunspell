@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"fn":["open"],"mod":["boxf","error","meta","zip"],"trait":["PredictorArchive","SpellerArchive"]};

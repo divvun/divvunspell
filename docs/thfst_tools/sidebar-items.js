@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"constant":["ALIGNMENT"],"enum":["Opts"],"fn":["boxpath","convert_hfst_to_thfst","convert_thfsts_to_bhfst","convert_zhfst_to_bhfst","insert","insert_thfst_files","main"]};

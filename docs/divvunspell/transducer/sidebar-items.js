@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"enum":["TransducerError"],"mod":["convert","hfst","thfst"],"trait":["IndexTable","Transducer","TransitionTable"]};

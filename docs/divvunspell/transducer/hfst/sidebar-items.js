@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["alphabet","header","index_table","transition_table"],"struct":["HfstTransducer"]};

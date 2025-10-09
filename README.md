@@ -33,7 +33,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-divvunspell = "1.0.0-beta.5"
+divvunspell = "1.0.0-beta.7"
 ```
 
 Basic usage:

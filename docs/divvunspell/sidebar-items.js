@@ -1,1 +1,0 @@
-window.SIDEBAR_ITEMS = {"mod":["archive","paths","predictor","speller","tokenizer","transducer","vfs"]};
