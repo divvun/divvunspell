@@ -37,9 +37,6 @@ unic-ucd-common = "0.9.0"
 flatbuffers = { version = "0.6.1", optional = true }
 env_logger = { version = "0.11.2", optional = true }
 thiserror = "1.0.20"
-tch = { version = "0.6.1", optional = true }
-rust-bert = { version = "0.17.0", optional = true }
-rust_tokenizers = { version = "7", optional = true }
 tempfile = "3.3.0"
 fs_extra = "1.2.0"
 eieio = "1.0.0"
@@ -50,7 +47,6 @@ globwalk = "0.9.1"
 [features]
 compression = ["zip/deflate"]
 logging = ["env_logger"]
-gpt2 = ["tch", "rust-bert", "rust_tokenizers"]
 cargo-clippy = []
 
 # Internal features: unstable, not for external use!

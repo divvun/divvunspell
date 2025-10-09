@@ -9,7 +9,7 @@ use std::sync::Arc;
 use super::error::SpellerArchiveError;
 use super::meta::SpellerMetadata;
 use super::{MmapRef, SpellerArchive, TempMmap};
-use crate::speller::{HfstSpeller, Speller, Analyzer};
+use crate::speller::{HfstSpeller, Speller};
 use crate::transducer::hfst::HfstTransducer;
 
 pub type HfstZipSpeller =
@@ -82,8 +82,8 @@ impl SpellerArchive for ZipSpellerArchive {
             .map_err(|e| SpellerArchiveError::Io("index.xml".into(), e.into()))?;
         let metadata = SpellerMetadata::from_bytes(&*metadata_mmap.map()).expect("meta");
 
-        let acceptor_id = &metadata.acceptor.id;
-        let errmodel_id = &metadata.errmodel.id;
+        let acceptor_id = metadata.acceptor().id();
+        let errmodel_id = metadata.errmodel().id();
 
         let acceptor_mmap = mmap_by_name(&mut file, &mut archive, &acceptor_id)
             .map_err(|e| SpellerArchiveError::Io(acceptor_id.into(), e.into()))?;
@@ -100,10 +100,6 @@ impl SpellerArchive for ZipSpellerArchive {
     }
 
     fn speller(&self) -> Arc<dyn Speller + Send + Sync> {
-        self.speller.clone()
-    }
-
-    fn analyser(&self) -> Arc<dyn Analyzer + Send + Sync> {
         self.speller.clone()
     }
 

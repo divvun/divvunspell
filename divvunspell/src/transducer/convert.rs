@@ -89,9 +89,7 @@ impl ConvertFrom<hfst::MappedTransitionTable> for thfst::MemmapTransitionTable<s
             writer.write_u16::<LittleEndian>(input_symbol).unwrap();
             writer.write_u16::<LittleEndian>(output_symbol).unwrap();
             writer.write_u32::<LittleEndian>(target).unwrap();
-            writer
-                .write_u32::<LittleEndian>(unsafe { std::mem::transmute::<f32, u32>(weight) })
-                .unwrap();
+            writer.write_u32::<LittleEndian>(weight.to_bits()).unwrap();
         }
 
         Ok(())

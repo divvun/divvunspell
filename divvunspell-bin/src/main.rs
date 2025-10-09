@@ -12,17 +12,12 @@ use divvunspell::vfs::Fs;
 use gumdrop::Options;
 use serde::Serialize;
 
-#[cfg(feature = "gpt2")]
-use divvunspell::archive::{
-    boxf::BoxGpt2PredictorArchive, error::PredictorArchiveError, PredictorArchive,
-};
-
 use divvunspell::{
     archive::{
         boxf::ThfstBoxSpellerArchive, error::SpellerArchiveError, BoxSpellerArchive,
         SpellerArchive, ZipSpellerArchive,
     },
-    speller::{suggestion::Suggestion, Analyzer, SpellerConfig},
+    speller::{suggestion::Suggestion, Speller, SpellerConfig},
     tokenizer::Tokenize,
 };
 
@@ -31,7 +26,6 @@ trait OutputWriter {
     fn write_suggestions(&mut self, word: &str, suggestions: &[Suggestion]);
     fn write_input_analyses(&mut self, word: &str, analyses: &[Suggestion]);
     fn write_output_analyses(&mut self, word: &str, analyses: &[Suggestion]);
-    fn write_predictions(&mut self, predictions: &[String]);
     fn finish(&mut self);
 }
 
@@ -63,11 +57,6 @@ impl OutputWriter for StdoutWriter {
             }
         }
         println!();
-    }
-
-    fn write_predictions(&mut self, predictions: &[String]) {
-        println!("Predictions: ");
-        println!("{}", predictions.join(" "));
     }
 
     fn write_input_analyses(&mut self, _word: &str, suggestions: &[Suggestion]) {
@@ -108,8 +97,6 @@ struct JsonWriter {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     suggest: Vec<SuggestionRequest>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    predict: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     input_analysis: Vec<AnalysisRequest>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     output_analysis: Vec<AnalysisRequest>,
@@ -135,10 +122,6 @@ impl OutputWriter for JsonWriter {
         self.suggest[i].suggestions = suggestions.to_vec();
     }
 
-    fn write_predictions(&mut self, predictions: &[String]) {
-        self.predict = predictions.to_vec();
-    }
-
     fn write_input_analyses(&mut self, word: &str, suggestions: &[Suggestion]) {
         self.input_analysis.push(AnalysisRequest {
             word: word.to_string(),
@@ -159,7 +142,7 @@ impl OutputWriter for JsonWriter {
 }
 
 fn run(
-    speller: Arc<dyn Analyzer + Send>,
+    speller: Arc<dyn Speller + Send>,
     words: Vec<String>,
     writer: &mut dyn OutputWriter,
     is_analyzing: bool,
@@ -189,7 +172,7 @@ fn run(
 
             let final_suggs = speller
                 .clone()
-                .analyse_suggest_with_config(&word, &suggest_cfg);
+                .analyze_suggest_with_config(&word, &suggest_cfg);
             writer.write_suggestions(&word, &final_suggs);
         }
     }
@@ -210,9 +193,6 @@ enum Command {
 
     #[options(help = "print input in word-separated tokenized form")]
     Tokenize(TokenizeArgs),
-
-    #[options(help = "predict next words using GPT2 model")]
-    Predict(PredictArgs),
 }
 
 #[derive(Debug, Options)]
@@ -241,7 +221,7 @@ struct SuggestArgs {
     #[options(help = "maximum number of results")]
     nbest: Option<usize>,
 
-    #[options(help = "character for incomplete predictions")]
+    #[options(help = "character for incomplete suggestions")]
     continuation_marker: Option<String>,
 
     #[options(
@@ -275,31 +255,6 @@ struct TokenizeArgs {
 
     #[options(short = "w", long = "words", help = "show words only")]
     is_words_only: bool,
-
-    #[options(free, help = "text to be tokenized")]
-    inputs: Vec<String>,
-}
-
-#[derive(Debug, Options)]
-struct PredictArgs {
-    #[options(help = "print help message")]
-    help: bool,
-
-    #[options(help = "BHFST archive to be used", required)]
-    archive: PathBuf,
-
-    #[options(
-        short = "n",
-        long = "name",
-        help = "Predictor name to use (default: gpt2_predictor)"
-    )]
-    predictor_name: Option<String>,
-
-    #[options(help = "whether suggestions should not be validated against a speller")]
-    disable_spelling_validation: bool,
-
-    #[options(no_short, long = "json", help = "output in JSON format")]
-    use_json: bool,
 
     #[options(free, help = "text to be tokenized")]
     inputs: Vec<String>,
@@ -383,11 +338,11 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
         let archive = load_archive(&archive_path)?;
         // 2. config from metadata
         if let Some(metadata) = archive.metadata() {
-            if let Some(continuation) = &metadata.acceptor.continuation {
-                suggest_cfg.continuation_marker = Some(continuation.clone());
+            if let Some(continuation) = metadata.acceptor().continuation() {
+                suggest_cfg.continuation_marker = Some(continuation.to_string());
             }
         }
-        let speller = archive.analyser();
+        let speller = archive.speller();
         speller
     } else if let (Some(lexicon_path), Some(mutator_path)) = (args.lexicon_path, args.mutator_path)
     {
@@ -451,7 +406,6 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
         args.inputs.into_iter().collect()
     };
 
-
     run(
         speller,
         words,
@@ -467,76 +421,6 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "gpt2")]
-fn load_predictor_archive(
-    path: &Path,
-    name: Option<&str>,
-) -> Result<Box<dyn PredictorArchive>, PredictorArchiveError> {
-    let archive = BoxGpt2PredictorArchive::open(path, name)?;
-    let archive = Box::new(archive);
-    Ok(archive)
-}
-
-#[cfg(feature = "gpt2")]
-fn predict(args: PredictArgs) -> anyhow::Result<()> {
-    let raw_input = if args.inputs.is_empty() {
-        eprintln!("Reading from stdin...");
-        let mut buffer = String::new();
-        io::stdin()
-            .read_to_string(&mut buffer)
-            .expect("reading stdin");
-        buffer
-    } else {
-        args.inputs.join(" ")
-    };
-
-    let predictor_name = args.predictor_name.as_deref();
-    let archive = load_predictor_archive(&args.archive, predictor_name)?;
-    let predictor = archive.predictor();
-
-    let mut writer: Box<dyn OutputWriter> = if args.use_json {
-        Box::new(JsonWriter::new())
-    } else {
-        Box::new(StdoutWriter)
-    };
-
-    let suggest_cfg = SpellerConfig::default();
-
-    let predictions = predictor.predict(&raw_input);
-    writer.write_predictions(&predictions);
-
-    let has_speller = archive.metadata().map(|x| x.speller).unwrap_or(false);
-    if !args.disable_spelling_validation {
-        if !has_speller {
-            eprintln!("Error: requested spell checking but no speller present in archive!");
-        } else {
-            let speller_archive = load_archive(&args.archive)?;
-            let speller = speller_archive.speller();
-
-            for word in predictions {
-                let cleaned_str = word.as_str().word_indices();
-                for w in cleaned_str {
-                    let is_correct = speller.clone().is_correct_with_config(&w.1, &suggest_cfg);
-                    writer.write_correction(w.1, is_correct);
-                }
-            }
-        }
-    };
-
-    Ok(())
-}
-
-#[cfg(not(feature = "gpt2"))]
-fn predict(_args: PredictArgs) -> anyhow::Result<()> {
-    eprintln!("ERROR: DivvunSpell was built without GPT2 support.");
-    eprintln!("If you built this using cargo, re-run the build with the following:");
-    eprintln!("");
-    eprintln!("  cargo build --features gpt2");
-    eprintln!("");
-
-    std::process::exit(1);
-}
-
 fn main() -> anyhow::Result<()> {
     pretty_env_logger::init();
 
@@ -546,6 +430,5 @@ fn main() -> anyhow::Result<()> {
         None => Ok(()),
         Some(Command::Suggest(args)) => suggest(args),
         Some(Command::Tokenize(args)) => tokenize(args),
-        Some(Command::Predict(args)) => predict(args),
     }
 }

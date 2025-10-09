@@ -27,8 +27,8 @@ impl<'a> Iterator for WordIndices<'a> {
 pub trait Tokenize {
     fn word_bound_indices(&self) -> WordBoundIndices<'_>;
     fn word_indices(&self) -> WordIndices<'_>;
-    fn word_bound_indices_with_alphabet(&self, alphabet: Vec<char>) -> WordBoundIndices;
-    fn words_with_alphabet(&self, alphabet: Vec<char>) -> Words;
+    fn word_bound_indices_with_alphabet(&self, alphabet: Vec<char>) -> WordBoundIndices<'_>;
+    fn words_with_alphabet(&self, alphabet: Vec<char>) -> Words<'_>;
 }
 
 impl Tokenize for str {
@@ -42,11 +42,11 @@ impl Tokenize for str {
         }
     }
 
-    fn word_bound_indices_with_alphabet(&self, alphabet: Vec<char>) -> WordBoundIndices {
+    fn word_bound_indices_with_alphabet(&self, alphabet: Vec<char>) -> WordBoundIndices<'_> {
         WordBoundIndices::new_with_alphabet(self, alphabet)
     }
 
-    fn words_with_alphabet(&self, alphabet: Vec<char>) -> Words {
+    fn words_with_alphabet(&self, alphabet: Vec<char>) -> Words<'_> {
         Words::new_with_alphabet(self, |s| s.chars().any(|ch| ch.is_alphanumeric()), alphabet)
     }
 }

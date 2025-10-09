@@ -33,11 +33,20 @@ pub mod archive;
 pub mod ffi;
 
 pub mod paths;
-pub mod predictor;
 pub mod speller;
 pub mod tokenizer;
 pub mod transducer;
+
+/// Virtual filesystem abstraction (internal use only)
+///
+/// **Warning:** This module is only for internal tooling use and should not be used in normal applications.
+/// It may be removed or significantly changed in a future version without a major version bump.
+/// Use the higher-level [`archive`] module APIs instead.
+#[doc(hidden)]
 pub mod vfs;
 
 pub(crate) mod constants;
-pub(crate) mod types;
+/// Core types for transducers and spell-checking.
+///
+/// This module contains type aliases and enums used throughout the transducer API.
+pub mod types;

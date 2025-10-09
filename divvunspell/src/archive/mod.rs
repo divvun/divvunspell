@@ -7,16 +7,12 @@ pub mod error;
 pub mod meta;
 pub mod zip;
 
-use error::PredictorArchiveError;
-
 pub use self::{boxf::BoxSpellerArchive, zip::ZipSpellerArchive};
 
 use self::{
-    boxf::ThfstChunkedBoxSpellerArchive,
-    error::SpellerArchiveError,
-    meta::{PredictorMetadata, SpellerMetadata},
+    boxf::ThfstChunkedBoxSpellerArchive, error::SpellerArchiveError, meta::SpellerMetadata,
 };
-use crate::{predictor::Predictor, speller::{Speller, Analyzer}};
+use crate::speller::Speller;
 
 pub(crate) struct TempMmap {
     mmap: Arc<Mmap>,
@@ -46,24 +42,14 @@ pub trait SpellerArchive {
     where
         Self: Sized;
 
-    /// retrieve spell-checker.
+    /// Retrieve spell-checker.
+    ///
+    /// The returned speller can perform both spell checking and morphological analysis
+    /// depending on the `OutputMode` passed to `suggest()`.
     fn speller(&self) -> Arc<dyn Speller + Send + Sync>;
-    fn analyser(&self) -> Arc<dyn Analyzer + Send + Sync>;
-    /// retrieve metadata.
+
+    /// Retrieve metadata.
     fn metadata(&self) -> Option<&SpellerMetadata>;
-}
-
-/// Predictor archive is a file read intoo a predictor with metadata.
-pub trait PredictorArchive {
-    /// Read and parse a predictor archive.
-    fn open(path: &Path, predictor_name: Option<&str>) -> Result<Self, PredictorArchiveError>
-    where
-        Self: Sized;
-
-    /// Retrieve predictor.
-    fn predictor(&self) -> Arc<dyn Predictor + Send + Sync>;
-    /// retrieve metadata.
-    fn metadata(&self) -> Option<&PredictorMetadata>;
 }
 
 /// Reads a speller archive.
@@ -113,7 +99,7 @@ pub(crate) mod ffi {
         >,
     ) -> Result<String, Box<dyn Error>> {
         match handle.metadata() {
-            Some(v) => Ok(v.info.locale.to_string()),
+            Some(v) => Ok(v.info().locale().to_string()),
             None => Err(Box::new(SpellerArchiveError::NoMetadata) as _),
         }
     }

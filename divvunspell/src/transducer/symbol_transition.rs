@@ -1,10 +1,16 @@
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 
+/// Represents a transition in a finite-state transducer.
+///
+/// A transition connects states in the FST and carries a symbol and weight.
 #[derive(Debug, Clone)]
 pub struct SymbolTransition {
-    target: Option<TransitionTableIndex>,
-    symbol: Option<SymbolNumber>,
-    weight: Option<Weight>,
+    /// Target state index, or None if this is a final state
+    pub target: Option<TransitionTableIndex>,
+    /// Input/output symbol number
+    pub symbol: Option<SymbolNumber>,
+    /// Transition weight
+    pub weight: Option<Weight>,
 }
 
 impl SymbolTransition {

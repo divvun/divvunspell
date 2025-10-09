@@ -18,6 +18,26 @@ use crate::types::{SymbolNumber, Weight};
 pub mod suggestion;
 mod worker;
 
+/// Controls whether morphological tags are preserved in FST output.
+///
+/// When traversing an FST, epsilon transitions can either preserve their symbols
+/// (keeping morphological tags like "+V", "+Noun", etc.) or convert them to true
+/// epsilons (stripping the tags from the output).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum OutputMode {
+    /// Strip morphological tags from output.
+    ///
+    /// Used for spelling correction where you want clean word forms without tags.
+    /// Example: "run" instead of "run+V+PresPartc"
+    WithoutTags,
+
+    /// Keep morphological tags in output.
+    ///
+    /// Used for morphological analysis where you want to see the linguistic structure.
+    /// Example: "run+V+PresPartc" instead of "run"
+    WithTags,
+}
+
 /// configurable extra penalties for edit distance
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -129,42 +149,71 @@ const fn default_node_pool_size() -> usize {
 const fn default_recase() -> bool {
     true
 }
-
-/// can determine if string is a correct word or suggest corrections.
-/// Also with SpellerConfig.
+/// FST-based spell checker and morphological analyzer.
+///
+/// This trait provides methods for spell checking and morphological analysis
+/// using finite-state transducers. The same FST traversal logic is used for both
+/// operations - the difference is controlled by the `OutputMode`:
+///
+/// - `OutputMode::WithoutTags` strips morphological tags (for spelling correction)
+/// - `OutputMode::WithTags` preserves morphological tags (for morphological analysis)
 pub trait Speller {
-    /// check if the word is correctly spelled
+    /// Check if the word is correctly spelled
+    #[must_use]
     fn is_correct(self: Arc<Self>, word: &str) -> bool;
-    /// check if word is correctly spelled with config recasing etc.
-    fn is_correct_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> bool;
-    /// suggest corrections to word
-    fn suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
-    /// suggest corrections with recasing and reweighting from config
-    fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion>;
-}
 
-/// can provide in-depth analyses along with suggestions
-pub trait Analyzer: Speller {
-    /// analyse the input word form
+    /// Check if word is correctly spelled with config (handles recasing, etc.)
+    #[must_use]
+    fn is_correct_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> bool;
+
+    /// Generate suggestions or analyses for a word.
+    #[must_use]
+    fn suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
+
+    /// Generate suggestions with config options (recasing, reweighting, etc.)
+    #[must_use]
+    fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion>;
+
+    /// Analyze the input word form.
+    ///
+    /// Performs lexicon-only traversal (no error model) to get morphological analyses
+    /// of exactly what was typed. Does not generate spelling corrections.
+    #[must_use]
     fn analyze_input(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
-    /// analyse input word form with recasing and stuff from configs
+
+    /// Analyze input word form with config options.
+    #[must_use]
     fn analyze_input_with_config(
         self: Arc<Self>,
         word: &str,
         config: &SpellerConfig,
     ) -> Vec<Suggestion>;
-    /// analyse the suggested word forms
+
+    /// Analyze the suggested word forms.
+    ///
+    /// Generates spelling corrections using the error model, then returns them with
+    /// morphological tags preserved (equivalent to `suggest(word, OutputMode::WithTags)`).
+    #[must_use]
     fn analyze_output(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
-    /// analyse the suggested word forms with recasing and stuff from configs
+
+    /// Analyze suggested word forms with config options.
+    #[must_use]
     fn analyze_output_with_config(
         self: Arc<Self>,
         word: &str,
         config: &SpellerConfig,
     ) -> Vec<Suggestion>;
-    /// create suggestion list and use their analyses for finetununt
-    fn analyse_suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
-    /// create suggestion list and use analyses to finetune with config
-    fn analyse_suggest_with_config(
+
+    /// Create suggestion list and use their analyses for filtering.
+    ///
+    /// Gets spelling corrections, analyzes each one, and filters based on
+    /// morphological analysis results.
+    #[must_use]
+    fn analyze_suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion>;
+
+    /// Create suggestion list and use analyses for filtering with config.
+    #[must_use]
+    fn analyze_suggest_with_config(
         self: Arc<Self>,
         word: &str,
         config: &SpellerConfig,
@@ -204,8 +253,12 @@ where
             config
         );
         for word in std::iter::once(word.into()).chain(words.into_iter()) {
-            let worker = SpellerWorker::new(self.clone(),
-                self.to_input_vec(&word), config.clone(), false);
+            let worker = SpellerWorker::new(
+                self.clone(),
+                self.to_input_vec(&word),
+                config.clone(),
+                OutputMode::WithoutTags,
+            );
 
             if worker.is_correct() {
                 return true;
@@ -226,42 +279,26 @@ where
     }
 
     fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
-        use crate::tokenizer::case_handling::*;
-
-        if word.len() == 0 {
-            return vec![];
-        }
-
-        if let Some(reweight) = config.reweight.as_ref() {
-            let case_handler = word_variants(word);
-
-            self.suggest_case(case_handler, config, reweight)
-        } else {
-            self.suggest_single(word, config)
-        }
+        self._suggest_with_config(word, config, OutputMode::WithoutTags)
     }
-}
 
-impl<F, T, U> Analyzer for HfstSpeller<F, T, U>
-where
-    F: crate::vfs::File + Send,
-    T: Transducer<F> + Send,
-    U: Transducer<F> + Send,
-{
-    #[allow(clippy::wrong_self_convention)]
     fn analyze_input_with_config(
         self: Arc<Self>,
         word: &str,
         config: &SpellerConfig,
     ) -> Vec<Suggestion> {
-        if word.len() == 0 {
+        if word.is_empty() {
             return vec![];
         }
 
-        let worker = SpellerWorker::new(self.clone(),
-            self.to_input_vec(&word), config.clone(), false);
+        let worker = SpellerWorker::new(
+            self.clone(),
+            self.to_input_vec(word),
+            config.clone(),
+            OutputMode::WithTags,
+        );
 
-        log::trace!("Beginning analyze with config in mod");
+        log::trace!("Beginning analyze_input with config");
         worker.analyze()
     }
 
@@ -270,41 +307,30 @@ where
         self.analyze_input_with_config(word, &SpellerConfig::default())
     }
 
-    #[inline]
-    fn analyze_output(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
-        self.analyze_output_with_config(word, &SpellerConfig::default())
-    }
-
-    #[inline]
-    fn analyse_suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
-        self.analyse_suggest_with_config(word, &SpellerConfig::default())
-    }
-
     fn analyze_output_with_config(
         self: Arc<Self>,
         word: &str,
         config: &SpellerConfig,
     ) -> Vec<Suggestion> {
-        if word.len() == 0 {
-            return vec![];
-        }
-        log::trace!("Beginning analyze suggest with config in mod");
-        let worker = SpellerWorker::new(self.clone(),
-            self.to_input_vec(word), config.clone(), false);
-
-        worker.suggest()
+        self._suggest_with_config(word, config, OutputMode::WithTags)
     }
 
-    fn analyse_suggest_with_config(
+    #[inline]
+    fn analyze_output(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
+        self.analyze_output_with_config(word, &SpellerConfig::default())
+    }
+
+    fn analyze_suggest_with_config(
         self: Arc<Self>,
         word: &str,
-        config: &SpellerConfig
+        config: &SpellerConfig,
     ) -> Vec<Suggestion> {
         let mut suggs = self.clone().suggest_with_config(word, config);
         suggs.retain(|sugg| {
             log::trace!("suggestion {}", sugg.value);
-            let analyses = self.clone().analyze_input_with_config(sugg.value.as_str(),
-                                                          config);
+            let analyses = self
+                .clone()
+                .analyze_input_with_config(sugg.value.as_str(), config);
             let mut all_filtered = true;
             for analysis in analyses {
                 log::trace!("-> {}", analysis.value);
@@ -319,6 +345,10 @@ where
         suggs
     }
 
+    #[inline]
+    fn analyze_suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
+        self.analyze_suggest_with_config(word, &SpellerConfig::default())
+    }
 }
 
 #[derive(Debug)]
@@ -352,6 +382,27 @@ where
         })
     }
 
+    fn _suggest_with_config(
+        self: Arc<Self>,
+        word: &str,
+        config: &SpellerConfig,
+        mode: OutputMode,
+    ) -> Vec<Suggestion> {
+        use crate::tokenizer::case_handling::*;
+
+        if word.len() == 0 {
+            return vec![];
+        }
+
+        if let Some(reweight) = config.reweight.as_ref() {
+            let case_handler = word_variants(word);
+
+            self.suggest_case(case_handler, config, reweight, mode)
+        } else {
+            self.suggest_single(word, config, mode)
+        }
+    }
+
     /// get the error model automaton
     pub fn mutator(&self) -> &T {
         &self.mutator
@@ -383,9 +434,14 @@ where
             .collect()
     }
 
-    fn suggest_single(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
-        let worker = SpellerWorker::new(self.clone(), self.to_input_vec(word),
-            config.clone(), true);
+    fn suggest_single(
+        self: Arc<Self>,
+        word: &str,
+        config: &SpellerConfig,
+        mode: OutputMode,
+    ) -> Vec<Suggestion> {
+        let worker =
+            SpellerWorker::new(self.clone(), self.to_input_vec(word), config.clone(), mode);
 
         log::trace!("suggesting single {}", word);
         worker.suggest()
@@ -396,6 +452,7 @@ where
         case: CaseHandler,
         config: &SpellerConfig,
         reweight: &ReweightingConfig,
+        output_mode: OutputMode,
     ) -> Vec<Suggestion> {
         use crate::tokenizer::case_handling::*;
 
@@ -410,8 +467,12 @@ where
 
         for word in std::iter::once(&original_input).chain(words.iter()) {
             log::trace!("suggesting for word {}", word);
-            let worker = SpellerWorker::new(self.clone(),
-                self.to_input_vec(&word), config.clone(), true);
+            let worker = SpellerWorker::new(
+                self.clone(),
+                self.to_input_vec(&word),
+                config.clone(),
+                output_mode,
+            );
             let mut suggestions = worker.suggest();
 
             match mutation {

@@ -17,17 +17,6 @@ cargo install thfst-tools
 cargo install --path .
 ```
 
-### Building with `gpt2` support on macOS aarch64
-
-(Skip this if you are not experimenting with gpt2 support. So skip. Now.)
-
-Clone this repo then:
-
-```bash
-brew install libtorch
-LIBTORCH=/opt/homebrew/opt/libtorch cargo build --features gpt2 --bin divvunspell
-```
-
 ### No Rust?
 
 ```sh
@@ -49,7 +38,6 @@ Optional arguments:
 Available subcommands:
   suggest   get suggestions for provided input
   tokenize  print input in word-separated tokenized form
-  predict   predict next words using GPT2 model
 
 $ divvunspell suggest -h
 Usage: divvunspell suggest [OPTIONS]

@@ -12,9 +12,8 @@ mod alphabet;
 mod symbol_transition;
 pub(crate) mod tree_node;
 
-pub(crate) use self::alphabet::TransducerAlphabet;
-
-use self::symbol_transition::SymbolTransition;
+pub use self::alphabet::TransducerAlphabet;
+pub use self::symbol_transition::SymbolTransition;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use crate::vfs::{self, Filesystem};
 
@@ -46,6 +45,11 @@ impl TransducerError {
 }
 
 /// A file-based finite-state transducer.
+///
+/// This trait defines the interface for finite-state transducers that can be loaded
+/// from files and used for spell-checking and morphological analysis.
+///
+/// Implementors can provide custom transducer formats beyond the built-in HFST and THFST formats.
 pub trait Transducer<F: vfs::File>: Sized {
     /// file extension.
     const FILE_EXT: &'static str;
