@@ -108,7 +108,9 @@ pub trait TransitionTable<F: vfs::File>: Sized {
     /// check if the state is a final state.
     #[inline(always)]
     fn is_final(&self, i: TransitionTableIndex) -> bool {
-        self.input_symbol(i) == None && self.output_symbol(i) == None && self.target(i) == Some(1)
+        self.input_symbol(i) == None
+            && self.output_symbol(i) == None
+            && self.target(i) == Some(TransitionTableIndex(1))
     }
 
     /// ???

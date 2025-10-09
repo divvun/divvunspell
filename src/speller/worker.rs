@@ -1,6 +1,5 @@
 use hashbrown::HashMap;
 use smol_str::SmolStr;
-use std::f32;
 use std::sync::Arc;
 
 use lifeguard::{Pool, Recycled};
@@ -9,11 +8,11 @@ use super::{HfstSpeller, OutputMode, SpellerConfig};
 use crate::speller::suggestion::Suggestion;
 use crate::transducer::tree_node::TreeNode;
 use crate::transducer::Transducer;
-use crate::types::{SymbolNumber, Weight};
+use crate::types::{SymbolNumber, TransitionTableIndex, ValueNumber, Weight};
 
 #[inline(always)]
 fn speller_start_node(pool: &Pool<TreeNode>, size: usize) -> Vec<Recycled<'_, TreeNode>> {
-    let start_node = TreeNode::empty(pool, vec![0; size]);
+    let start_node = TreeNode::empty(pool, vec![ValueNumber::ZERO; size]);
     let mut nodes = Vec::with_capacity(256);
     nodes.push(start_node);
     nodes
@@ -59,17 +58,19 @@ where
         let lexicon = self.speller.lexicon();
         let operations = lexicon.alphabet().operations();
 
-        if !lexicon.has_epsilons_or_flags(next_node.lexicon_state + 1) {
+        if !lexicon.has_epsilons_or_flags(next_node.lexicon_state.incr()) {
             return;
         }
 
-        let mut next = lexicon.next(next_node.lexicon_state, 0).unwrap();
+        let mut next = lexicon
+            .next(next_node.lexicon_state, SymbolNumber::ZERO)
+            .unwrap();
 
         while let Some(transition) = lexicon.take_epsilons_and_flags(next) {
             if let Some(sym) = lexicon.transition_input_symbol(next) {
                 let transition_weight = transition.weight().unwrap();
 
-                if sym == 0 {
+                if sym == SymbolNumber::ZERO {
                     if self
                         .is_under_weight_limit(max_weight, next_node.weight() + transition_weight)
                     {
@@ -85,7 +86,7 @@ where
 
                     if let Some(op) = operation {
                         if !self.is_under_weight_limit(max_weight, transition_weight) {
-                            next += 1;
+                            next = next.incr();
                             continue;
                         }
 
@@ -97,7 +98,7 @@ where
                 }
             }
 
-            next += 1;
+            next = next.incr();
         }
     }
 
@@ -113,14 +114,16 @@ where
         let lexicon = self.speller.lexicon();
         let alphabet_translator = self.speller.alphabet_translator();
 
-        if !mutator.has_transitions(next_node.mutator_state + 1, Some(0)) {
+        if !mutator.has_transitions(next_node.mutator_state.incr(), Some(SymbolNumber::ZERO)) {
             return;
         }
 
-        let mut next_m = mutator.next(next_node.mutator_state, 0).unwrap();
+        let mut next_m = mutator
+            .next(next_node.mutator_state, SymbolNumber::ZERO)
+            .unwrap();
 
         while let Some(transition) = mutator.take_epsilons(next_m) {
-            if let Some(0) = transition.symbol() {
+            if let Some(SymbolNumber::ZERO) = transition.symbol() {
                 if self.is_under_weight_limit(
                     max_weight,
                     next_node.weight() + transition.weight().unwrap(),
@@ -129,20 +132,20 @@ where
                     output_nodes.push(new_node);
                 }
 
-                next_m += 1;
+                next_m = next_m.incr();
                 continue;
             }
 
             if let Some(sym) = transition.symbol() {
-                let trans_sym = alphabet_translator[sym as usize];
+                let trans_sym = alphabet_translator[sym.0 as usize];
 
-                if !lexicon.has_transitions(next_node.lexicon_state + 1, Some(trans_sym)) {
+                if !lexicon.has_transitions(next_node.lexicon_state.incr(), Some(trans_sym)) {
                     // we have no regular transitions for this
                     if trans_sym >= lexicon.alphabet().initial_symbol_count() {
                         // this input was not originally in the alphabet, so unknown or identity
                         // may apply
                         if lexicon.has_transitions(
-                            next_node.lexicon_state + 1,
+                            next_node.lexicon_state.incr(),
                             lexicon.alphabet().unknown(),
                         ) {
                             self.queue_lexicon_arcs(
@@ -158,7 +161,7 @@ where
                         }
 
                         if lexicon.has_transitions(
-                            next_node.lexicon_state + 1,
+                            next_node.lexicon_state.incr(),
                             lexicon.alphabet().identity(),
                         ) {
                             self.queue_lexicon_arcs(
@@ -174,7 +177,7 @@ where
                         }
                     }
 
-                    next_m += 1;
+                    next_m = next_m.incr();
                     continue;
                 }
 
@@ -190,7 +193,7 @@ where
                 );
             }
 
-            next_m += 1;
+            next_m = next_m.incr();
         }
     }
 
@@ -201,7 +204,7 @@ where
         max_weight: Weight,
         next_node: &TreeNode,
         input_sym: SymbolNumber,
-        mutator_state: u32,
+        mutator_state: TransitionTableIndex,
         mutator_weight: Weight,
         input_increment: i16,
         output_nodes: &mut Vec<Recycled<'a, TreeNode>>,
@@ -217,7 +220,7 @@ where
                 // Symbol replacement here is unfortunate but necessary.
                 if let Some(id) = identity {
                     if sym == id {
-                        sym = self.input[next_node.input_state as usize];
+                        sym = self.input[next_node.input_state.0 as usize];
                     }
                 }
 
@@ -231,7 +234,7 @@ where
                         OutputMode::WithoutTags => next_node.update(
                             pool,
                             input_sym,
-                            Some(next_node.input_state + input_increment as u32),
+                            Some(next_node.input_state.incr(input_increment as u32)),
                             mutator_state,
                             noneps_trans.target().unwrap(),
                             noneps_trans.weight().unwrap() + mutator_weight,
@@ -239,7 +242,7 @@ where
                         OutputMode::WithTags => next_node.update(
                             pool,
                             sym,
-                            Some(next_node.input_state + input_increment as u32),
+                            Some(next_node.input_state.incr(input_increment as u32)),
                             mutator_state,
                             noneps_trans.target().unwrap(),
                             noneps_trans.weight().unwrap() + mutator_weight,
@@ -249,7 +252,7 @@ where
                 }
             }
 
-            next += 1;
+            next = next.incr();
         }
     }
 
@@ -271,13 +274,13 @@ where
         while let Some(transition) = mutator.take_non_epsilons(next_m, input_sym) {
             let symbol = transition.symbol();
 
-            if let Some(0) = symbol {
+            if let Some(SymbolNumber::ZERO) = symbol {
                 let transition_weight = transition.weight().unwrap();
                 if self.is_under_weight_limit(max_weight, next_node.weight() + transition_weight) {
                     let new_node = next_node.update(
                         pool,
-                        0,
-                        Some(next_node.input_state + 1),
+                        SymbolNumber::ZERO,
+                        Some(next_node.input_state.incr(1)),
                         transition.target().unwrap(),
                         next_node.lexicon_state,
                         transition_weight,
@@ -286,17 +289,17 @@ where
                     output_nodes.push(new_node);
                 }
 
-                next_m += 1;
+                next_m = next_m.incr();
                 continue;
             }
 
             if let Some(sym) = symbol {
-                let trans_sym = alphabet_translator[sym as usize];
+                let trans_sym = alphabet_translator[sym.0 as usize];
 
-                if !lexicon.has_transitions(next_node.lexicon_state + 1, Some(trans_sym)) {
+                if !lexicon.has_transitions(next_node.lexicon_state.incr(), Some(trans_sym)) {
                     if trans_sym >= lexicon.alphabet().initial_symbol_count() {
                         if lexicon.has_transitions(
-                            next_node.lexicon_state + 1,
+                            next_node.lexicon_state.incr(),
                             lexicon.alphabet().unknown(),
                         ) {
                             self.queue_lexicon_arcs(
@@ -311,7 +314,7 @@ where
                             );
                         }
                         if lexicon.has_transitions(
-                            next_node.lexicon_state + 1,
+                            next_node.lexicon_state.incr(),
                             lexicon.alphabet().identity(),
                         ) {
                             self.queue_lexicon_arcs(
@@ -326,7 +329,7 @@ where
                             );
                         }
                     }
-                    next_m += 1;
+                    next_m = next_m.incr();
                     continue;
                 }
 
@@ -341,7 +344,7 @@ where
                     output_nodes,
                 );
 
-                next_m += 1;
+                next_m = next_m.incr();
             }
         }
     }
@@ -355,7 +358,7 @@ where
         output_nodes: &mut Vec<Recycled<'a, TreeNode>>,
     ) {
         let mutator = self.speller.mutator();
-        let input_state = next_node.input_state as usize;
+        let input_state = next_node.input_state.0 as usize;
 
         if input_state >= self.input.len() {
             return;
@@ -363,12 +366,13 @@ where
 
         let input_sym = self.input[input_state];
 
-        if !mutator.has_transitions(next_node.mutator_state + 1, Some(input_sym)) {
+        if !mutator.has_transitions(next_node.mutator_state.incr(), Some(input_sym)) {
             // we have no regular transitions for this
             if input_sym >= mutator.alphabet().initial_symbol_count() {
-                if mutator
-                    .has_transitions(next_node.mutator_state + 1, mutator.alphabet().identity())
-                {
+                if mutator.has_transitions(
+                    next_node.mutator_state.incr(),
+                    mutator.alphabet().identity(),
+                ) {
                     self.queue_mutator_arcs(
                         pool,
                         max_weight,
@@ -380,7 +384,7 @@ where
 
                 // Check for unknown transition
                 if mutator
-                    .has_transitions(next_node.mutator_state + 1, mutator.alphabet().unknown())
+                    .has_transitions(next_node.mutator_state.incr(), mutator.alphabet().unknown())
                 {
                     self.queue_mutator_arcs(
                         pool,
@@ -407,14 +411,14 @@ where
         let mutator = self.speller.mutator();
         let lexicon = self.speller.lexicon();
         let alphabet_translator = self.speller.alphabet_translator();
-        let input_state = next_node.input_state as usize;
+        let input_state = next_node.input_state.0 as usize;
 
         if input_state >= self.input.len() {
             return;
         }
 
-        let input_sym = alphabet_translator[self.input[input_state as usize] as usize];
-        let next_lexicon_state = next_node.lexicon_state + 1;
+        let input_sym = alphabet_translator[self.input[input_state as usize].0 as usize];
+        let next_lexicon_state = next_node.lexicon_state.incr();
         //        log::trace!(
         //            "lexicon consuming {}: {}",
         //            input_sym,
@@ -435,7 +439,7 @@ where
                         &next_node,
                         identity.unwrap(),
                         next_node.mutator_state,
-                        0.0,
+                        Weight::ZERO,
                         1,
                         output_nodes,
                     );
@@ -449,7 +453,7 @@ where
                         &next_node,
                         unknown.unwrap(),
                         next_node.mutator_state,
-                        0.0,
+                        Weight::ZERO,
                         1,
                         output_nodes,
                     );
@@ -465,7 +469,7 @@ where
             &next_node,
             input_sym,
             next_node.mutator_state,
-            0.0,
+            Weight::ZERO,
             1,
             output_nodes,
         );
@@ -476,7 +480,7 @@ where
         use std::cmp::Ordering::{Equal, Less};
 
         let c = &self.config;
-        let mut max_weight = c.max_weight.unwrap_or(f32::MAX);
+        let mut max_weight = c.max_weight.unwrap_or(Weight::MAX);
 
         if let Some(beam) = c.beam {
             let candidate_weight = best_weight + beam;
@@ -503,7 +507,7 @@ where
 
     #[inline(always)]
     fn state_size(&self) -> usize {
-        self.speller.lexicon().alphabet().state_size() as usize
+        self.speller.lexicon().alphabet().state_size().0 as usize
     }
 
     pub(crate) fn is_correct(&self) -> bool {
@@ -513,14 +517,14 @@ where
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
         log::trace!("beginning is_correct {:?}?", self.input);
         while let Some(next_node) = nodes.pop() {
-            if next_node.input_state as usize == self.input.len()
+            if next_node.input_state.0 as usize == self.input.len()
                 && self.speller.lexicon().is_final(next_node.lexicon_state)
             {
                 return true;
             }
 
-            self.lexicon_epsilons(&pool, f32::INFINITY, &next_node, &mut nodes);
-            self.lexicon_consume(&pool, f32::INFINITY, &next_node, &mut nodes);
+            self.lexicon_epsilons(&pool, Weight::INFINITE, &next_node, &mut nodes);
+            self.lexicon_consume(&pool, Weight::INFINITE, &next_node, &mut nodes);
         }
 
         false
@@ -534,7 +538,7 @@ where
         let mut lookups = HashMap::new();
         let mut analyses: Vec<Suggestion> = vec![];
         while let Some(next_node) = nodes.pop() {
-            if next_node.input_state as usize == self.input.len()
+            if next_node.input_state.0 as usize == self.input.len()
                 && self.speller.lexicon().is_final(next_node.lexicon_state)
             {
                 let string = self
@@ -553,8 +557,8 @@ where
                     *entry = weight;
                 }
             }
-            self.lexicon_epsilons(&pool, f32::INFINITY, &next_node, &mut nodes);
-            self.lexicon_consume(&pool, f32::INFINITY, &next_node, &mut nodes);
+            self.lexicon_epsilons(&pool, Weight::INFINITE, &next_node, &mut nodes);
+            self.lexicon_consume(&pool, Weight::INFINITE, &next_node, &mut nodes);
             analyses = self.generate_sorted_suggestions(&lookups);
         }
         analyses
@@ -567,7 +571,7 @@ where
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
         let mut corrections = HashMap::new();
         let mut suggestions: Vec<Suggestion> = vec![];
-        let mut best_weight = self.config.max_weight.unwrap_or(f32::MAX);
+        let mut best_weight = self.config.max_weight.unwrap_or(Weight::MAX);
         let key_table = self.speller.mutator().alphabet().key_table();
 
         let mut iteration_count = 0usize;
@@ -581,7 +585,7 @@ where
                 let name: SmolStr = self
                     .input
                     .iter()
-                    .map(|s| &*key_table[*s as usize])
+                    .map(|s| &*key_table[s.0 as usize])
                     .collect();
                 log::warn!("{}: iteration count at {}", name, iteration_count);
                 log::warn!("Node count: {}", nodes.len());
@@ -596,7 +600,7 @@ where
             self.lexicon_epsilons(&pool, max_weight, &next_node, &mut nodes);
             self.mutator_epsilons(&pool, max_weight, &next_node, &mut nodes);
 
-            if next_node.input_state as usize != self.input.len() {
+            if next_node.input_state.0 as usize != self.input.len() {
                 self.consume_input(&pool, max_weight, &next_node, &mut nodes);
                 continue;
             }

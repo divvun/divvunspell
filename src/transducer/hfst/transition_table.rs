@@ -5,9 +5,9 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use memmap2::Mmap;
 use std::fmt;
 use std::io::Cursor;
+use std::mem;
 use std::ptr;
 use std::sync::Arc;
-use std::{mem, u16, u32};
 
 use crate::constants::TRANS_TABLE_SIZE;
 use crate::transducer::symbol_transition::SymbolTransition;
@@ -28,7 +28,11 @@ impl fmt::Debug for MappedTransitionTable {
 
 impl MappedTransitionTable {
     #[inline(always)]
-    pub fn new(mmap: Arc<Mmap>, offset: usize, size: u32) -> MappedTransitionTable {
+    pub fn new(
+        mmap: Arc<Mmap>,
+        offset: usize,
+        size: TransitionTableIndex,
+    ) -> MappedTransitionTable {
         MappedTransitionTable { size, mmap, offset }
     }
 
@@ -40,14 +44,14 @@ impl MappedTransitionTable {
     #[inline(always)]
     fn read_symbol_from_cursor(&self, index: usize) -> Option<SymbolNumber> {
         let index = self.offset + index;
-        let x: SymbolNumber = if cfg!(all(target_arch = "arm", target_pointer_width = "32")) {
+        let x = if cfg!(all(target_arch = "arm", target_pointer_width = "32")) {
             let mut cursor = self.make_cursor();
             cursor.set_position(index as u64);
-            cursor.read_u16::<LittleEndian>().unwrap()
+            SymbolNumber(cursor.read_u16::<LittleEndian>().unwrap())
         } else {
-            unsafe { ptr::read(self.mmap.as_ptr().add(index) as *const _) }
+            SymbolNumber(unsafe { ptr::read(self.mmap.as_ptr().add(index) as *const _) })
         };
-        if x == u16::MAX {
+        if x == SymbolNumber::MAX {
             None
         } else {
             Some(x)
@@ -60,7 +64,7 @@ impl MappedTransitionTable {
             return None;
         }
 
-        let index = TRANS_TABLE_SIZE as usize * i as usize;
+        let index = TRANS_TABLE_SIZE as usize * i.0 as usize;
         self.read_symbol_from_cursor(index)
     }
 
@@ -70,7 +74,7 @@ impl MappedTransitionTable {
             return None;
         }
 
-        let index = ((TRANS_TABLE_SIZE * i as usize) + mem::size_of::<SymbolNumber>()) as usize;
+        let index = ((TRANS_TABLE_SIZE * i.0 as usize) + mem::size_of::<SymbolNumber>()) as usize;
         self.read_symbol_from_cursor(index)
     }
 
@@ -80,18 +84,18 @@ impl MappedTransitionTable {
             return None;
         }
 
-        let index =
-            self.offset + ((TRANS_TABLE_SIZE * i as usize) + (2 * mem::size_of::<SymbolNumber>()));
+        let index = self.offset
+            + ((TRANS_TABLE_SIZE * i.0 as usize) + (2 * mem::size_of::<SymbolNumber>()));
 
         let x: TransitionTableIndex = if cfg!(all(target_arch = "arm", target_pointer_width = "32"))
         {
             let mut cursor = self.make_cursor();
             cursor.set_position(index as u64);
-            cursor.read_u32::<LittleEndian>().unwrap()
+            TransitionTableIndex(cursor.read_u32::<LittleEndian>().unwrap())
         } else {
-            unsafe { ptr::read(self.mmap.as_ptr().add(index) as *const _) }
+            TransitionTableIndex(unsafe { ptr::read(self.mmap.as_ptr().add(index) as *const _) })
         };
-        if x == u32::MAX {
+        if x == TransitionTableIndex::MAX {
             None
         } else {
             Some(x)
@@ -105,23 +109,25 @@ impl MappedTransitionTable {
         }
 
         let index = self.offset
-            + ((TRANS_TABLE_SIZE * i as usize)
+            + ((TRANS_TABLE_SIZE * i.0 as usize)
                 + (2 * mem::size_of::<SymbolNumber>())
                 + mem::size_of::<TransitionTableIndex>());
 
         let x: Weight = if cfg!(all(target_arch = "arm", target_pointer_width = "32")) {
             let mut cursor = self.make_cursor();
             cursor.set_position(index as u64);
-            cursor.read_f32::<LittleEndian>().unwrap()
+            Weight(cursor.read_f32::<LittleEndian>().unwrap())
         } else {
-            unsafe { ptr::read(self.mmap.as_ptr().add(index) as *const _) }
+            Weight(unsafe { ptr::read(self.mmap.as_ptr().add(index) as *const _) })
         };
         Some(x)
     }
 
     #[inline(always)]
     pub fn is_final(&self, i: TransitionTableIndex) -> bool {
-        self.input_symbol(i) == None && self.output_symbol(i) == None && self.target(i) == Some(1)
+        self.input_symbol(i) == None
+            && self.output_symbol(i) == None
+            && self.target(i) == Some(TransitionTableIndex::ONE)
     }
 
     #[inline(always)]

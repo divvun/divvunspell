@@ -24,6 +24,7 @@ $ cargo run -- --threshold 0.9 typos.txt se.zhfst
 */
 
 use chrono::prelude::*;
+use divvunspell::types::Weight;
 use std::error::Error;
 use std::{
     io::Write,
@@ -42,7 +43,7 @@ use structopt::clap::{App, AppSettings, Arg};
 
 static CFG: SpellerConfig = SpellerConfig {
     n_best: Some(10),
-    max_weight: Some(10000.0),
+    max_weight: Some(Weight(10000.0)),
     beam: None,
     reweight: Some(ReweightingConfig::default_const()),
     node_pool_size: 128,

@@ -130,7 +130,7 @@ const fn default_n_best() -> Option<usize> {
 }
 
 const fn default_max_weight() -> Option<Weight> {
-    Some(10000.0)
+    Some(Weight(10000.0))
 }
 
 const fn default_beam() -> Option<Weight> {
@@ -428,8 +428,8 @@ where
                 key_table
                     .iter()
                     .position(|x| x == &s)
-                    .map(|x| x as u16)
-                    .unwrap_or_else(|| alphabet.unknown().unwrap_or(0u16))
+                    .map(|x| SymbolNumber(x as u16))
+                    .unwrap_or_else(|| alphabet.unknown().unwrap_or(SymbolNumber::ZERO))
             })
             .collect()
     }
@@ -463,7 +463,7 @@ where
             mode,
             words,
         } = case;
-        let mut best: HashMap<SmolStr, f32> = HashMap::new();
+        let mut best: HashMap<SmolStr, Weight> = HashMap::new();
 
         for word in std::iter::once(&original_input).chain(words.iter()) {
             log::trace!("suggesting for word {}", word);
@@ -511,11 +511,12 @@ where
                             strsim::damerau_levenshtein(&words[0].as_str(), &word.as_str())
                                 + strsim::damerau_levenshtein(&word.as_str(), sugg.value());
                         let penalty_middle = reweight.mid_penalty * distance as f32;
-                        let additional_weight = if sugg.value.chars().all(|c| is_emoji(c)) {
-                            0.0
-                        } else {
-                            penalty_start + penalty_end + penalty_middle
-                        };
+                        let additional_weight =
+                            Weight(if sugg.value.chars().all(|c| is_emoji(c)) {
+                                0.0
+                            } else {
+                                penalty_start + penalty_end + penalty_middle
+                            });
                         log::trace!(
                             "Penalty: +{} = {} + {} * {} + {}",
                             additional_weight,
