@@ -1,5 +1,5 @@
 [package]
-name = "divvunspell-bin"
+name = "divvunspell-cli"
 description = "Spellchecker for ZHFST/BHFST spellers, with case handling and tokenization support."
 version = "1.0.0"
 authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
@@ -14,7 +14,7 @@ path = "src/main.rs"
 [dependencies]
 serde = { version = "1.0.116", features = ["derive"] }
 serde_json = "1.0.57"
-divvunspell = { version = "1.0.0-beta.5", features = ["internal_convert", "compression"], path = "../divvunspell" }
+divvunspell = { features = ["internal_convert", "compression"], path = ".." }
 box-format = { version = "0.3.2", features = ["reader"], default-features = false }
 pretty_env_logger = "0.5.0"
 gumdrop = "0.8.0"

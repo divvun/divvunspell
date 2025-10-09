@@ -541,7 +541,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "divvunspell-bin"
+name = "divvunspell-cli"
 version = "1.0.0"
 dependencies = [
  "anyhow",
