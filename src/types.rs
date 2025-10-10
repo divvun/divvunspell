@@ -194,10 +194,30 @@ impl TransitionTableIndex {
 ///
 /// Lower weights represent more preferred paths through the FST.
 /// Used for ranking spelling suggestions and morphological analyses.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[repr(transparent)]
 #[serde(transparent)]
 pub struct Weight(pub f32);
+
+impl PartialEq for Weight {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.eq(&other.0)
+    }
+}
+
+impl Eq for Weight {}
+
+impl PartialOrd for Weight {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.0.total_cmp(&other.0))
+    }
+}
+
+impl Ord for Weight {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.total_cmp(&other.0)
+    }
+}
 
 impl Weight {
     /// Zero weight (no cost)
