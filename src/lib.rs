@@ -19,8 +19,6 @@ Further examples of how to use divvunspell library can be found in the
 #![deny(unsafe_op_in_unsafe_fn)]
 
 pub mod archive;
-#[cfg(feature = "internal_ffi")]
-pub mod ffi;
 
 pub mod paths;
 pub mod speller;

@@ -12,8 +12,8 @@ mod alphabet;
 mod symbol_transition;
 pub(crate) mod tree_node;
 
-pub use self::alphabet::TransducerAlphabet;
-pub use self::symbol_transition::SymbolTransition;
+use crate::transducer::alphabet::TransducerAlphabet;
+use crate::transducer::symbol_transition::SymbolTransition;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use crate::vfs::{self, Filesystem};
 
