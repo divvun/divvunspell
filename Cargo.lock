@@ -504,9 +504,7 @@ version = "1.0.0-beta.7"
 dependencies = [
  "box-format",
  "byteorder",
- "cffi",
  "eieio",
- "flatbuffers",
  "fs_extra",
  "globwalk",
  "hashbrown",
@@ -545,6 +543,16 @@ dependencies = [
  "serde",
  "serde_json",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "divvunspell-ffi"
+version = "1.0.0-beta.7"
+dependencies = [
+ "cffi",
+ "divvunspell",
+ "flatbuffers",
+ "libc",
 ]
 
 [[package]]

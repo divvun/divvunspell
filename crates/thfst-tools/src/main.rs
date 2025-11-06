@@ -2,7 +2,7 @@ use clap::Parser;
 use std::path::{Path, PathBuf};
 
 use divvunspell::archive::{
-    BoxSpellerArchive, SpellerArchive, ZipSpellerArchive, boxf::ThfstBoxSpellerArchive,
+    SpellerArchive, boxf::BoxSpellerArchive, boxf::ThfstBoxSpellerArchive, zip::ZipSpellerArchive,
 };
 use divvunspell::transducer::{
     Transducer,

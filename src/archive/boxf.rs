@@ -8,7 +8,7 @@ use super::{SpellerArchive, meta::SpellerMetadata};
 use crate::speller::{HfstSpeller, Speller};
 use crate::transducer::{
     Transducer,
-    thfst::{MemmapThfstChunkedTransducer, MemmapThfstTransducer},
+    thfst::{MemmapThfstTransducer, chunked::MemmapThfstChunkedTransducer},
 };
 use crate::vfs::Filesystem;
 use crate::vfs::boxf::Filesystem as BoxFilesystem;

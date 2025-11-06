@@ -12,12 +12,12 @@ use memmap2::Mmap;
 
 use self::alphabet::TransducerAlphabetParser;
 use self::header::TransducerHeader;
-pub use self::index_table::MappedIndexTable;
-pub use self::transition_table::MappedTransitionTable;
 use super::alphabet::TransducerAlphabet;
 use super::symbol_transition::SymbolTransition;
 use super::{Transducer, TransducerError};
 use crate::constants::{INDEX_TABLE_SIZE, TARGET_TABLE};
+use crate::transducer::hfst::index_table::MappedIndexTable;
+use crate::transducer::hfst::transition_table::MappedTransitionTable;
 use crate::types::{HeaderFlag, SymbolNumber, TransitionTableIndex, Weight};
 use crate::vfs::{self, Filesystem};
 

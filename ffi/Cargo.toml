@@ -1,0 +1,18 @@
+[package]
+name = "divvunspell-ffi"
+description = "C/C++ FFI bindings for divvunspell spell checking library."
+version = "1.0.0-beta.7"
+authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/divvun/divvunspell"
+
+[lib]
+name = "divvunspell"
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+divvunspell = { path = ".." }
+cffi = { git = "https://github.com/cffi-rs/cffi", branch = "next" }
+flatbuffers = "25.9.23"
+libc.workspace = true

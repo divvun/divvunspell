@@ -7,10 +7,6 @@ edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/divvun/divvunspell"
 
-[lib]
-name = "divvunspell"
-crate-type = ["rlib", "staticlib", "cdylib"]
-
 [workspace.dependencies]
 libc = "0.2"
 memmap2 = "0.9.4"
@@ -46,8 +42,6 @@ clap = { version = "4.5", features = ["derive"] }
 anyhow = "1"
 
 [dependencies]
-cffi = { git = "https://github.com/cffi-rs/cffi", branch = "next", optional = true }
-flatbuffers = { version = "25.9.23", optional = true }
 libc.workspace = true
 memmap2.workspace = true
 byteorder.workspace = true
@@ -82,14 +76,14 @@ compression = ["zip/deflate"]
 
 # Internal features: unstable, not for external use!
 internal_convert = []
-internal_ffi = ["flatbuffers", "cffi"]
 
 [workspace]
 resolver = "2"
 members = [
   ".",
   "cli",
-  "crates/*"
+  "crates/*",
+  "ffi"
 ]
 
 [profile.dev]

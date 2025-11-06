@@ -117,7 +117,7 @@ impl<F: vfs::File> TransitionTable<F> for MemmapTransitionTable<F> {
 }
 
 #[cfg(unix)]
-mod unix {
+pub(crate) mod unix {
     use super::*;
 
     use crate::transducer::TransducerError;
@@ -225,6 +225,3 @@ mod unix {
         }
     }
 }
-
-#[cfg(unix)]
-pub use self::unix::FileTransitionTable;
