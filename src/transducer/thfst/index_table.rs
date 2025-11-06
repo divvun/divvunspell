@@ -103,7 +103,7 @@ impl<F: vfs::File> crate::transducer::IndexTable<F> for MemmapIndexTable<F> {
 }
 
 #[cfg(unix)]
-mod unix {
+pub(crate) mod unix {
     use super::*;
 
     use crate::transducer::IndexTable;
@@ -193,6 +193,3 @@ mod unix {
         }
     }
 }
-
-#[cfg(unix)]
-pub use self::unix::FileIndexTable;

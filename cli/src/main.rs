@@ -15,8 +15,8 @@ use serde::Serialize;
 
 use divvunspell::{
     archive::{
-        BoxSpellerArchive, SpellerArchive, ZipSpellerArchive, boxf::ThfstBoxSpellerArchive,
-        error::SpellerArchiveError,
+        SpellerArchive, boxf::BoxSpellerArchive, boxf::ThfstBoxSpellerArchive,
+        error::SpellerArchiveError, zip::ZipSpellerArchive,
     },
     speller::{Speller, SpellerConfig, suggestion::Suggestion},
     tokenizer::Tokenize,

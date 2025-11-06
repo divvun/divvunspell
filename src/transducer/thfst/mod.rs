@@ -6,25 +6,23 @@ use std::path::Path;
 use std::{u16, u32};
 
 use crate::constants::TARGET_TABLE;
+use crate::transducer::thfst::index_table::MemmapIndexTable;
+use crate::transducer::thfst::transition_table::MemmapTransitionTable;
 use crate::transducer::{TransducerError, symbol_transition::SymbolTransition};
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use serde::{Deserialize, Serialize};
 
-mod chunked;
-mod index_table;
-mod transition_table;
-
-pub use self::chunked::{MemmapThfstChunkedTransducer, ThfstChunkedTransducer};
-pub use self::index_table::MemmapIndexTable;
-pub use self::transition_table::MemmapTransitionTable;
+pub(crate) mod chunked;
+pub(crate) mod index_table;
+pub(crate) mod transition_table;
 
 pub type MemmapThfstTransducer<F> =
     ThfstTransducer<MemmapIndexTable<F>, MemmapTransitionTable<F>, F>;
 
 #[cfg(unix)]
 pub type FileThfstTransducer<F> = ThfstTransducer<
-    self::index_table::FileIndexTable<F>,
-    self::transition_table::FileTransitionTable<F>,
+    crate::transducer::thfst::index_table::unix::FileIndexTable<F>,
+    crate::transducer::thfst::transition_table::unix::FileTransitionTable<F>,
     F,
 >;
 
