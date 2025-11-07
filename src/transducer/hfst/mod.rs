@@ -1,4 +1,8 @@
 //! Finite-state automaton in HFST format.
+//!
+//! HFST (Helsinki Finite-State Technology) is a widely-used format for representing
+//! finite-state transducers in morphological analysis and spell-checking. This module
+//! provides support for reading and traversing HFST transducers.
 pub mod alphabet;
 pub mod header;
 pub mod index_table;
@@ -225,7 +229,7 @@ impl<F: vfs::File> Transducer<F> for HfstTransducer<F> {
     }
 
     #[inline(always)]
-    fn mut_alphabet(&mut self) -> &mut TransducerAlphabet {
+    fn alphabet_mut(&mut self) -> &mut TransducerAlphabet {
         &mut self.alphabet
     }
 }

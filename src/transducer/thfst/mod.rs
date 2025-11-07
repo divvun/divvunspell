@@ -1,4 +1,11 @@
-//! Finite-state automaton in optimised mmapped format.
+//! Finite-state automaton in optimised memory-mapped format.
+//!
+//! THFST (Tromsø-Helsinki Finite-State Transducer) is an optimized binary format
+//! designed for efficient memory-mapped access to finite-state transducers. This format
+//! is specifically optimized for spell-checking performance with large lexicons.
+//!
+//! The THFST format supports chunked loading for very large transducers that exceed
+//! system memory mapping limits.
 // We manually ensure alignment of reads in this file.
 #![allow(clippy::cast_ptr_alignment)]
 
@@ -6,8 +13,8 @@ use std::path::Path;
 use std::{u16, u32};
 
 use crate::constants::TARGET_TABLE;
-use crate::transducer::thfst::index_table::MemmapIndexTable;
-use crate::transducer::thfst::transition_table::MemmapTransitionTable;
+use crate::transducer::thfst::index_table::MmapIndexTable;
+use crate::transducer::thfst::transition_table::MmapTransitionTable;
 use crate::transducer::{TransducerError, symbol_transition::SymbolTransition};
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use serde::{Deserialize, Serialize};
@@ -16,8 +23,7 @@ pub(crate) mod chunked;
 pub(crate) mod index_table;
 pub(crate) mod transition_table;
 
-pub type MemmapThfstTransducer<F> =
-    ThfstTransducer<MemmapIndexTable<F>, MemmapTransitionTable<F>, F>;
+pub type MmapThfstTransducer<F> = ThfstTransducer<MmapIndexTable<F>, MmapTransitionTable<F>, F>;
 
 #[cfg(unix)]
 pub type FileThfstTransducer<F> = ThfstTransducer<
@@ -236,7 +242,7 @@ where
     }
 
     #[inline(always)]
-    fn mut_alphabet(&mut self) -> &mut TransducerAlphabet {
+    fn alphabet_mut(&mut self) -> &mut TransducerAlphabet {
         &mut self.alphabet
     }
 }

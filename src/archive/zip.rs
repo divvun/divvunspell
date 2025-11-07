@@ -84,14 +84,15 @@ impl SpellerArchive for ZipSpellerArchive {
     fn open(file_path: &std::path::Path) -> Result<ZipSpellerArchive, SpellerArchiveError> {
         let file = File::open(&file_path).map_err(SpellerArchiveError::File)?;
         let reader = std::io::BufReader::new(&file);
-        let mut archive = ZipArchive::new(reader).expect("zip");
+        let mut archive = ZipArchive::new(reader)?;
 
         // // Open file a second time to get around borrow checker
         let mut file = File::open(file_path).map_err(SpellerArchiveError::File)?;
 
         let metadata_mmap = mmap_by_name(&mut file, &mut archive, "index.xml")
             .map_err(|e| SpellerArchiveError::Io("index.xml".into(), e.into()))?;
-        let metadata = SpellerMetadata::from_bytes(&*metadata_mmap.map()).expect("meta");
+        let metadata = SpellerMetadata::from_bytes(&*metadata_mmap.map())
+            .map_err(|e| SpellerArchiveError::MetadataParseError(Box::new(e)))?;
 
         let acceptor_id = metadata.acceptor().id();
         let errmodel_id = metadata.errmodel().id();

@@ -8,11 +8,11 @@ use crate::transducer::TransducerError;
 #[non_exhaustive]
 pub enum SpellerArchiveError {
     /// Error opening or reading the archive file
-    #[error("File error")]
+    #[error("Failed to open archive file")]
     File(#[source] Error),
 
     /// I/O error while reading archive contents
-    #[error("IO error")]
+    #[error("I/O error reading '{0}'")]
     Io(String, #[source] eieio::Error),
 
     /// Error loading or parsing a transducer from the archive
@@ -34,4 +34,12 @@ pub enum SpellerArchiveError {
     /// File has an unsupported extension (expected .zhfst or .bhfst)
     #[error("Unsupported file extension: {0:?}")]
     UnsupportedExt(OsString),
+
+    /// Error reading or parsing zip archive
+    #[error("Failed to read zip archive: {0}")]
+    ZipError(#[from] ::zip::result::ZipError),
+
+    /// Error parsing metadata XML
+    #[error("Failed to parse metadata XML")]
+    MetadataParseError(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
