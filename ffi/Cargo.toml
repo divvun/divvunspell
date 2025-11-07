@@ -1,6 +1,6 @@
 [package]
-name = "divvunspell-ffi"
-description = "C/C++ FFI bindings for divvunspell spell checking library."
+name = "divvun-fst-ffi"
+description = "C/C++ FFI bindings for divvun-fst library."
 version = "1.0.0-beta.7"
 authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
 edition = "2024"
@@ -8,11 +8,11 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/divvun/divvunspell"
 
 [lib]
-name = "divvunspell"
+name = "divvun_fst"
 crate-type = ["staticlib", "cdylib"]
 
 [dependencies]
-divvunspell = { path = ".." }
+divvun-fst = { path = ".." }
 cffi = { git = "https://github.com/cffi-rs/cffi", branch = "next" }
 flatbuffers = "25.9.23"
 libc.workspace = true

@@ -136,5 +136,6 @@ pub trait IndexTable<F: vfs::File>: Sized {
     }
 }
 
-#[cfg(feature = "internal_convert")]
+#[doc(hidden)]
+// This is not a public API.
 pub mod convert;

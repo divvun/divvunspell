@@ -18,7 +18,7 @@ pub trait ConvertFrom<T> {
 }
 
 impl ConvertFile<hfst::HfstTransducer<std::fs::File>>
-    for thfst::MemmapThfstTransducer<std::fs::File>
+    for thfst::MmapThfstTransducer<std::fs::File>
 {
     fn convert_file(
         transducer: &hfst::HfstTransducer<std::fs::File>,
@@ -32,13 +32,16 @@ impl ConvertFile<hfst::HfstTransducer<std::fs::File>>
         let alphabet_path = thfst_path.join("alphabet");
 
         let mut writer = BufWriter::new(File::create(transition_path)?);
-        thfst::transition_table::MemmapTransitionTable::convert_from(
+        thfst::transition_table::TransitionTable::<memmap2::Mmap>::convert_from(
             &transducer.transition_table,
             &mut writer,
         )?;
 
         let mut writer = BufWriter::new(File::create(index_path)?);
-        thfst::index_table::MemmapIndexTable::convert_from(&transducer.index_table, &mut writer)?;
+        thfst::index_table::IndexTable::<memmap2::Mmap>::convert_from(
+            &transducer.index_table,
+            &mut writer,
+        )?;
 
         let writer = BufWriter::new(File::create(alphabet_path)?);
         serde_json::to_writer_pretty(writer, transducer.alphabet())?;
@@ -48,7 +51,7 @@ impl ConvertFile<hfst::HfstTransducer<std::fs::File>>
 }
 
 impl ConvertFrom<hfst::index_table::MappedIndexTable>
-    for thfst::index_table::MemmapIndexTable<std::fs::File>
+    for thfst::index_table::IndexTable<memmap2::Mmap>
 {
     fn convert_from<W: Write>(
         table: &hfst::index_table::MappedIndexTable,
@@ -72,7 +75,7 @@ impl ConvertFrom<hfst::index_table::MappedIndexTable>
 }
 
 impl ConvertFrom<hfst::transition_table::MappedTransitionTable>
-    for thfst::transition_table::MemmapTransitionTable<std::fs::File>
+    for thfst::transition_table::TransitionTable<memmap2::Mmap>
 {
     fn convert_from<W: Write>(
         table: &hfst::transition_table::MappedTransitionTable,

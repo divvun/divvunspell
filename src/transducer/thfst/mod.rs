@@ -13,8 +13,8 @@ use std::path::Path;
 use std::{u16, u32};
 
 use crate::constants::TARGET_TABLE;
-use crate::transducer::thfst::index_table::MmapIndexTable;
-use crate::transducer::thfst::transition_table::MmapTransitionTable;
+use crate::transducer::thfst::index_table::IndexTable;
+use crate::transducer::thfst::transition_table::TransitionTable;
 use crate::transducer::{TransducerError, symbol_transition::SymbolTransition};
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use serde::{Deserialize, Serialize};
@@ -23,14 +23,13 @@ pub(crate) mod chunked;
 pub(crate) mod index_table;
 pub(crate) mod transition_table;
 
-pub type MmapThfstTransducer<F> = ThfstTransducer<MmapIndexTable<F>, MmapTransitionTable<F>, F>;
+/// THFST transducer using memory-mapped access (recommended for production).
+pub type MmapThfstTransducer<F> =
+    ThfstTransducer<IndexTable<memmap2::Mmap>, TransitionTable<memmap2::Mmap>, F>;
 
+/// THFST transducer using file-based access (Unix only, slower but lower memory footprint).
 #[cfg(unix)]
-pub type FileThfstTransducer<F> = ThfstTransducer<
-    crate::transducer::thfst::index_table::unix::FileIndexTable<F>,
-    crate::transducer::thfst::transition_table::unix::FileTransitionTable<F>,
-    F,
->;
+pub type FileThfstTransducer<F> = ThfstTransducer<IndexTable<F>, TransitionTable<F>, F>;
 
 use crate::transducer::{Transducer, TransducerAlphabet};
 use crate::vfs::{self, Filesystem};

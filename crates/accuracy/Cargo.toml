@@ -10,7 +10,7 @@ publish = false
 tracing-subscriber = "0.3"
 serde = { version = "1.0.116", features = ["derive"] }
 serde_json = "1.0.57"
-divvunspell = { features = ["internal_convert", "compression"], path = "../.." }
+divvun-fst = { features = ["compression"], path = "../.." }
 csv = { version = "1.1" }
 rayon = { version = "1.4.0" }
 indicatif = { version = "0.15", features = ["with_rayon"] }

@@ -17,7 +17,7 @@ will expect there to be less than 10 % regressions between `old.zhfst` and
 use std::error::Error;
 use std::path::PathBuf;
 
-use divvunspell::archive;
+use divvun_fst::archive;
 
 use clap::Parser;
 

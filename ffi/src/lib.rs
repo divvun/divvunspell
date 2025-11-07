@@ -8,10 +8,10 @@ use std::convert::Infallible;
 use std::ffi::{CStr, CString};
 use std::sync::Arc;
 
-use divvunspell::archive::{SpellerArchive, error::SpellerArchiveError};
-use divvunspell::speller::{ReweightingConfig, Speller, SpellerConfig, suggestion::Suggestion};
-use divvunspell::tokenizer::{Tokenize, WordContext, WordIndices};
-use divvunspell::types::Weight;
+use divvun_fst::archive::{SpellerArchive, error::SpellerArchiveError};
+use divvun_fst::speller::{ReweightingConfig, Speller, SpellerConfig, suggestion::Suggestion};
+use divvun_fst::tokenizer::{Tokenize, WordContext, WordIndices};
+use divvun_fst::types::Weight;
 
 use crate::fbs::IntoFlatbuffer;
 
@@ -93,7 +93,7 @@ pub extern "C" fn DFST_Tokenizer_cursorContext(
     #[marshal(cffi::StrMarshaler)] first_half: &str,
     #[marshal(cffi::StrMarshaler)] second_half: &str,
 ) -> WordContext {
-    divvunspell::tokenizer::cursor_context(first_half, second_half)
+    divvun_fst::tokenizer::cursor_context(first_half, second_half)
 }
 
 pub type SuggestionVecMarshaler = cffi::VecMarshaler<Suggestion>;
@@ -255,7 +255,7 @@ pub extern "C" fn DFST_VecSuggestion_getValue(
 pub extern "C" fn DFST_SpellerArchive_open(
     #[marshal(cffi::PathBufMarshaler)] path: std::path::PathBuf,
 ) -> Result<Arc<dyn SpellerArchive + Send + Sync>, Box<dyn std::error::Error>> {
-    divvunspell::archive::open(&path).map_err(|e| Box::new(e) as _)
+    divvun_fst::archive::open(&path).map_err(|e| Box::new(e) as _)
 }
 
 #[cffi::marshal(return_marshaler = "cffi::ArcMarshaler::<dyn Speller + Send + Sync>")]

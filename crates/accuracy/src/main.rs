@@ -24,7 +24,7 @@ $ cargo run -- --threshold 0.9 typos.txt se.zhfst
 */
 
 use chrono::prelude::*;
-use divvunspell::types::Weight;
+use divvun_fst::types::Weight;
 use std::error::Error;
 use std::{
     io::Write,
@@ -34,9 +34,9 @@ use std::{
 
 use clap::Parser;
 use distance::damerau_levenshtein;
-use divvunspell::archive;
-use divvunspell::speller::suggestion::Suggestion;
-use divvunspell::speller::{ReweightingConfig, SpellerConfig};
+use divvun_fst::archive;
+use divvun_fst::speller::suggestion::Suggestion;
+use divvun_fst::speller::{ReweightingConfig, SpellerConfig};
 use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::Serialize;
@@ -99,7 +99,7 @@ struct AccuracyResult<'a> {
 
 #[derive(Debug, Serialize)]
 struct Report<'a> {
-    metadata: Option<&'a divvunspell::archive::meta::SpellerMetadata>,
+    metadata: Option<&'a divvun_fst::archive::meta::SpellerMetadata>,
     config: &'a SpellerConfig,
     summary: Summary,
     results: Vec<AccuracyResult<'a>>,

@@ -5,7 +5,7 @@ pub trait IntoFlatbuffer {
     fn into_flatbuffer(self) -> Vec<u8>;
 }
 
-impl IntoFlatbuffer for divvunspell::tokenizer::WordContext {
+impl IntoFlatbuffer for divvun_fst::tokenizer::WordContext {
     fn into_flatbuffer(self) -> Vec<u8> {
         use crate::fbs::tokenizer::*;
 

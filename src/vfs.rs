@@ -1,4 +1,13 @@
-//! Some stuff for filesystems and different OSes.
+//! Virtual file system abstractions.
+//!
+//! This module provides traits for abstracting file system operations and memory access,
+//! allowing the codebase to work with different storage backends (real files, archives,
+//! memory-mapped regions, etc.) through a unified interface.
+
+pub mod memory;
+
+pub use memory::Memory;
+
 use fs_extra::dir::CopyOptions;
 use memmap2::{Mmap, MmapOptions};
 use std::fmt::Debug;

@@ -1,22 +1,144 @@
-use std::{mem, ptr};
+//! Transition table for THFST transducers.
+//!
+//! The transition table stores FST arcs with input/output symbols, target states, and weights.
+
+use std::mem;
 
 use crate::transducer::TransducerError;
-use crate::transducer::TransitionTable;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
-use crate::vfs::{self, Filesystem};
-use memmap2::Mmap;
+use crate::vfs::{self, Filesystem, Memory};
 
+/// Transition table for THFST transducers, generic over memory access pattern.
+///
+/// The transition table stores the arcs (transitions) of the finite-state transducer,
+/// supporting both memory-mapped and file-based access patterns.
 #[derive(Debug)]
-pub struct MmapTransitionTable<F> {
-    buf: Mmap,
+pub struct TransitionTable<M: Memory> {
+    memory: M,
     pub(crate) size: TransitionTableIndex,
-    _file: std::marker::PhantomData<F>,
 }
 
 const TRANS_TABLE_SIZE: usize = 12;
 
-impl<F: vfs::File> MmapTransitionTable<F> {
-    pub fn from_path_partial<P, FS>(
+impl<M: Memory> TransitionTable<M> {
+    /// Create a transition table from pre-existing memory.
+    ///
+    /// This is used when the memory has already been mapped or loaded.
+    pub fn new(memory: M, byte_size: usize) -> Self {
+        let size = TransitionTableIndex((byte_size / TRANS_TABLE_SIZE) as u32);
+        TransitionTable { memory, size }
+    }
+
+    /// Get the size of the transition table in entries.
+    #[inline(always)]
+    pub fn len(&self) -> TransitionTableIndex {
+        self.size
+    }
+
+    /// Check if the transition table is empty.
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.size.0 == 0
+    }
+
+    /// Read input symbol at given transition index.
+    #[inline(always)]
+    fn read_symbol_at(&self, offset: usize) -> Option<SymbolNumber> {
+        let symbol = SymbolNumber(self.memory.read_u16_at(offset));
+        if symbol == SymbolNumber::MAX {
+            None
+        } else {
+            Some(symbol)
+        }
+    }
+
+    /// Read input symbol at given transition index.
+    #[inline(always)]
+    pub fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
+        if i >= self.size {
+            return None;
+        }
+        let offset = TRANS_TABLE_SIZE * i.0 as usize;
+        self.read_symbol_at(offset)
+    }
+
+    /// Read output symbol at given transition index.
+    #[inline(always)]
+    pub fn output_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
+        if i >= self.size {
+            return None;
+        }
+        let offset = (TRANS_TABLE_SIZE * i.0 as usize) + mem::size_of::<SymbolNumber>();
+        self.read_symbol_at(offset)
+    }
+
+    /// Read target state at given transition index.
+    #[inline(always)]
+    pub fn target(&self, i: TransitionTableIndex) -> Option<TransitionTableIndex> {
+        if i >= self.size {
+            return None;
+        }
+        let offset = (TRANS_TABLE_SIZE * i.0 as usize) + (2 * mem::size_of::<SymbolNumber>());
+        let target = TransitionTableIndex(self.memory.read_u32_at(offset));
+
+        if target == TransitionTableIndex::MAX {
+            None
+        } else {
+            Some(target)
+        }
+    }
+
+    /// Read weight at given transition index.
+    #[inline(always)]
+    pub fn weight(&self, i: TransitionTableIndex) -> Option<Weight> {
+        if i >= self.size {
+            return None;
+        }
+        let offset = (TRANS_TABLE_SIZE * i.0 as usize)
+            + (2 * mem::size_of::<SymbolNumber>())
+            + mem::size_of::<TransitionTableIndex>();
+
+        let weight = Weight(self.memory.read_f32_at(offset));
+        Some(weight)
+    }
+
+    /// Check if state at given index is final.
+    #[inline(always)]
+    pub fn is_final(&self, i: TransitionTableIndex) -> bool {
+        self.input_symbol(i).is_none()
+            && self.output_symbol(i).is_none()
+            && self.target(i) == Some(TransitionTableIndex(1))
+    }
+
+    /// Get a symbol transition record combining target, output, and weight.
+    #[inline(always)]
+    pub fn symbol_transition(
+        &self,
+        i: TransitionTableIndex,
+    ) -> crate::transducer::symbol_transition::SymbolTransition {
+        crate::transducer::symbol_transition::SymbolTransition::new(
+            self.target(i),
+            self.output_symbol(i),
+            self.weight(i),
+        )
+    }
+}
+
+/// Helper functions to create memory-mapped transition tables from files.
+impl TransitionTable<memmap2::Mmap> {
+    pub fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<Self, TransducerError>
+    where
+        P: AsRef<std::path::Path>,
+        FS: Filesystem<File = F>,
+        F: vfs::File,
+    {
+        let file = fs.open_file(path).map_err(TransducerError::Io)?;
+        let mmap = unsafe { file.memory_map().map_err(TransducerError::Memmap)? };
+        let size = mmap.len();
+        Ok(TransitionTable::new(mmap, size))
+    }
+
+    pub fn from_path_partial<P, FS, F>(
         fs: &FS,
         path: P,
         chunk: u64,
@@ -25,203 +147,92 @@ impl<F: vfs::File> MmapTransitionTable<F> {
     where
         P: AsRef<std::path::Path>,
         FS: Filesystem<File = F>,
+        F: vfs::File,
     {
         let file = fs.open_file(path).map_err(TransducerError::Io)?;
         let len = file.len().map_err(TransducerError::Io)? / total;
-        let buf = unsafe {
+        let mmap = unsafe {
             file.partial_memory_map(chunk * len, len as usize)
                 .map_err(TransducerError::Memmap)?
         };
-        let size = TransitionTableIndex((buf.len() / TRANS_TABLE_SIZE) as u32);
-        Ok(MmapTransitionTable {
-            buf,
-            size,
-            _file: std::marker::PhantomData::<F>,
-        })
-    }
-
-    #[inline]
-    fn read_symbol_from_cursor(&self, index: usize) -> Option<SymbolNumber> {
-        let x = unsafe { ptr::read(self.buf.as_ptr().add(index) as *const _) };
-        if x == SymbolNumber::MAX {
-            None
-        } else {
-            Some(x)
-        }
+        let size = mmap.len();
+        Ok(TransitionTable::new(mmap, size))
     }
 }
 
-impl<F: vfs::File> TransitionTable<F> for MmapTransitionTable<F> {
-    fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
+/// Helper function to create a file-based transition table (Unix only).
+///
+/// This uses syscalls for each access and is slower than mmap, but can be
+/// useful when memory mapping is unavailable.
+#[cfg(unix)]
+impl<F: vfs::File> TransitionTable<F>
+where
+    F: Memory,
+{
+    pub fn from_path_file<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
     where
         P: AsRef<std::path::Path>,
         FS: Filesystem<File = F>,
     {
         let file = fs.open_file(path).map_err(TransducerError::Io)?;
-        let buf = unsafe { file.memory_map() }.map_err(TransducerError::Memmap)?;
-        let size = (buf.len() / TRANS_TABLE_SIZE) as u32;
-        Ok(MmapTransitionTable {
-            buf,
-            size: TransitionTableIndex(size),
-            _file: std::marker::PhantomData::<F>,
-        })
+        let byte_size = file.len().map_err(TransducerError::Io)? as usize;
+        Ok(TransitionTable::new(file, byte_size))
+    }
+}
+
+// Implement the trait for compatibility with existing code
+impl<F: vfs::File> crate::transducer::TransitionTable<F> for TransitionTable<memmap2::Mmap> {
+    fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
+    where
+        P: AsRef<std::path::Path>,
+        FS: Filesystem<File = F>,
+    {
+        TransitionTable::from_path(fs, path)
     }
 
     fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
-        if i >= self.size {
-            return None;
-        }
-
-        let index = TRANS_TABLE_SIZE as usize * i.0 as usize;
-        self.read_symbol_from_cursor(index)
+        self.input_symbol(i)
     }
 
     fn output_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
-        if i >= self.size {
-            return None;
-        }
-
-        let index = ((TRANS_TABLE_SIZE * i.0 as usize) + mem::size_of::<SymbolNumber>()) as usize;
-        self.read_symbol_from_cursor(index)
+        self.output_symbol(i)
     }
 
     fn target(&self, i: TransitionTableIndex) -> Option<TransitionTableIndex> {
-        if i >= self.size {
-            return None;
-        }
-
-        let index = (TRANS_TABLE_SIZE * i.0 as usize) + (2 * mem::size_of::<SymbolNumber>());
-
-        let x: TransitionTableIndex =
-            unsafe { ptr::read(self.buf.as_ptr().add(index) as *const _) };
-        if x == TransitionTableIndex::MAX {
-            None
-        } else {
-            Some(x)
-        }
+        self.target(i)
     }
 
     fn weight(&self, i: TransitionTableIndex) -> Option<Weight> {
-        if i >= self.size {
-            return None;
-        }
-
-        let index = (TRANS_TABLE_SIZE * i.0 as usize)
-            + (2 * mem::size_of::<SymbolNumber>())
-            + mem::size_of::<TransitionTableIndex>();
-
-        let x: Weight = unsafe { ptr::read(self.buf.as_ptr().add(index) as *const _) };
-
-        Some(x)
+        self.weight(i)
     }
 }
 
 #[cfg(unix)]
-pub(crate) mod unix {
-    use super::*;
-
-    use crate::transducer::TransducerError;
-    use crate::transducer::TransitionTable;
-    use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
-    use crate::vfs::{self, Filesystem};
-
-    pub struct FileTransitionTable<F: vfs::File> {
-        file: F,
-        size: TransitionTableIndex,
+impl<F: vfs::File> crate::transducer::TransitionTable<F> for TransitionTable<F>
+where
+    F: Memory,
+{
+    fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
+    where
+        P: AsRef<std::path::Path>,
+        FS: Filesystem<File = F>,
+    {
+        TransitionTable::from_path_file(fs, path)
     }
 
-    impl<F: vfs::File> FileTransitionTable<F> {
-        #[inline(always)]
-        fn read_u16_at(&self, index: u64) -> u16 {
-            let mut buf = [0u8; 2];
-            self.file
-                .read_exact_at(&mut buf, index)
-                .expect("failed to read u16");
-            u16::from_le_bytes(buf)
-        }
-
-        #[inline(always)]
-        fn read_u32_at(&self, index: u64) -> u32 {
-            let mut buf = [0u8; 4];
-            self.file
-                .read_exact_at(&mut buf, index)
-                .expect("failed to read u32");
-            u32::from_le_bytes(buf)
-        }
+    fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
+        self.input_symbol(i)
     }
 
-    impl<F: vfs::File> TransitionTable<F> for FileTransitionTable<F> {
-        fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
-        where
-            P: AsRef<std::path::Path>,
-            FS: Filesystem<File = F>,
-        {
-            let file = fs.open_file(path).map_err(TransducerError::Io)?;
-            Ok(FileTransitionTable {
-                size: TransitionTableIndex(file.len().map_err(TransducerError::Io)? as u32),
-                file,
-            })
-        }
+    fn output_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
+        self.output_symbol(i)
+    }
 
-        #[inline(always)]
-        fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
-            if i >= self.size {
-                return None;
-            }
+    fn target(&self, i: TransitionTableIndex) -> Option<TransitionTableIndex> {
+        self.target(i)
+    }
 
-            let index = TRANS_TABLE_SIZE as usize * i.0 as usize;
-            let x = SymbolNumber(self.read_u16_at(index as u64));
-            if x == SymbolNumber::MAX {
-                None
-            } else {
-                Some(x)
-            }
-        }
-
-        #[inline(always)]
-        fn output_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
-            if i >= self.size {
-                return None;
-            }
-
-            let index =
-                ((TRANS_TABLE_SIZE * i.0 as usize) + mem::size_of::<SymbolNumber>()) as usize;
-            let x = SymbolNumber(self.read_u16_at(index as u64));
-            if x == SymbolNumber::MAX {
-                None
-            } else {
-                Some(x)
-            }
-        }
-
-        #[inline(always)]
-        fn target(&self, i: TransitionTableIndex) -> Option<TransitionTableIndex> {
-            if i >= self.size {
-                return None;
-            }
-
-            let index = (TRANS_TABLE_SIZE * i.0 as usize) + (2 * mem::size_of::<SymbolNumber>());
-
-            let x = TransitionTableIndex(self.read_u32_at(index as u64));
-            if x == TransitionTableIndex::MAX {
-                None
-            } else {
-                Some(x)
-            }
-        }
-
-        #[inline(always)]
-        fn weight(&self, i: TransitionTableIndex) -> Option<Weight> {
-            if i >= self.size {
-                return None;
-            }
-
-            let index = (TRANS_TABLE_SIZE * i.0 as usize)
-                + (2 * mem::size_of::<SymbolNumber>())
-                + mem::size_of::<TransitionTableIndex>();
-            let x = self.read_u32_at(index as u64);
-            let x = Weight(f32::from_bits(x));
-            Some(x)
-        }
+    fn weight(&self, i: TransitionTableIndex) -> Option<Weight> {
+        self.weight(i)
     }
 }

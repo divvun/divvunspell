@@ -10,7 +10,7 @@ dependencies = [
  "clap",
  "csv",
  "distance",
- "divvunspell",
+ "divvun-fst",
  "indicatif",
  "rayon",
  "serde",
@@ -499,7 +499,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6d9d8664cf849d7d0f3114a3a387d2f5e4303176d746d5a951aaddc66dfe9240"
 
 [[package]]
-name = "divvunspell"
+name = "divvun-fst"
 version = "1.0.0-beta.7"
 dependencies = [
  "box-format",
@@ -533,26 +533,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "divvun-fst-ffi"
+version = "1.0.0-beta.7"
+dependencies = [
+ "cffi",
+ "divvun-fst",
+ "flatbuffers",
+ "libc",
+]
+
+[[package]]
 name = "divvunspell-cli"
 version = "1.0.0"
 dependencies = [
  "anyhow",
  "box-format",
  "clap",
- "divvunspell",
+ "divvun-fst",
  "serde",
  "serde_json",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "divvunspell-ffi"
-version = "1.0.0-beta.7"
-dependencies = [
- "cffi",
- "divvunspell",
- "flatbuffers",
- "libc",
 ]
 
 [[package]]
@@ -1258,7 +1258,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "csv",
- "divvunspell",
+ "divvun-fst",
 ]
 
 [[package]]
@@ -1471,7 +1471,7 @@ version = "1.0.0-beta.3"
 dependencies = [
  "box-format",
  "clap",
- "divvunspell",
+ "divvun-fst",
  "serde_json",
  "tempfile",
 ]
