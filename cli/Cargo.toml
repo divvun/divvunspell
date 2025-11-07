@@ -12,7 +12,7 @@ name = "divvunspell"
 path = "src/main.rs"
 
 [dependencies]
-divvunspell = { features = ["internal_convert", "compression"], path = ".." }
+divvun-fst = { features = ["compression"], path = ".." }
 tracing-subscriber = "0.3"
 
 serde.workspace = true

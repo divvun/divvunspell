@@ -6,14 +6,14 @@ use std::{
 };
 
 use clap::{Parser, Subcommand};
-use divvunspell::speller::HfstSpeller;
-use divvunspell::transducer::Transducer;
-use divvunspell::transducer::hfst::HfstTransducer;
-use divvunspell::types::Weight;
-use divvunspell::vfs::Fs;
+use divvun_fst::speller::HfstSpeller;
+use divvun_fst::transducer::Transducer;
+use divvun_fst::transducer::hfst::HfstTransducer;
+use divvun_fst::types::Weight;
+use divvun_fst::vfs::Fs;
 use serde::Serialize;
 
-use divvunspell::{
+use divvun_fst::{
     archive::{
         SpellerArchive, boxf::BoxSpellerArchive, boxf::ThfstBoxSpellerArchive,
         error::SpellerArchiveError, zip::ZipSpellerArchive,

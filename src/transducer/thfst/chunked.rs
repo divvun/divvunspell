@@ -4,28 +4,30 @@ use crate::constants::TARGET_TABLE;
 use crate::transducer::symbol_transition::SymbolTransition;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 
-use super::index_table::MmapIndexTable;
-use super::transition_table::MmapTransitionTable;
+use super::index_table::IndexTable;
+use super::transition_table::TransitionTable;
 use crate::transducer::{Transducer, TransducerAlphabet, TransducerError};
 use crate::vfs::{self, Filesystem};
 
-use crate::transducer::{IndexTable, TransitionTable};
-
-/// Tromsø-Helsinki Finite State Transducer format
+/// Tromsø-Helsinki Finite State Transducer format with chunked memory mapping.
+///
+/// This variant loads transducers in multiple chunks, which is useful for very large
+/// transducers that might exceed system memory mapping limits or address space.
 #[derive(Debug)]
 pub struct ThfstChunkedTransducer<F>
 where
     F: vfs::File,
 {
     // meta: MetaRecord,
-    index_tables: Vec<MmapIndexTable<F>>,
+    index_tables: Vec<IndexTable<memmap2::Mmap>>,
     indexes_per_chunk: TransitionTableIndex,
-    transition_tables: Vec<MmapTransitionTable<F>>,
+    transition_tables: Vec<TransitionTable<memmap2::Mmap>>,
     transitions_per_chunk: TransitionTableIndex,
     alphabet: TransducerAlphabet,
     _file: std::marker::PhantomData<F>,
 }
 
+/// Type alias for memory-mapped chunked THFST transducer.
 pub type MmapThfstChunkedTransducer<F> = ThfstChunkedTransducer<F>;
 
 macro_rules! transition_rel_index {
@@ -79,7 +81,7 @@ impl<F: crate::vfs::File> Transducer<F> for ThfstChunkedTransducer<F> {
         loop {
             let index_path = path.join("index");
             let indexes = (0..index_chunk_count)
-                .map(|i| MmapIndexTable::from_path_partial(fs, &index_path, i, index_chunk_count))
+                .map(|i| IndexTable::from_path_partial(fs, &index_path, i, index_chunk_count))
                 .collect::<Result<Vec<_>, _>>();
 
             match indexes {
@@ -107,9 +109,7 @@ impl<F: crate::vfs::File> Transducer<F> for ThfstChunkedTransducer<F> {
         loop {
             let trans_path = path.join("transition");
             let tables = (0..trans_chunk_count)
-                .map(|i| {
-                    MmapTransitionTable::from_path_partial(fs, &trans_path, i, trans_chunk_count)
-                })
+                .map(|i| TransitionTable::from_path_partial(fs, &trans_path, i, trans_chunk_count))
                 .collect::<Result<Vec<_>, _>>();
 
             match tables {
