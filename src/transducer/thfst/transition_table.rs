@@ -7,7 +7,7 @@ use crate::vfs::{self, Filesystem};
 use memmap2::Mmap;
 
 #[derive(Debug)]
-pub struct MemmapTransitionTable<F> {
+pub struct MmapTransitionTable<F> {
     buf: Mmap,
     pub(crate) size: TransitionTableIndex,
     _file: std::marker::PhantomData<F>,
@@ -15,7 +15,7 @@ pub struct MemmapTransitionTable<F> {
 
 const TRANS_TABLE_SIZE: usize = 12;
 
-impl<F: vfs::File> MemmapTransitionTable<F> {
+impl<F: vfs::File> MmapTransitionTable<F> {
     pub fn from_path_partial<P, FS>(
         fs: &FS,
         path: P,
@@ -33,7 +33,7 @@ impl<F: vfs::File> MemmapTransitionTable<F> {
                 .map_err(TransducerError::Memmap)?
         };
         let size = TransitionTableIndex((buf.len() / TRANS_TABLE_SIZE) as u32);
-        Ok(MemmapTransitionTable {
+        Ok(MmapTransitionTable {
             buf,
             size,
             _file: std::marker::PhantomData::<F>,
@@ -51,7 +51,7 @@ impl<F: vfs::File> MemmapTransitionTable<F> {
     }
 }
 
-impl<F: vfs::File> TransitionTable<F> for MemmapTransitionTable<F> {
+impl<F: vfs::File> TransitionTable<F> for MmapTransitionTable<F> {
     fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
     where
         P: AsRef<std::path::Path>,
@@ -60,7 +60,7 @@ impl<F: vfs::File> TransitionTable<F> for MemmapTransitionTable<F> {
         let file = fs.open_file(path).map_err(TransducerError::Io)?;
         let buf = unsafe { file.memory_map() }.map_err(TransducerError::Memmap)?;
         let size = (buf.len() / TRANS_TABLE_SIZE) as u32;
-        Ok(MemmapTransitionTable {
+        Ok(MmapTransitionTable {
             buf,
             size: TransitionTableIndex(size),
             _file: std::marker::PhantomData::<F>,

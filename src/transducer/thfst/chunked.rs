@@ -4,8 +4,8 @@ use crate::constants::TARGET_TABLE;
 use crate::transducer::symbol_transition::SymbolTransition;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 
-use super::index_table::MemmapIndexTable;
-use super::transition_table::MemmapTransitionTable;
+use super::index_table::MmapIndexTable;
+use super::transition_table::MmapTransitionTable;
 use crate::transducer::{Transducer, TransducerAlphabet, TransducerError};
 use crate::vfs::{self, Filesystem};
 
@@ -18,15 +18,15 @@ where
     F: vfs::File,
 {
     // meta: MetaRecord,
-    index_tables: Vec<MemmapIndexTable<F>>,
+    index_tables: Vec<MmapIndexTable<F>>,
     indexes_per_chunk: TransitionTableIndex,
-    transition_tables: Vec<MemmapTransitionTable<F>>,
+    transition_tables: Vec<MmapTransitionTable<F>>,
     transitions_per_chunk: TransitionTableIndex,
     alphabet: TransducerAlphabet,
     _file: std::marker::PhantomData<F>,
 }
 
-pub type MemmapThfstChunkedTransducer<F> = ThfstChunkedTransducer<F>;
+pub type MmapThfstChunkedTransducer<F> = ThfstChunkedTransducer<F>;
 
 macro_rules! transition_rel_index {
     ($self:expr_2021, $x:expr_2021) => {{
@@ -79,7 +79,7 @@ impl<F: crate::vfs::File> Transducer<F> for ThfstChunkedTransducer<F> {
         loop {
             let index_path = path.join("index");
             let indexes = (0..index_chunk_count)
-                .map(|i| MemmapIndexTable::from_path_partial(fs, &index_path, i, index_chunk_count))
+                .map(|i| MmapIndexTable::from_path_partial(fs, &index_path, i, index_chunk_count))
                 .collect::<Result<Vec<_>, _>>();
 
             match indexes {
@@ -108,7 +108,7 @@ impl<F: crate::vfs::File> Transducer<F> for ThfstChunkedTransducer<F> {
             let trans_path = path.join("transition");
             let tables = (0..trans_chunk_count)
                 .map(|i| {
-                    MemmapTransitionTable::from_path_partial(fs, &trans_path, i, trans_chunk_count)
+                    MmapTransitionTable::from_path_partial(fs, &trans_path, i, trans_chunk_count)
                 })
                 .collect::<Result<Vec<_>, _>>();
 
@@ -151,7 +151,7 @@ impl<F: crate::vfs::File> Transducer<F> for ThfstChunkedTransducer<F> {
     }
 
     #[inline(always)]
-    fn mut_alphabet(&mut self) -> &mut TransducerAlphabet {
+    fn alphabet_mut(&mut self) -> &mut TransducerAlphabet {
         &mut self.alphabet
     }
 

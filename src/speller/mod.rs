@@ -1,4 +1,12 @@
 //! Speller model for spell-checking and corrections.
+//!
+//! The spell-checker uses a two-transducer architecture:
+//!
+//! - **Lexicon**: The acceptor transducer containing valid words in the language
+//! - **Mutator** (Error Model): A transducer that models common spelling errors and their corrections
+//!
+//! During spell-checking, input is processed through both transducers in parallel to find
+//! valid corrections with minimal edit distance.
 use std::f32;
 use std::sync::Arc;
 
@@ -15,6 +23,7 @@ use crate::tokenizer::case_handling::CaseHandler;
 use crate::transducer::Transducer;
 use crate::types::{SymbolNumber, Weight};
 
+pub mod error;
 pub mod suggestion;
 
 mod worker;
@@ -373,7 +382,7 @@ where
 {
     /// create new speller from two automata
     pub fn new(mutator: T, mut lexicon: U) -> Arc<HfstSpeller<F, T, U>> {
-        let alphabet_translator = lexicon.mut_alphabet().create_translator_from(&mutator);
+        let alphabet_translator = lexicon.alphabet_mut().create_translator_from(&mutator);
 
         Arc::new(HfstSpeller {
             mutator,

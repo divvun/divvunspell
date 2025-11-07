@@ -8,37 +8,37 @@ use super::{SpellerArchive, meta::SpellerMetadata};
 use crate::speller::{HfstSpeller, Speller};
 use crate::transducer::{
     Transducer,
-    thfst::{MemmapThfstTransducer, chunked::MemmapThfstChunkedTransducer},
+    thfst::{MmapThfstTransducer, chunked::MmapThfstChunkedTransducer},
 };
 use crate::vfs::Filesystem;
 use crate::vfs::boxf::Filesystem as BoxFilesystem;
 
 /// An archive with mmaped language and error model THFST automata archive.
 pub type ThfstBoxSpellerArchive = BoxSpellerArchive<
-    MemmapThfstTransducer<crate::vfs::boxf::File>,
-    MemmapThfstTransducer<crate::vfs::boxf::File>,
+    MmapThfstTransducer<crate::vfs::boxf::File>,
+    MmapThfstTransducer<crate::vfs::boxf::File>,
 >;
 
 /// An archive with mmaped chunked language and error model THFST automata
 /// file.
 pub type ThfstChunkedBoxSpeller = HfstSpeller<
     crate::vfs::boxf::File,
-    MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
-    MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
+    MmapThfstChunkedTransducer<crate::vfs::boxf::File>,
+    MmapThfstChunkedTransducer<crate::vfs::boxf::File>,
 >;
 
 /// An archive with mmaped language and error model THFST automata file.
 pub type ThfstBoxSpeller = HfstSpeller<
     crate::vfs::boxf::File,
-    MemmapThfstTransducer<crate::vfs::boxf::File>,
-    MemmapThfstTransducer<crate::vfs::boxf::File>,
+    MmapThfstTransducer<crate::vfs::boxf::File>,
+    MmapThfstTransducer<crate::vfs::boxf::File>,
 >;
 
 /// An archive with mmaped chunked language and error model THFST automata
 /// archive.
 pub type ThfstChunkedBoxSpellerArchive = BoxSpellerArchive<
-    MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
-    MemmapThfstChunkedTransducer<crate::vfs::boxf::File>,
+    MmapThfstChunkedTransducer<crate::vfs::boxf::File>,
+    MmapThfstChunkedTransducer<crate::vfs::boxf::File>,
 >;
 
 /// Speller in box archive.

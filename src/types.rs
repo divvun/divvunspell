@@ -5,6 +5,25 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
+/// Error parsing a flag diacritic operator from a string.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParseFlagDiacriticError {
+    /// The invalid operator string that was provided
+    pub invalid_operator: String,
+}
+
+impl Display for ParseFlagDiacriticError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Invalid flag diacritic operator: '{}'. Expected one of: P, N, R, D, C, U",
+            self.invalid_operator
+        )
+    }
+}
+
+impl std::error::Error for ParseFlagDiacriticError {}
+
 /// Flag diacritic operator for morphological constraints.
 ///
 /// Flag diacritics are used in finite-state morphology to enforce complex
@@ -26,7 +45,7 @@ pub enum FlagDiacriticOperator {
 }
 
 impl std::str::FromStr for FlagDiacriticOperator {
-    type Err = ();
+    type Err = ParseFlagDiacriticError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
@@ -36,7 +55,9 @@ impl std::str::FromStr for FlagDiacriticOperator {
             "D" => Ok(FlagDiacriticOperator::Disallow),
             "C" => Ok(FlagDiacriticOperator::Clear),
             "U" => Ok(FlagDiacriticOperator::Unification),
-            _ => Err(()),
+            _ => Err(ParseFlagDiacriticError {
+                invalid_operator: s.to_string(),
+            }),
         }
     }
 }

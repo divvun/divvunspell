@@ -34,21 +34,19 @@ pub fn find_speller_path(tag: LanguageTag) -> Option<PathBuf> {
     let tag = tag.to_string();
     let pattern = format!("{tag}.{{bhfst,zhfst}}");
     if let Ok(path) = pathos::macos::user::services_dir() {
-        match globwalk::GlobWalkerBuilder::new(path, &pattern)
+        if let Some(walker) = globwalk::GlobWalkerBuilder::new(path, &pattern)
             .build()
-            .unwrap()
-            .into_iter()
-            .filter_map(Result::ok)
-            .next()
+            .ok()
         {
-            Some(v) => return Some(v.path().to_path_buf()),
-            None => {}
+            if let Some(v) = walker.into_iter().filter_map(Result::ok).next() {
+                return Some(v.path().to_path_buf());
+            }
         }
     }
 
     globwalk::GlobWalkerBuilder::new(pathos::macos::system::services_dir(), &pattern)
         .build()
-        .unwrap()
+        .ok()?
         .into_iter()
         .filter_map(Result::ok)
         .next()
@@ -74,7 +72,7 @@ pub fn find_speller_path(tag: LanguageTag) -> Option<PathBuf> {
 
     globwalk::GlobWalkerBuilder::new(r"C:\Program Files\WinDivvun\spellers", &pattern)
         .build()
-        .unwrap()
+        .ok()?
         .into_iter()
         .filter_map(Result::ok)
         .next()

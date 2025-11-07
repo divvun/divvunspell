@@ -21,13 +21,13 @@ use crate::vfs::{self, Filesystem};
 #[derive(Debug, thiserror::Error)]
 pub enum TransducerError {
     /// Error with mmapping
-    #[error("Memory mapping error")]
+    #[error("Failed to memory map transducer file")]
     Memmap(#[source] std::io::Error),
     /// Error with input/output.
-    #[error("IO error")]
+    #[error("I/O error while reading transducer")]
     Io(#[source] std::io::Error),
     /// Error with FSA alphabets.
-    #[error("Alphabet error")]
+    #[error("Failed to process transducer alphabet")]
     Alphabet(#[source] Box<dyn std::error::Error + Send + Sync>),
 }
 
@@ -63,7 +63,7 @@ pub trait Transducer<F: vfs::File>: Sized {
     /// get transducer's alphabet.
     fn alphabet(&self) -> &TransducerAlphabet;
     /// get transducer's alphabet as mutable reference.
-    fn mut_alphabet(&mut self) -> &mut TransducerAlphabet;
+    fn alphabet_mut(&mut self) -> &mut TransducerAlphabet;
 
     /// get input symbol number of given transition arc.
     fn transition_input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber>;
