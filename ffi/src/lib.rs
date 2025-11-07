@@ -1,4 +1,10 @@
+#![allow(non_snake_case)]
+
+pub(crate) mod fbs;
+
+use cffi::{FromForeign, Slice, ToForeign};
 use libc::c_char;
+use std::convert::Infallible;
 use std::ffi::{CStr, CString};
 use std::sync::Arc;
 
@@ -7,10 +13,10 @@ use divvunspell::speller::{ReweightingConfig, Speller, SpellerConfig, suggestion
 use divvunspell::tokenizer::{Tokenize, WordContext, WordIndices};
 use divvunspell::types::Weight;
 
-pub(crate) mod fbs;
+use crate::fbs::IntoFlatbuffer;
 
 #[unsafe(no_mangle)]
-pub extern "C" fn divvun_word_indices<'a>(utf8_string: *const c_char) -> *mut WordIndices<'a> {
+pub extern "C" fn DFST_WordIndices_new<'a>(utf8_string: *const c_char) -> *mut WordIndices<'a> {
     let c_str = unsafe { CStr::from_ptr(utf8_string) };
     let string = c_str.to_str().unwrap();
     let iterator = string.word_indices();
@@ -18,7 +24,7 @@ pub extern "C" fn divvun_word_indices<'a>(utf8_string: *const c_char) -> *mut Wo
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn divvun_word_indices_next<'a>(
+pub extern "C" fn DFST_WordIndices_next<'a>(
     iterator: *mut WordIndices<'a>,
     out_index: *mut u64,
     out_string: *mut *const c_char,
@@ -39,18 +45,14 @@ pub extern "C" fn divvun_word_indices_next<'a>(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn divvun_word_indices_free<'a>(handle: *mut WordIndices<'a>) {
+pub extern "C" fn DFST_WordIndices_free<'a>(handle: *mut WordIndices<'a>) {
     drop(unsafe { Box::from_raw(handle) });
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn divvun_cstr_free(handle: *mut c_char) {
+pub extern "C" fn DFST_cstr_free(handle: *mut c_char) {
     drop(unsafe { CString::from_raw(handle) });
 }
-
-use crate::fbs::IntoFlatbuffer;
-use cffi::{FromForeign, Slice, ToForeign};
-use std::convert::Infallible;
 
 pub struct FbsMarshaler;
 
@@ -73,7 +75,7 @@ impl<T: IntoFlatbuffer> ToForeign<T, Slice<u8>> for FbsMarshaler {
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn divvun_fbs_free(slice: Slice<u8>) {
+pub unsafe extern "C" fn DFST_fbs_free(slice: Slice<u8>) {
     unsafe {
         cffi::VecMarshaler::from_foreign(slice)
             .map(|_| ())
@@ -87,7 +89,7 @@ pub unsafe extern "C" fn _cffi_string_free(ptr: Slice<u8>) {
 }
 
 #[cffi::marshal(return_marshaler = "FbsMarshaler")]
-pub extern "C" fn divvun_cursor_context(
+pub extern "C" fn DFST_Tokenizer_cursorContext(
     #[marshal(cffi::StrMarshaler)] first_half: &str,
     #[marshal(cffi::StrMarshaler)] second_half: &str,
 ) -> WordContext {
@@ -204,7 +206,7 @@ impl FromForeign<*const std::ffi::c_void, SpellerConfig> for SpellerConfigMarsha
 }
 
 #[cffi::marshal]
-pub extern "C" fn divvun_speller_is_correct(
+pub extern "C" fn DFST_Speller_isCorrect(
     #[marshal(cffi::ArcRefMarshaler::<dyn Speller + Sync + Send>)] speller: Arc<
         dyn Speller + Sync + Send,
     >,
@@ -214,7 +216,7 @@ pub extern "C" fn divvun_speller_is_correct(
 }
 
 #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
-pub extern "C" fn divvun_speller_suggest(
+pub extern "C" fn DFST_Speller_suggest(
     #[marshal(cffi::ArcRefMarshaler::<dyn Speller + Sync + Send>)] speller: Arc<
         dyn Speller + Sync + Send,
     >,
@@ -224,7 +226,7 @@ pub extern "C" fn divvun_speller_suggest(
 }
 
 #[cffi::marshal(return_marshaler = "SuggestionVecMarshaler")]
-pub extern "C" fn divvun_speller_suggest_with_config(
+pub extern "C" fn DFST_Speller_suggestWithConfig(
     #[marshal(cffi::ArcRefMarshaler::<dyn Speller + Sync + Send>)] speller: Arc<
         dyn Speller + Sync + Send,
     >,
@@ -235,14 +237,14 @@ pub extern "C" fn divvun_speller_suggest_with_config(
 }
 
 #[cffi::marshal]
-pub extern "C" fn divvun_vec_suggestion_len(
+pub extern "C" fn DFST_VecSuggestion_len(
     #[marshal(SuggestionVecRefMarshaler)] suggestions: &[Suggestion],
 ) -> usize {
     suggestions.len()
 }
 
 #[cffi::marshal(return_marshaler = "cffi::StringMarshaler")]
-pub extern "C" fn divvun_vec_suggestion_get_value(
+pub extern "C" fn DFST_VecSuggestion_getValue(
     #[marshal(SuggestionVecRefMarshaler)] suggestions: &[Suggestion],
     index: usize,
 ) -> String {
@@ -250,14 +252,14 @@ pub extern "C" fn divvun_vec_suggestion_get_value(
 }
 
 #[cffi::marshal(return_marshaler = cffi::ArcMarshaler::<dyn SpellerArchive + Send + Sync>)]
-pub extern "C" fn divvun_speller_archive_open(
+pub extern "C" fn DFST_SpellerArchive_open(
     #[marshal(cffi::PathBufMarshaler)] path: std::path::PathBuf,
 ) -> Result<Arc<dyn SpellerArchive + Send + Sync>, Box<dyn std::error::Error>> {
     divvunspell::archive::open(&path).map_err(|e| Box::new(e) as _)
 }
 
 #[cffi::marshal(return_marshaler = "cffi::ArcMarshaler::<dyn Speller + Send + Sync>")]
-pub extern "C" fn divvun_speller_archive_speller(
+pub extern "C" fn DFST_SpellerArchive_speller(
     #[marshal(cffi::ArcRefMarshaler::<dyn SpellerArchive + Send + Sync>)] handle: Arc<
         dyn SpellerArchive + Send + Sync,
     >,
@@ -266,7 +268,7 @@ pub extern "C" fn divvun_speller_archive_speller(
 }
 
 #[cffi::marshal(return_marshaler = "cffi::StringMarshaler")]
-pub extern "C" fn divvun_speller_archive_locale(
+pub extern "C" fn DFST_SpellerArchive_locale(
     #[marshal(cffi::ArcRefMarshaler::<dyn SpellerArchive + Send + Sync>)] handle: Arc<
         dyn SpellerArchive + Send + Sync,
     >,
@@ -274,26 +276,5 @@ pub extern "C" fn divvun_speller_archive_locale(
     match handle.metadata() {
         Some(v) => Ok(v.info().locale().to_string()),
         None => Err(Box::new(SpellerArchiveError::NoMetadata) as _),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::fbs::IntoFlatbuffer;
-
-    #[test]
-    fn fbs() {
-        let word_context = divvunspell::tokenizer::cursor_context("this is some", " text");
-        println!("{:?}", &word_context);
-
-        let buf = word_context.into_flatbuffer();
-        println!("{:?}", &buf);
-
-        let word_context = crate::fbs::tokenizer::root_as_word_context(&buf).unwrap();
-        println!(
-            "{:?} {:?}",
-            &word_context.current().index(),
-            &word_context.current().value()
-        );
     }
 }
