@@ -1,14 +1,14 @@
 use clap::Parser;
 use std::path::{Path, PathBuf};
 
-use divvunspell::archive::{
+use divvun_fst::archive::{
     SpellerArchive, boxf::BoxSpellerArchive, boxf::ThfstBoxSpellerArchive, zip::ZipSpellerArchive,
 };
-use divvunspell::transducer::{
+use divvun_fst::transducer::{
     Transducer,
     convert::ConvertFile,
     hfst::HfstTransducer,
-    thfst::{self, MemmapThfstTransducer},
+    thfst::{self, MmapThfstTransducer},
 };
 
 use box_format::{BoxFileWriter, BoxPath, Compression};
@@ -76,7 +76,7 @@ fn insert_thfst_files(boxfile: &mut BoxFileWriter, path: &Path) -> Result<(), st
 }
 
 fn convert_hfst_to_thfst(hfst_path: &Path) -> Result<(), std::io::Error> {
-    let fs = divvunspell::vfs::Fs;
+    let fs = divvun_fst::vfs::Fs;
     let transducer = HfstTransducer::from_path(&fs, hfst_path).map_err(|e| e.into_io_error())?;
     println!(
         "Converting {:?} to {:?}...",
@@ -93,11 +93,11 @@ fn convert_thfsts_to_bhfst(
     errmodel_path: &Path,
     output_path: &Path,
 ) -> Result<(), std::io::Error> {
-    let fs = divvunspell::vfs::Fs;
+    let fs = divvun_fst::vfs::Fs;
     let _acceptor_transducer =
-        MemmapThfstTransducer::from_path(&fs, acceptor_path).map_err(|e| e.into_io_error())?;
+        MmapThfstTransducer::from_path(&fs, acceptor_path).map_err(|e| e.into_io_error())?;
     let _errmodel_transducer =
-        MemmapThfstTransducer::from_path(&fs, errmodel_path).map_err(|e| e.into_io_error())?;
+        MmapThfstTransducer::from_path(&fs, errmodel_path).map_err(|e| e.into_io_error())?;
 
     let mut boxfile: BoxFileWriter = BoxFileWriter::create_with_alignment(output_path, ALIGNMENT)?;
 
