@@ -15,8 +15,7 @@ use crate::transducer::hfst::HfstTransducer;
 /// Type alias for HFST-based speller loaded from a zip archive.
 ///
 /// Uses memory-mapped HFST transducers for both the error model and lexicon.
-pub type HfstZipSpeller =
-    HfstSpeller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>;
+pub type HfstZipSpeller = HfstSpeller<HfstTransducer, HfstTransducer>;
 
 /// Speller archive backed by a zip file.
 ///
@@ -72,10 +71,7 @@ impl ZipSpellerArchive {
     ///
     /// Returns the underlying `HfstSpeller` with its concrete transducer types.
     /// This is useful when you need access to HFST-specific functionality.
-    pub fn hfst_speller(
-        &self,
-    ) -> Arc<HfstSpeller<std::fs::File, HfstTransducer<std::fs::File>, HfstTransducer<std::fs::File>>>
-    {
+    pub fn hfst_speller(&self) -> Arc<HfstSpeller<HfstTransducer, HfstTransducer>> {
         self.speller.clone()
     }
 }

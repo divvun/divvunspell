@@ -150,16 +150,8 @@ where
     }
 }
 
-// Implement the trait for compatibility with existing code
-impl<F: vfs::File> crate::transducer::IndexTable<F> for IndexTable<memmap2::Mmap> {
-    fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
-    where
-        P: AsRef<std::path::Path>,
-        FS: Filesystem<File = F>,
-    {
-        IndexTable::from_path(fs, path)
-    }
-
+// Implement the trait for all memory types
+impl<M: Memory> crate::transducer::IndexTableTrait for IndexTable<M> {
     fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
         self.input_symbol(i)
     }
@@ -173,8 +165,20 @@ impl<F: vfs::File> crate::transducer::IndexTable<F> for IndexTable<memmap2::Mmap
     }
 }
 
+// Implement loader for memory-mapped tables
+impl<F: vfs::File> crate::transducer::IndexTableLoader<F> for IndexTable<memmap2::Mmap> {
+    fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
+    where
+        P: AsRef<std::path::Path>,
+        FS: Filesystem<File = F>,
+    {
+        IndexTable::from_path(fs, path)
+    }
+}
+
+// Implement loader for file-based tables (Unix only)
 #[cfg(unix)]
-impl<F: vfs::File> crate::transducer::IndexTable<F> for IndexTable<F>
+impl<F: vfs::File> crate::transducer::IndexTableLoader<F> for IndexTable<F>
 where
     F: Memory,
 {
@@ -185,16 +189,12 @@ where
     {
         IndexTable::from_path_file(fs, path)
     }
-
-    fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
-        self.input_symbol(i)
-    }
-
-    fn target(&self, i: TransitionTableIndex) -> Option<TransitionTableIndex> {
-        self.target(i)
-    }
-
-    fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight> {
-        self.final_weight(i)
-    }
 }
+
+// Backwards compatibility: implement old combined trait
+#[allow(deprecated)]
+impl<F: vfs::File> crate::transducer::IndexTable<F> for IndexTable<memmap2::Mmap> {}
+
+#[cfg(unix)]
+#[allow(deprecated)]
+impl<F: vfs::File + Memory> crate::transducer::IndexTable<F> for IndexTable<F> {}
