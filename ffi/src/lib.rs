@@ -1,8 +1,6 @@
 #![allow(non_snake_case)]
 
-pub(crate) mod fbs;
-
-use cffi::{FromForeign, Slice, ToForeign};
+use cffi::{FromForeign, ToForeign};
 use libc::c_char;
 use std::convert::Infallible;
 use std::ffi::{CStr, CString};
@@ -10,10 +8,50 @@ use std::sync::Arc;
 
 use divvun_fst::archive::{SpellerArchive, error::SpellerArchiveError};
 use divvun_fst::speller::{ReweightingConfig, Speller, SpellerConfig, suggestion::Suggestion};
-use divvun_fst::tokenizer::{Tokenize, WordContext, WordIndices};
+use divvun_fst::tokenizer::{Tokenize, WordIndices};
 use divvun_fst::types::Weight;
 
-use crate::fbs::IntoFlatbuffer;
+#[repr(C)]
+pub struct CRustStr {
+    pub ptr: *const u8,
+    pub len: usize,
+}
+
+#[repr(C)]
+pub struct CCow {
+    pub ptr: *const u8,
+    pub len: usize,
+    pub is_owned: u8,
+}
+
+impl<'a> From<std::borrow::Cow<'a, str>> for CCow {
+    fn from(cow: std::borrow::Cow<'a, str>) -> Self {
+        match cow {
+            std::borrow::Cow::Borrowed(s) => CCow {
+                ptr: s.as_ptr(),
+                len: s.len(),
+                is_owned: 0,
+            },
+            std::borrow::Cow::Owned(s) => {
+                let s = std::mem::ManuallyDrop::new(s.into_boxed_str());
+                CCow {
+                    ptr: s.as_ptr(),
+                    len: s.len(),
+                    is_owned: 1,
+                }
+            }
+        }
+    }
+}
+
+#[repr(C)]
+pub struct CWordContext {
+    pub current: CCow,
+    pub first_before: CRustStr,
+    pub second_before: CRustStr,
+    pub first_after: CRustStr,
+    pub second_after: CRustStr,
+}
 
 #[unsafe(no_mangle)]
 pub extern "C" fn DFST_WordIndices_new<'a>(utf8_string: *const c_char) -> *mut WordIndices<'a> {
@@ -54,46 +92,58 @@ pub extern "C" fn DFST_cstr_free(handle: *mut c_char) {
     drop(unsafe { CString::from_raw(handle) });
 }
 
-pub struct FbsMarshaler;
 
-impl cffi::ReturnType for FbsMarshaler {
-    type Foreign = Slice<u8>;
-    type ForeignTraitObject = ();
+// Note: This function returns CRustStr pointers that reference the input strings.
+// The caller MUST keep first_half and second_half alive for the lifetime of the returned CWordContext.
+// WARNING: The current field may be owned (is_owned=1). Call DFST_WordContext_freeCurrent() to free.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn DFST_Tokenizer_cursorContext(
+    first_half_ptr: *const u8,
+    first_half_len: usize,
+    second_half_ptr: *const u8,
+    second_half_len: usize,
+) -> CWordContext {
+    let first_half = unsafe {
+        std::str::from_utf8_unchecked(std::slice::from_raw_parts(first_half_ptr, first_half_len))
+    };
+    let second_half = unsafe {
+        std::str::from_utf8_unchecked(std::slice::from_raw_parts(second_half_ptr, second_half_len))
+    };
 
-    fn foreign_default() -> Self::Foreign {
-        Slice::default()
+    let ctx = divvun_fst::tokenizer::cursor_context(first_half, second_half);
+
+    fn to_rust_str(opt: Option<(usize, &str)>) -> CRustStr {
+        opt.map(|(_, word)| CRustStr {
+            ptr: word.as_ptr(),
+            len: word.len(),
+        })
+        .unwrap_or(CRustStr {
+            ptr: std::ptr::null(),
+            len: 0,
+        })
     }
-}
 
-impl<T: IntoFlatbuffer> ToForeign<T, Slice<u8>> for FbsMarshaler {
-    type Error = Infallible;
-
-    fn to_foreign(bufferable: T) -> Result<Slice<u8>, Self::Error> {
-        let vec = bufferable.into_flatbuffer();
-        cffi::VecMarshaler::to_foreign(vec)
+    CWordContext {
+        current: CCow::from(ctx.current.1),
+        first_before: to_rust_str(ctx.first_before),
+        second_before: to_rust_str(ctx.second_before),
+        first_after: to_rust_str(ctx.first_after),
+        second_after: to_rust_str(ctx.second_after),
     }
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn DFST_fbs_free(slice: Slice<u8>) {
-    unsafe {
-        cffi::VecMarshaler::from_foreign(slice)
-            .map(|_| ())
-            .unwrap_or(())
-    };
-}
-
-#[doc(hidden)]
-pub unsafe extern "C" fn _cffi_string_free(ptr: Slice<u8>) {
-    unsafe { cffi::ffi::cffi_string_free(ptr) };
-}
-
-#[cffi::marshal(return_marshaler = "FbsMarshaler")]
-pub extern "C" fn DFST_Tokenizer_cursorContext(
-    #[marshal(cffi::StrMarshaler)] first_half: &str,
-    #[marshal(cffi::StrMarshaler)] second_half: &str,
-) -> WordContext {
-    divvun_fst::tokenizer::cursor_context(first_half, second_half)
+pub unsafe extern "C" fn DFST_WordContext_freeCurrent(current: CCow) {
+    if current.is_owned != 0 && !current.ptr.is_null() {
+        unsafe {
+            let _ = std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::new(
+                Box::from_raw(std::slice::from_raw_parts_mut(
+                    current.ptr as *mut u8,
+                    current.len,
+                ) as *mut [u8] as *mut str),
+            ));
+        }
+    }
 }
 
 pub type SuggestionVecMarshaler = cffi::VecMarshaler<Suggestion>;

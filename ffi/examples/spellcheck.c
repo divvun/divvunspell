@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "../include/divvunspell_cffi.h"
+#include "../include/divvun_fst.h"
 
 // Error handling
 static char* last_error = NULL;

@@ -1,4 +1,5 @@
 //! Tokenizer splits strings into words and punctuations.
+use std::borrow::Cow;
 use unic_ucd_common::alphanumeric::is_alphanumeric;
 use word::{WordBoundIndices, Words};
 
@@ -78,17 +79,18 @@ pub struct IndexedWord {
 ///
 /// Useful for context-sensitive spell-checking and analysis.
 #[derive(Debug, Clone)]
-pub struct WordContext {
+pub struct WordContext<'a> {
     /// The current word (byte_offset, text)
-    pub current: (usize, String),
+    /// Uses Cow to handle words that span the cursor (owned) vs words on one side (borrowed)
+    pub current: (usize, Cow<'a, str>),
     /// The word immediately before, if any
-    pub first_before: Option<(usize, String)>,
+    pub first_before: Option<(usize, &'a str)>,
     /// The second word before, if any
-    pub second_before: Option<(usize, String)>,
+    pub second_before: Option<(usize, &'a str)>,
     /// The word immediately after, if any
-    pub first_after: Option<(usize, String)>,
+    pub first_after: Option<(usize, &'a str)>,
     /// The second word after, if any
-    pub second_after: Option<(usize, String)>,
+    pub second_after: Option<(usize, &'a str)>,
 }
 
 /// Extract word context around a cursor position.
@@ -96,12 +98,18 @@ pub struct WordContext {
 /// Given text split at a cursor position (first_half, second_half),
 /// returns the word at the cursor and up to 2 words before/after.
 ///
+/// The returned string slices reference the input strings, so they must
+/// remain valid for the lifetime of the returned `WordContext`.
+///
+/// When the cursor splits a word, the current word will be owned (Cow::Owned),
+/// otherwise it will be borrowed (Cow::Borrowed).
+///
 /// # Example
 /// ```ignore
 /// let context = cursor_context("hello wo", "rld goodbye");
-/// // context.current would be ("hello ".len(), "world")
+/// // context.current would be ("hello ".len(), Cow::Owned("world"))
 /// ```
-pub fn cursor_context(first_half: &str, second_half: &str) -> WordContext {
+pub fn cursor_context<'a>(first_half: &'a str, second_half: &'a str) -> WordContext<'a> {
     // Find the point in the first half where the first "word" happens
     let mut first_half_iter = first_half.word_bound_indices().rev();
     let mut second_half_iter = second_half.word_bound_indices();
@@ -117,22 +125,21 @@ pub fn cursor_context(first_half: &str, second_half: &str) -> WordContext {
             _ => (0, ""),
         };
 
-        let first_word = format!("{}{}", first_half_last_item.1, second_half_first_item.1);
-        let first_index = if first_half_last_item.1 == "" {
-            first_half.len() + second_half_first_item.0
+        if first_half_last_item.1.is_empty() {
+            let index = first_half.len() + second_half_first_item.0;
+            (index, Cow::Borrowed(second_half_first_item.1))
+        } else if second_half_first_item.1.is_empty() {
+            (first_half_last_item.0, Cow::Borrowed(first_half_last_item.1))
         } else {
-            first_half_last_item.0
-        };
-
-        (first_index, first_word)
+            let first_word = format!("{}{}", first_half_last_item.1, second_half_first_item.1);
+            (first_half_last_item.0, Cow::Owned(first_word))
+        }
     };
 
     let mut first_half_iter = first_half_iter
-        .filter(|x| x.1.chars().any(is_alphanumeric))
-        .map(|x| (x.0, x.1.to_string()));
+        .filter(|x| x.1.chars().any(is_alphanumeric));
     let mut second_half_iter = second_half_iter
-        .filter(|x| x.1.chars().any(is_alphanumeric))
-        .map(|x| (x.0, x.1.to_string()));
+        .filter(|x| x.1.chars().any(is_alphanumeric));
 
     WordContext {
         current,

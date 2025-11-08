@@ -33,10 +33,8 @@ The `tokenize` example demonstrates the working tokenization API.
 
 ## Headers
 
-C and C++ header files are located in `include/`:
-- `include/divvunspell.h` - Legacy C API declarations (needs updating)
-- `include/divvunspell_cffi.h` - CFFI-based API (experimental)
-- `include/divvunspell.hpp` - C++ wrapper class
+C header files are located in `include/`:
+- `include/divvun_fst.h` - CFFI-based API
 
 ## Current Status
 

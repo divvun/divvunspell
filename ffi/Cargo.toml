@@ -14,5 +14,4 @@ crate-type = ["staticlib", "cdylib"]
 [dependencies]
 divvun-fst = { path = ".." }
 cffi = { git = "https://github.com/cffi-rs/cffi", branch = "next" }
-flatbuffers = "25.9.23"
 libc.workspace = true
