@@ -1,0 +1,16 @@
+[package]
+name = "divvun-fst-jni"
+description = "JNI bindings for divvun-fst library."
+version = "1.0.0-beta.7"
+authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/divvun/divvunspell"
+
+[lib]
+name = "divvun_fst_jni"
+crate-type = ["cdylib"]
+
+[dependencies]
+divvun-fst = { path = "../.." }
+jni = "0.21"

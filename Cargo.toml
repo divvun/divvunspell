@@ -86,7 +86,8 @@ members = [
   ".",
   "cli",
   "crates/*",
-  "ffi"
+  "ffi",
+  "ffi/java-jni"
 ]
 
 [profile.dev]
