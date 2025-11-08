@@ -18,27 +18,26 @@ fn speller_start_node(pool: &Pool<TreeNode>, size: usize) -> Vec<Recycled<'_, Tr
     nodes
 }
 
-pub struct SpellerWorker<F: crate::vfs::File, T: Transducer<F>, U: Transducer<F>> {
-    speller: Arc<HfstSpeller<F, T, U>>,
+pub struct SpellerWorker<T: Transducer, U: Transducer> {
+    speller: Arc<HfstSpeller<T, U>>,
     input: Vec<SymbolNumber>,
     config: SpellerConfig,
     output_mode: OutputMode,
 }
 
 #[allow(clippy::too_many_arguments)]
-impl<'t, F, T: Transducer<F> + 't, U: Transducer<F> + 't> SpellerWorker<F, T, U>
+impl<'t, T: Transducer + 't, U: Transducer + 't> SpellerWorker<T, U>
 where
-    F: crate::vfs::File,
-    T: Transducer<F>,
-    U: Transducer<F>,
+    T: Transducer,
+    U: Transducer,
 {
     #[inline(always)]
     pub(crate) fn new(
-        speller: Arc<HfstSpeller<F, T, U>>,
+        speller: Arc<HfstSpeller<T, U>>,
         input: Vec<SymbolNumber>,
         config: SpellerConfig,
         output_mode: OutputMode,
-    ) -> SpellerWorker<F, T, U> {
+    ) -> SpellerWorker<T, U> {
         SpellerWorker {
             speller,
             input,

@@ -24,14 +24,14 @@ pub(crate) mod index_table;
 pub(crate) mod transition_table;
 
 /// THFST transducer using memory-mapped access (recommended for production).
-pub type MmapThfstTransducer<F> =
-    ThfstTransducer<IndexTable<memmap2::Mmap>, TransitionTable<memmap2::Mmap>, F>;
+pub type MmapThfstTransducer =
+    ThfstTransducer<IndexTable<memmap2::Mmap>, TransitionTable<memmap2::Mmap>>;
 
 /// THFST transducer using file-based access (Unix only, slower but lower memory footprint).
 #[cfg(unix)]
-pub type FileThfstTransducer<F> = ThfstTransducer<IndexTable<F>, TransitionTable<F>, F>;
+pub type FileThfstTransducer<F> = ThfstTransducer<IndexTable<F>, TransitionTable<F>>;
 
-use crate::transducer::{Transducer, TransducerAlphabet};
+use crate::transducer::{Transducer, TransducerAlphabet, TransducerLoader};
 use crate::vfs::{self, Filesystem};
 
 #[repr(C)]
@@ -63,16 +63,14 @@ pub struct MetaRecord {
     pub alphabet: TransducerAlphabet,
 }
 
-pub struct ThfstTransducer<I, T, F>
+pub struct ThfstTransducer<I, T>
 where
-    I: crate::transducer::IndexTable<F>,
-    T: crate::transducer::TransitionTable<F>,
-    F: vfs::File,
+    I: crate::transducer::IndexTableTrait,
+    T: crate::transducer::TransitionTableTrait,
 {
     index_table: I,
     transition_table: T,
     alphabet: TransducerAlphabet,
-    _file: std::marker::PhantomData<F>,
 }
 
 macro_rules! error {
@@ -88,39 +86,12 @@ macro_rules! error {
     };
 }
 
-impl<I, T, F> Transducer<F> for ThfstTransducer<I, T, F>
+impl<I, T> Transducer for ThfstTransducer<I, T>
 where
-    I: crate::transducer::IndexTable<F>,
-    T: crate::transducer::TransitionTable<F>,
-    F: vfs::File,
+    I: crate::transducer::IndexTableTrait,
+    T: crate::transducer::TransitionTableTrait,
 {
     const FILE_EXT: &'static str = "thfst";
-
-    fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
-    where
-        P: AsRef<Path>,
-        FS: Filesystem<File = F>,
-    {
-        let path = path.as_ref();
-        let alphabet_file = fs
-            .open_file(&path.join("alphabet"))
-            .map_err(|_| error!(path, "alphabet"))?;
-
-        let alphabet: TransducerAlphabet = serde_json::from_reader(alphabet_file)
-            .map_err(|e| TransducerError::Alphabet(Box::new(e)))?;
-
-        let index_table =
-            I::from_path(fs, path.join("index")).map_err(|_| error!(path, "index"))?;
-        let transition_table =
-            T::from_path(fs, path.join("transition")).map_err(|_| error!(path, "transition"))?;
-
-        Ok(ThfstTransducer {
-            index_table,
-            transition_table,
-            alphabet,
-            _file: std::marker::PhantomData::<F>,
-        })
-    }
 
     #[inline(always)]
     fn is_final(&self, i: TransitionTableIndex) -> bool {
@@ -243,5 +214,37 @@ where
     #[inline(always)]
     fn alphabet_mut(&mut self) -> &mut TransducerAlphabet {
         &mut self.alphabet
+    }
+}
+
+impl<I, T, F> TransducerLoader<F> for ThfstTransducer<I, T>
+where
+    I: crate::transducer::IndexTableLoader<F>,
+    T: crate::transducer::TransitionTableLoader<F>,
+    F: vfs::File,
+{
+    fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
+    where
+        P: AsRef<Path>,
+        FS: Filesystem<File = F>,
+    {
+        let path = path.as_ref();
+        let alphabet_file = fs
+            .open_file(&path.join("alphabet"))
+            .map_err(|_| error!(path, "alphabet"))?;
+
+        let alphabet: TransducerAlphabet = serde_json::from_reader(alphabet_file)
+            .map_err(|e| TransducerError::Alphabet(Box::new(e)))?;
+
+        let index_table =
+            I::from_path(fs, path.join("index")).map_err(|_| error!(path, "index"))?;
+        let transition_table =
+            T::from_path(fs, path.join("transition")).map_err(|_| error!(path, "transition"))?;
+
+        Ok(ThfstTransducer {
+            index_table,
+            transition_table,
+            alphabet,
+        })
     }
 }

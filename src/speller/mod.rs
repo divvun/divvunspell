@@ -230,11 +230,10 @@ pub trait Speller {
     ) -> Vec<Suggestion>;
 }
 
-impl<F, T, U> Speller for HfstSpeller<F, T, U>
+impl<T, U> Speller for HfstSpeller<T, U>
 where
-    F: crate::vfs::File + Send,
-    T: Transducer<F> + Send,
-    U: Transducer<F> + Send,
+    T: Transducer + Send,
+    U: Transducer + Send,
 {
     #[allow(clippy::wrong_self_convention)]
     fn is_correct_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> bool {
@@ -362,33 +361,29 @@ where
 }
 
 #[derive(Debug)]
-pub struct HfstSpeller<F, T, U>
+pub struct HfstSpeller<T, U>
 where
-    F: crate::vfs::File,
-    T: Transducer<F>,
-    U: Transducer<F>,
+    T: Transducer,
+    U: Transducer,
 {
     mutator: T,
     lexicon: U,
     alphabet_translator: Vec<SymbolNumber>,
-    _file: std::marker::PhantomData<F>,
 }
 
-impl<F, T, U> HfstSpeller<F, T, U>
+impl<T, U> HfstSpeller<T, U>
 where
-    F: crate::vfs::File,
-    T: Transducer<F>,
-    U: Transducer<F>,
+    T: Transducer,
+    U: Transducer,
 {
     /// create new speller from two automata
-    pub fn new(mutator: T, mut lexicon: U) -> Arc<HfstSpeller<F, T, U>> {
+    pub fn new(mutator: T, mut lexicon: U) -> Arc<HfstSpeller<T, U>> {
         let alphabet_translator = lexicon.alphabet_mut().create_translator_from(&mutator);
 
         Arc::new(HfstSpeller {
             mutator,
             lexicon,
             alphabet_translator,
-            _file: std::marker::PhantomData::<F>,
         })
     }
 

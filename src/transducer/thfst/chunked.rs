@@ -6,7 +6,7 @@ use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 
 use super::index_table::IndexTable;
 use super::transition_table::TransitionTable;
-use crate::transducer::{Transducer, TransducerAlphabet, TransducerError};
+use crate::transducer::{Transducer, TransducerAlphabet, TransducerError, TransducerLoader};
 use crate::vfs::{self, Filesystem};
 
 /// Tromsø-Helsinki Finite State Transducer format with chunked memory mapping.
@@ -14,21 +14,17 @@ use crate::vfs::{self, Filesystem};
 /// This variant loads transducers in multiple chunks, which is useful for very large
 /// transducers that might exceed system memory mapping limits or address space.
 #[derive(Debug)]
-pub struct ThfstChunkedTransducer<F>
-where
-    F: vfs::File,
-{
+pub struct ThfstChunkedTransducer {
     // meta: MetaRecord,
     index_tables: Vec<IndexTable<memmap2::Mmap>>,
     indexes_per_chunk: TransitionTableIndex,
     transition_tables: Vec<TransitionTable<memmap2::Mmap>>,
     transitions_per_chunk: TransitionTableIndex,
     alphabet: TransducerAlphabet,
-    _file: std::marker::PhantomData<F>,
 }
 
 /// Type alias for memory-mapped chunked THFST transducer.
-pub type MmapThfstChunkedTransducer<F> = ThfstChunkedTransducer<F>;
+pub type MmapThfstChunkedTransducer = ThfstChunkedTransducer;
 
 macro_rules! transition_rel_index {
     ($self:expr_2021, $x:expr_2021) => {{
@@ -59,91 +55,8 @@ macro_rules! error {
     };
 }
 
-impl<F: crate::vfs::File> Transducer<F> for ThfstChunkedTransducer<F> {
+impl Transducer for ThfstChunkedTransducer {
     const FILE_EXT: &'static str = "thfst";
-
-    fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
-    where
-        P: AsRef<Path>,
-        FS: Filesystem<File = F>,
-    {
-        let path = path.as_ref();
-        let alphabet_file = fs
-            .open_file(&path.join("alphabet"))
-            .map_err(|_| error!(path, "alphabet"))?;
-
-        let alphabet: TransducerAlphabet = serde_json::from_reader(alphabet_file)
-            .map_err(|e| TransducerError::Alphabet(Box::new(e)))?;
-
-        let mut index_chunk_count = 1;
-        let index_tables;
-
-        loop {
-            let index_path = path.join("index");
-            let indexes = (0..index_chunk_count)
-                .map(|i| IndexTable::from_path_partial(fs, &index_path, i, index_chunk_count))
-                .collect::<Result<Vec<_>, _>>();
-
-            match indexes {
-                Ok(v) => {
-                    index_tables = v;
-                    break;
-                }
-                Err(TransducerError::Memmap(_)) => {
-                    index_chunk_count *= 2;
-
-                    if index_chunk_count > 16 {
-                        return Err(TransducerError::Memmap(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            "Could not memory map index table in 16 chunks",
-                        )));
-                    }
-                }
-                Err(e) => return Err(e),
-            }
-        }
-
-        let mut trans_chunk_count = 1;
-        let transition_tables;
-
-        loop {
-            let trans_path = path.join("transition");
-            let tables = (0..trans_chunk_count)
-                .map(|i| TransitionTable::from_path_partial(fs, &trans_path, i, trans_chunk_count))
-                .collect::<Result<Vec<_>, _>>();
-
-            match tables {
-                Ok(v) => {
-                    transition_tables = v;
-                    break;
-                }
-                Err(TransducerError::Memmap(_)) => {
-                    trans_chunk_count *= 2;
-
-                    if trans_chunk_count > 16 {
-                        return Err(TransducerError::Memmap(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            "Could not memory map transition table in 16 chunks",
-                        )));
-                    }
-                }
-                Err(e) => return Err(e),
-            }
-        }
-
-        let transducer = ThfstChunkedTransducer {
-            indexes_per_chunk: index_tables[0].size,
-            transitions_per_chunk: transition_tables[0].size,
-            index_tables,
-            transition_tables,
-            alphabet,
-            _file: std::marker::PhantomData::<F>,
-        };
-
-        tracing::debug!("{:#?}", transducer);
-
-        Ok(transducer)
-    }
 
     #[inline(always)]
     fn alphabet(&self) -> &TransducerAlphabet {
@@ -289,5 +202,89 @@ impl<F: crate::vfs::File> Transducer<F> for ThfstChunkedTransducer<F> {
                 None
             }
         }
+    }
+}
+
+impl<F: vfs::File> TransducerLoader<F> for ThfstChunkedTransducer {
+    fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
+    where
+        P: AsRef<Path>,
+        FS: Filesystem<File = F>,
+    {
+        let path = path.as_ref();
+        let alphabet_file = fs
+            .open_file(&path.join("alphabet"))
+            .map_err(|_| error!(path, "alphabet"))?;
+
+        let alphabet: TransducerAlphabet = serde_json::from_reader(alphabet_file)
+            .map_err(|e| TransducerError::Alphabet(Box::new(e)))?;
+
+        let mut index_chunk_count = 1;
+        let index_tables;
+
+        loop {
+            let index_path = path.join("index");
+            let indexes = (0..index_chunk_count)
+                .map(|i| IndexTable::from_path_partial(fs, &index_path, i, index_chunk_count))
+                .collect::<Result<Vec<_>, _>>();
+
+            match indexes {
+                Ok(v) => {
+                    index_tables = v;
+                    break;
+                }
+                Err(TransducerError::Memmap(_)) => {
+                    index_chunk_count *= 2;
+
+                    if index_chunk_count > 16 {
+                        return Err(TransducerError::Memmap(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            "Could not memory map index table in 16 chunks",
+                        )));
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        let mut trans_chunk_count = 1;
+        let transition_tables;
+
+        loop {
+            let trans_path = path.join("transition");
+            let tables = (0..trans_chunk_count)
+                .map(|i| TransitionTable::from_path_partial(fs, &trans_path, i, trans_chunk_count))
+                .collect::<Result<Vec<_>, _>>();
+
+            match tables {
+                Ok(v) => {
+                    transition_tables = v;
+                    break;
+                }
+                Err(TransducerError::Memmap(_)) => {
+                    trans_chunk_count *= 2;
+
+                    if trans_chunk_count > 16 {
+                        return Err(TransducerError::Memmap(std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            "Could not memory map transition table in 16 chunks",
+                        )));
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        let transducer = ThfstChunkedTransducer {
+            indexes_per_chunk: index_tables[0].size,
+            transitions_per_chunk: transition_tables[0].size,
+            index_tables,
+            transition_tables,
+            alphabet,
+        };
+
+        tracing::debug!("{:#?}", transducer);
+
+        Ok(transducer)
     }
 }

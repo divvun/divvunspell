@@ -180,16 +180,8 @@ where
     }
 }
 
-// Implement the trait for compatibility with existing code
-impl<F: vfs::File> crate::transducer::TransitionTable<F> for TransitionTable<memmap2::Mmap> {
-    fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
-    where
-        P: AsRef<std::path::Path>,
-        FS: Filesystem<File = F>,
-    {
-        TransitionTable::from_path(fs, path)
-    }
-
+// Implement the trait for all memory types
+impl<M: Memory> crate::transducer::TransitionTableTrait for TransitionTable<M> {
     fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
         self.input_symbol(i)
     }
@@ -207,8 +199,20 @@ impl<F: vfs::File> crate::transducer::TransitionTable<F> for TransitionTable<mem
     }
 }
 
+// Implement loader for memory-mapped tables
+impl<F: vfs::File> crate::transducer::TransitionTableLoader<F> for TransitionTable<memmap2::Mmap> {
+    fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
+    where
+        P: AsRef<std::path::Path>,
+        FS: Filesystem<File = F>,
+    {
+        TransitionTable::from_path(fs, path)
+    }
+}
+
+// Implement loader for file-based tables (Unix only)
 #[cfg(unix)]
-impl<F: vfs::File> crate::transducer::TransitionTable<F> for TransitionTable<F>
+impl<F: vfs::File> crate::transducer::TransitionTableLoader<F> for TransitionTable<F>
 where
     F: Memory,
 {
@@ -219,20 +223,12 @@ where
     {
         TransitionTable::from_path_file(fs, path)
     }
-
-    fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
-        self.input_symbol(i)
-    }
-
-    fn output_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
-        self.output_symbol(i)
-    }
-
-    fn target(&self, i: TransitionTableIndex) -> Option<TransitionTableIndex> {
-        self.target(i)
-    }
-
-    fn weight(&self, i: TransitionTableIndex) -> Option<Weight> {
-        self.weight(i)
-    }
 }
+
+// Backwards compatibility: implement old combined trait
+#[allow(deprecated)]
+impl<F: vfs::File> crate::transducer::TransitionTable<F> for TransitionTable<memmap2::Mmap> {}
+
+#[cfg(unix)]
+#[allow(deprecated)]
+impl<F: vfs::File + Memory> crate::transducer::TransitionTable<F> for TransitionTable<F> {}

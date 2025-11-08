@@ -44,21 +44,15 @@ impl TransducerError {
     }
 }
 
-/// A file-based finite-state transducer.
+/// A finite-state transducer.
 ///
-/// This trait defines the interface for finite-state transducers that can be loaded
-/// from files and used for spell-checking and morphological analysis.
+/// This trait defines the interface for finite-state transducers used for spell-checking
+/// and morphological analysis. All traversal and query operations are defined here.
 ///
 /// Implementors can provide custom transducer formats beyond the built-in HFST and THFST formats.
-pub trait Transducer<F: vfs::File>: Sized {
+pub trait Transducer: Sized {
     /// file extension.
     const FILE_EXT: &'static str;
-
-    /// read a transducer from a file.
-    fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
-    where
-        P: AsRef<std::path::Path>,
-        FS: Filesystem<File = F>;
 
     /// get transducer's alphabet.
     fn alphabet(&self) -> &TransducerAlphabet;
@@ -89,13 +83,20 @@ pub trait Transducer<F: vfs::File>: Sized {
     fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight>;
 }
 
-/// Transition table contains the arcs of the automaton (and states).
-pub trait TransitionTable<F: vfs::File>: Sized {
-    /// read transition table from a file.
+/// Trait for loading transducers from files.
+///
+/// This trait is separate from `Transducer` because the file type parameter is only
+/// needed during construction, not for runtime traversal operations.
+pub trait TransducerLoader<F: vfs::File>: Transducer {
+    /// read a transducer from a file.
     fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
     where
         P: AsRef<std::path::Path>,
         FS: Filesystem<File = F>;
+}
+
+/// Transition table contains the arcs of the automaton (and states).
+pub trait TransitionTableTrait: Sized {
     /// get input symbol of a transition.
     fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber>;
     /// get output symbol of a transition.
@@ -106,7 +107,6 @@ pub trait TransitionTable<F: vfs::File>: Sized {
     fn weight(&self, i: TransitionTableIndex) -> Option<Weight>;
 
     /// check if the state is a final state.
-    #[inline(always)]
     fn is_final(&self, i: TransitionTableIndex) -> bool {
         self.input_symbol(i) == None
             && self.output_symbol(i) == None
@@ -114,27 +114,51 @@ pub trait TransitionTable<F: vfs::File>: Sized {
     }
 
     /// ???
-    #[inline(always)]
     fn symbol_transition(&self, i: TransitionTableIndex) -> SymbolTransition {
         SymbolTransition::new(self.target(i), self.output_symbol(i), self.weight(i))
     }
 }
 
-/// Index table contains something.
-pub trait IndexTable<F: vfs::File>: Sized {
+/// Trait for loading transition tables from files.
+pub trait TransitionTableLoader<F: vfs::File>: TransitionTableTrait {
+    /// read transition table from a file.
     fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
     where
         P: AsRef<std::path::Path>,
         FS: Filesystem<File = F>;
+}
+
+/// Index table contains something.
+pub trait IndexTableTrait: Sized {
     fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber>;
     fn target(&self, i: TransitionTableIndex) -> Option<TransitionTableIndex>;
     fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight>;
 
-    #[inline(always)]
     fn is_final(&self, i: TransitionTableIndex) -> bool {
         self.input_symbol(i) == None && self.target(i) != None
     }
 }
+
+/// Trait for loading index tables from files.
+pub trait IndexTableLoader<F: vfs::File>: IndexTableTrait {
+    fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
+    where
+        P: AsRef<std::path::Path>,
+        FS: Filesystem<File = F>;
+}
+
+// Keep old trait names for backwards compatibility
+#[deprecated(
+    since = "0.1.0",
+    note = "use TransitionTableTrait and TransitionTableLoader instead"
+)]
+pub trait TransitionTable<F: vfs::File>: TransitionTableTrait + TransitionTableLoader<F> {}
+
+#[deprecated(
+    since = "0.1.0",
+    note = "use IndexTableTrait and IndexTableLoader instead"
+)]
+pub trait IndexTable<F: vfs::File>: IndexTableTrait + IndexTableLoader<F> {}
 
 #[doc(hidden)]
 // This is not a public API.

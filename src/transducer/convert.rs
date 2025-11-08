@@ -17,13 +17,8 @@ pub trait ConvertFrom<T> {
     fn convert_from<W: Write>(from: &T, writer: &mut W) -> Result<(), std::io::Error>;
 }
 
-impl ConvertFile<hfst::HfstTransducer<std::fs::File>>
-    for thfst::MmapThfstTransducer<std::fs::File>
-{
-    fn convert_file(
-        transducer: &hfst::HfstTransducer<std::fs::File>,
-        path: &Path,
-    ) -> Result<(), std::io::Error> {
+impl ConvertFile<hfst::HfstTransducer> for thfst::MmapThfstTransducer {
+    fn convert_file(transducer: &hfst::HfstTransducer, path: &Path) -> Result<(), std::io::Error> {
         let thfst_path = path.with_extension("thfst");
         std::fs::create_dir_all(&thfst_path)?;
 
