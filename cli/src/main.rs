@@ -7,7 +7,7 @@ use std::{
 
 use clap::{Parser, Subcommand};
 use divvun_fst::speller::HfstSpeller;
-use divvun_fst::transducer::Transducer;
+use divvun_fst::transducer::TransducerLoader;
 use divvun_fst::transducer::hfst::HfstTransducer;
 use divvun_fst::types::Weight;
 use divvun_fst::vfs::Fs;

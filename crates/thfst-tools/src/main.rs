@@ -5,7 +5,7 @@ use divvun_fst::archive::{
     SpellerArchive, boxf::BoxSpellerArchive, boxf::ThfstBoxSpellerArchive, zip::ZipSpellerArchive,
 };
 use divvun_fst::transducer::{
-    Transducer,
+    TransducerLoader,
     convert::ConvertFile,
     hfst::HfstTransducer,
     thfst::{self, MmapThfstTransducer},

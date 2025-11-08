@@ -18,26 +18,22 @@ use self::alphabet::TransducerAlphabetParser;
 use self::header::TransducerHeader;
 use super::alphabet::TransducerAlphabet;
 use super::symbol_transition::SymbolTransition;
-use super::{Transducer, TransducerError};
+use super::{Transducer, TransducerError, TransducerLoader};
 use crate::constants::{INDEX_TABLE_SIZE, TARGET_TABLE};
 use crate::transducer::hfst::index_table::MappedIndexTable;
 use crate::transducer::hfst::transition_table::MappedTransitionTable;
 use crate::types::{HeaderFlag, SymbolNumber, TransitionTableIndex, Weight};
 use crate::vfs::{self, Filesystem};
 
-pub struct HfstTransducer<F>
-where
-    F: vfs::File,
-{
+pub struct HfstTransducer {
     buf: Arc<Mmap>,
     header: TransducerHeader,
     alphabet: TransducerAlphabet,
     pub(crate) index_table: MappedIndexTable,
     pub(crate) transition_table: MappedTransitionTable,
-    _file: std::marker::PhantomData<F>,
 }
 
-impl<F: vfs::File> fmt::Debug for HfstTransducer<F> {
+impl fmt::Debug for HfstTransducer {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "{:?}", self.header)?;
         writeln!(f, "{:?}", self.alphabet)?;
@@ -47,9 +43,9 @@ impl<F: vfs::File> fmt::Debug for HfstTransducer<F> {
     }
 }
 
-impl<F: vfs::File> HfstTransducer<F> {
+impl HfstTransducer {
     #[inline(always)]
-    pub fn from_mapped_memory(buf: Arc<Mmap>) -> HfstTransducer<F> {
+    pub fn from_mapped_memory(buf: Arc<Mmap>) -> HfstTransducer {
         let header = TransducerHeader::new(&buf);
         let alphabet_offset = header.len();
         let alphabet = TransducerAlphabetParser::parse(
@@ -77,7 +73,6 @@ impl<F: vfs::File> HfstTransducer<F> {
             alphabet,
             index_table,
             transition_table: trans_table,
-            _file: std::marker::PhantomData::<F>,
         }
     }
 
@@ -97,18 +92,8 @@ impl<F: vfs::File> HfstTransducer<F> {
     }
 }
 
-impl<F: vfs::File> Transducer<F> for HfstTransducer<F> {
+impl Transducer for HfstTransducer {
     const FILE_EXT: &'static str = "hfst";
-
-    fn from_path<P, FS>(fs: &FS, path: P) -> Result<HfstTransducer<F>, TransducerError>
-    where
-        P: AsRef<Path>,
-        FS: Filesystem<File = F>,
-    {
-        let file = fs.open_file(path).map_err(TransducerError::Io)?;
-        let mmap = unsafe { file.memory_map() }.map_err(TransducerError::Memmap)?;
-        Ok(HfstTransducer::from_mapped_memory(Arc::new(mmap)))
-    }
 
     #[inline(always)]
     fn is_final(&self, i: TransitionTableIndex) -> bool {
@@ -231,5 +216,17 @@ impl<F: vfs::File> Transducer<F> for HfstTransducer<F> {
     #[inline(always)]
     fn alphabet_mut(&mut self) -> &mut TransducerAlphabet {
         &mut self.alphabet
+    }
+}
+
+impl<F: vfs::File> TransducerLoader<F> for HfstTransducer {
+    fn from_path<P, FS>(fs: &FS, path: P) -> Result<HfstTransducer, TransducerError>
+    where
+        P: AsRef<Path>,
+        FS: Filesystem<File = F>,
+    {
+        let file = fs.open_file(path).map_err(TransducerError::Io)?;
+        let mmap = unsafe { file.memory_map() }.map_err(TransducerError::Memmap)?;
+        Ok(HfstTransducer::from_mapped_memory(Arc::new(mmap)))
     }
 }
