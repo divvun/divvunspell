@@ -44,8 +44,9 @@ def main():
         if not is_correct:
             suggestions = speller.suggest(word)
             print(f"  Found {len(suggestions)} suggestions:")
-            for i, suggestion in enumerate(suggestions[:5], 1):
-                print(f"    {i}. {suggestion}")
+            for i, sug in enumerate(suggestions[:5], 1):
+                completed_str = "unknown" if sug.completed is None else ("completed" if sug.completed else "not completed")
+                print(f"    {i}. {sug.value} (weight: {sug.weight:.4f}, {completed_str})")
         print()
 
     print("\nTokenization example:")

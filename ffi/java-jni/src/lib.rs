@@ -1,7 +1,7 @@
+use jni::JNIEnv;
 use jni::objects::{JClass, JString};
 use jni::strings::JavaStr;
 use jni::sys::{jboolean, jlong};
-use jni::JNIEnv;
 use std::ffi::c_char;
 
 #[repr(C)]
@@ -34,7 +34,10 @@ struct CWordContext<'local> {
     second_before: CRustStr,
     first_after: CRustStr,
     second_after: CRustStr,
-    _handles: ((JString<'local>, *const c_char), (JString<'local>, *const c_char)),
+    _handles: (
+        (JString<'local>, *const c_char),
+        (JString<'local>, *const c_char),
+    ),
 }
 
 #[unsafe(no_mangle)]
@@ -45,14 +48,20 @@ pub extern "system" fn Java_no_divvun_fst_Tokenizer_cursorContext0<'local>(
     second_half: JString<'local>,
 ) -> jlong {
     if first_half.is_null() || second_half.is_null() {
-        let _ = env.throw_new("java/lang/NullPointerException", "Input strings cannot be null");
+        let _ = env.throw_new(
+            "java/lang/NullPointerException",
+            "Input strings cannot be null",
+        );
         return 0;
     }
 
     let first_java_str = match JavaStr::from_env(&env, &first_half) {
         Ok(s) => s,
         Err(e) => {
-            let _ = env.throw_new("java/lang/RuntimeException", format!("Failed to get first_half JavaStr: {}", e));
+            let _ = env.throw_new(
+                "java/lang/RuntimeException",
+                format!("Failed to get first_half JavaStr: {}", e),
+            );
             return 0;
         }
     };
@@ -60,7 +69,10 @@ pub extern "system" fn Java_no_divvun_fst_Tokenizer_cursorContext0<'local>(
     let second_java_str = match JavaStr::from_env(&env, &second_half) {
         Ok(s) => s,
         Err(e) => {
-            let _ = env.throw_new("java/lang/RuntimeException", format!("Failed to get second_half JavaStr: {}", e));
+            let _ = env.throw_new(
+                "java/lang/RuntimeException",
+                format!("Failed to get second_half JavaStr: {}", e),
+            );
             return 0;
         }
     };
@@ -81,7 +93,10 @@ pub extern "system" fn Java_no_divvun_fst_Tokenizer_cursorContext0<'local>(
                 let _ = JavaStr::from_raw(&env, &first_half, first_ptr);
                 let _ = JavaStr::from_raw(&env, &second_half, second_ptr);
             }
-            let _ = env.throw_new("java/lang/IllegalArgumentException", format!("Invalid UTF-8 in first_half: {}", e));
+            let _ = env.throw_new(
+                "java/lang/IllegalArgumentException",
+                format!("Invalid UTF-8 in first_half: {}", e),
+            );
             return 0;
         }
     };
@@ -93,7 +108,10 @@ pub extern "system" fn Java_no_divvun_fst_Tokenizer_cursorContext0<'local>(
                 let _ = JavaStr::from_raw(&env, &first_half, first_ptr);
                 let _ = JavaStr::from_raw(&env, &second_half, second_ptr);
             }
-            let _ = env.throw_new("java/lang/IllegalArgumentException", format!("Invalid UTF-8 in second_half: {}", e));
+            let _ = env.throw_new(
+                "java/lang/IllegalArgumentException",
+                format!("Invalid UTF-8 in second_half: {}", e),
+            );
             return 0;
         }
     };
@@ -158,12 +176,10 @@ pub extern "system" fn Java_no_divvun_fst_Tokenizer_freeContext(
         let _ = JavaStr::from_raw(&env, &second_jstring, second_ptr);
 
         if ctx.current.is_owned != 0 && !ctx.current.ptr.is_null() {
-            let _ = std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::new(
-                Box::from_raw(std::slice::from_raw_parts_mut(
-                    ctx.current.ptr as *mut u8,
-                    ctx.current.len,
-                ) as *mut [u8] as *mut str),
-            ));
+            let _ = std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::new(Box::from_raw(
+                std::slice::from_raw_parts_mut(ctx.current.ptr as *mut u8, ctx.current.len)
+                    as *mut [u8] as *mut str,
+            )));
         }
     }
 }
@@ -337,7 +353,10 @@ pub extern "system" fn Java_no_divvun_fst_RustStr_hashCode(
     ptr: jlong,
     len: jlong,
 ) -> jni::sys::jint {
-    let rust_str = CRustStr { ptr: ptr as *const u8, len: len as usize };
+    let rust_str = CRustStr {
+        ptr: ptr as *const u8,
+        len: len as usize,
+    };
 
     match rust_str.as_str() {
         Some(s) => {
@@ -359,7 +378,8 @@ pub extern "system" fn Java_no_divvun_fst_SuggestionList_getSize(
     if handle == 0 {
         return 0;
     }
-    let suggestions = unsafe { &*(handle as *const Vec<divvun_fst::speller::suggestion::Suggestion>) };
+    let suggestions =
+        unsafe { &*(handle as *const Vec<divvun_fst::speller::suggestion::Suggestion>) };
     suggestions.len() as jlong
 }
 
@@ -373,7 +393,8 @@ pub extern "system" fn Java_no_divvun_fst_SuggestionList_getValuePtr(
     if handle == 0 {
         return 0;
     }
-    let suggestions = unsafe { &*(handle as *const Vec<divvun_fst::speller::suggestion::Suggestion>) };
+    let suggestions =
+        unsafe { &*(handle as *const Vec<divvun_fst::speller::suggestion::Suggestion>) };
     if index < 0 || index >= suggestions.len() as jlong {
         return 0;
     }
@@ -390,7 +411,8 @@ pub extern "system" fn Java_no_divvun_fst_SuggestionList_getValueLen(
     if handle == 0 {
         return 0;
     }
-    let suggestions = unsafe { &*(handle as *const Vec<divvun_fst::speller::suggestion::Suggestion>) };
+    let suggestions =
+        unsafe { &*(handle as *const Vec<divvun_fst::speller::suggestion::Suggestion>) };
     if index < 0 || index >= suggestions.len() as jlong {
         return 0;
     }
@@ -407,7 +429,8 @@ pub extern "system" fn Java_no_divvun_fst_SuggestionList_getWeight(
     if handle == 0 {
         return 0.0;
     }
-    let suggestions = unsafe { &*(handle as *const Vec<divvun_fst::speller::suggestion::Suggestion>) };
+    let suggestions =
+        unsafe { &*(handle as *const Vec<divvun_fst::speller::suggestion::Suggestion>) };
     if index < 0 || index >= suggestions.len() as jlong {
         return 0.0;
     }
@@ -424,7 +447,8 @@ pub extern "system" fn Java_no_divvun_fst_SuggestionList_getCompleted(
     if handle == 0 {
         return 0;
     }
-    let suggestions = unsafe { &*(handle as *const Vec<divvun_fst::speller::suggestion::Suggestion>) };
+    let suggestions =
+        unsafe { &*(handle as *const Vec<divvun_fst::speller::suggestion::Suggestion>) };
     if index < 0 || index >= suggestions.len() as jlong {
         return 0;
     }
@@ -463,7 +487,10 @@ pub extern "system" fn Java_no_divvun_fst_SpellerArchive_nativeOpen(
     let path_str = match env.get_string(&path) {
         Ok(s) => s,
         Err(e) => {
-            let _ = env.throw_new("java/lang/RuntimeException", format!("Failed to get path string: {}", e));
+            let _ = env.throw_new(
+                "java/lang/RuntimeException",
+                format!("Failed to get path string: {}", e),
+            );
             return 0;
         }
     };
@@ -473,7 +500,10 @@ pub extern "system" fn Java_no_divvun_fst_SpellerArchive_nativeOpen(
     match divvun_fst::archive::open(std::path::Path::new(&path_string)) {
         Ok(archive) => Box::into_raw(Box::new(archive)) as jlong,
         Err(e) => {
-            let _ = env.throw_new("java/io/IOException", format!("Failed to open speller archive: {}", e));
+            let _ = env.throw_new(
+                "java/io/IOException",
+                format!("Failed to open speller archive: {}", e),
+            );
             0
         }
     }
@@ -489,7 +519,9 @@ pub extern "system" fn Java_no_divvun_fst_SpellerArchive_nativeFree(
         return;
     }
     unsafe {
-        let _ = Box::from_raw(handle as *mut std::sync::Arc<dyn divvun_fst::archive::SpellerArchive + Send + Sync>);
+        let _ = Box::from_raw(
+            handle as *mut std::sync::Arc<dyn divvun_fst::archive::SpellerArchive + Send + Sync>,
+        );
     }
 }
 
@@ -502,7 +534,9 @@ pub extern "system" fn Java_no_divvun_fst_SpellerArchive_nativeGetSpeller(
     if handle == 0 {
         return 0;
     }
-    let archive = unsafe { &*(handle as *const std::sync::Arc<dyn divvun_fst::archive::SpellerArchive + Send + Sync>) };
+    let archive = unsafe {
+        &*(handle as *const std::sync::Arc<dyn divvun_fst::archive::SpellerArchive + Send + Sync>)
+    };
     let speller = archive.speller();
     Box::into_raw(Box::new(speller)) as jlong
 }
@@ -517,7 +551,9 @@ pub extern "system" fn Java_no_divvun_fst_Speller_free(
         return;
     }
     unsafe {
-        let _ = Box::from_raw(handle as *mut std::sync::Arc<dyn divvun_fst::speller::Speller + Send + Sync>);
+        let _ = Box::from_raw(
+            handle as *mut std::sync::Arc<dyn divvun_fst::speller::Speller + Send + Sync>,
+        );
     }
 }
 
@@ -538,7 +574,9 @@ pub extern "system" fn Java_no_divvun_fst_Speller_isCorrect(
     };
 
     let word_string: String = word_str.into();
-    let speller = unsafe { &*(handle as *const std::sync::Arc<dyn divvun_fst::speller::Speller + Send + Sync>) };
+    let speller = unsafe {
+        &*(handle as *const std::sync::Arc<dyn divvun_fst::speller::Speller + Send + Sync>)
+    };
 
     speller.clone().is_correct(&word_string) as jboolean
 }
@@ -560,7 +598,9 @@ pub extern "system" fn Java_no_divvun_fst_Speller_suggest(
     };
 
     let word_string: String = word_str.into();
-    let speller = unsafe { &*(handle as *const std::sync::Arc<dyn divvun_fst::speller::Speller + Send + Sync>) };
+    let speller = unsafe {
+        &*(handle as *const std::sync::Arc<dyn divvun_fst::speller::Speller + Send + Sync>)
+    };
 
     let suggestions = speller.clone().suggest(&word_string);
     Box::into_raw(Box::new(suggestions)) as jlong

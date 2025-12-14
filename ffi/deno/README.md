@@ -22,7 +22,7 @@ cargo build  # or cargo build --release
 import { SpellerArchive, tokenize } from "./mod.ts";
 
 // Open a speller archive
-const archive = new SpellerArchive("path/to/speller.bhfst");
+const archive = SpellerArchive.open("path/to/speller.bhfst");
 
 // Get the speller
 const speller = archive.speller();
@@ -33,8 +33,8 @@ if (speller.isCorrect("word")) {
 } else {
   // Get suggestions
   const suggestions = speller.suggest("word");
-  for (const suggestion of suggestions) {
-    console.log(`  - ${suggestion}`);
+  for (const sug of suggestions) {
+    console.log(`  - ${sug.value} (weight: ${sug.weight.toFixed(4)})`);
   }
 }
 
