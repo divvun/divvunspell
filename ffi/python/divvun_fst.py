@@ -118,9 +118,21 @@ class _DivvunFstLib:
         self.lib.DFST_VecSuggestion_getValue.argtypes = [RustSlice, ctypes.c_size_t, self._error_callback_type]
         self.lib.DFST_VecSuggestion_getValue.restype = RustSlice
 
+        self.lib.DFST_VecSuggestion_getWeight.argtypes = [RustSlice, ctypes.c_size_t, self._error_callback_type]
+        self.lib.DFST_VecSuggestion_getWeight.restype = ctypes.c_float
+
+        self.lib.DFST_VecSuggestion_getCompleted.argtypes = [RustSlice, ctypes.c_size_t, self._error_callback_type]
+        self.lib.DFST_VecSuggestion_getCompleted.restype = ctypes.c_uint8
+
         # Memory management
         self.lib.DFST_cstr_free.argtypes = [ctypes.c_void_p]
         self.lib.DFST_cstr_free.restype = None
+
+        self.lib.cffi_string_free.argtypes = [RustSlice]
+        self.lib.cffi_string_free.restype = None
+
+        self.lib.cffi_vec_free.argtypes = [RustSlice]
+        self.lib.cffi_vec_free.restype = None
 
         # Word indices (tokenization)
         self.lib.DFST_WordIndices_new.argtypes = [ctypes.c_char_p]
@@ -140,6 +152,19 @@ class _DivvunFstLib:
 _lib = _DivvunFstLib()
 
 
+class Suggestion:
+    """A spelling suggestion with metadata."""
+
+    def __init__(self, value: str, weight: float, completed: Optional[bool]):
+        self.value = value
+        self.weight = weight
+        self.completed = completed
+
+    def __repr__(self) -> str:
+        completed_str = "unknown" if self.completed is None else ("completed" if self.completed else "not completed")
+        return f"Suggestion(value='{self.value}', weight={self.weight:.4f}, {completed_str})"
+
+
 class Speller:
     """Spell checker interface."""
 
@@ -154,7 +179,7 @@ class Speller:
         _lib._check_error()
         return bool(result)
 
-    def suggest(self, word: str) -> List[str]:
+    def suggest(self, word: str) -> List[Suggestion]:
         """Get spelling suggestions for a word."""
         word_bytes = word.encode('utf-8')
         word_slice = RustSlice(ctypes.cast(word_bytes, ctypes.c_void_p), len(word_bytes))
@@ -169,11 +194,21 @@ class Speller:
 
         results = []
         for i in range(length):
-            suggestion_slice = _lib.lib.DFST_VecSuggestion_getValue(suggestions_slice, i, _lib._error_callback)
+            value_slice = _lib.lib.DFST_VecSuggestion_getValue(suggestions_slice, i, _lib._error_callback)
             _lib._check_error()
-            results.append(suggestion_slice.to_string())
-            _lib.lib.DFST_cstr_free(suggestion_slice.data)
+            value = value_slice.to_string()
+            _lib.lib.cffi_string_free(value_slice)
 
+            weight = _lib.lib.DFST_VecSuggestion_getWeight(suggestions_slice, i, _lib._error_callback)
+            _lib._check_error()
+
+            completed_byte = _lib.lib.DFST_VecSuggestion_getCompleted(suggestions_slice, i, _lib._error_callback)
+            _lib._check_error()
+            completed = None if completed_byte == 0 else (completed_byte == 2)
+
+            results.append(Suggestion(value, weight, completed))
+
+        _lib.lib.cffi_vec_free(suggestions_slice)
         return results
 
 
@@ -206,7 +241,7 @@ class SpellerArchive:
         _lib._check_error()
 
         locale = locale_slice.to_string()
-        _lib.lib.DFST_cstr_free(locale_slice.data)
+        _lib.lib.cffi_string_free(locale_slice)
         return locale
 
 

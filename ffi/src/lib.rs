@@ -301,6 +301,26 @@ pub extern "C" fn DFST_VecSuggestion_getValue(
     suggestions[index].value().to_string()
 }
 
+#[cffi::marshal]
+pub extern "C" fn DFST_VecSuggestion_getWeight(
+    #[marshal(SuggestionVecRefMarshaler)] suggestions: &[Suggestion],
+    index: usize,
+) -> f32 {
+    suggestions[index].weight().0
+}
+
+#[cffi::marshal]
+pub extern "C" fn DFST_VecSuggestion_getCompleted(
+    #[marshal(SuggestionVecRefMarshaler)] suggestions: &[Suggestion],
+    index: usize,
+) -> u8 {
+    match suggestions[index].completed() {
+        None => 0,
+        Some(false) => 1,
+        Some(true) => 2,
+    }
+}
+
 #[cffi::marshal(return_marshaler = cffi::ArcMarshaler::<dyn SpellerArchive + Send + Sync>)]
 pub extern "C" fn DFST_SpellerArchive_open(
     #[marshal(cffi::PathBufMarshaler)] path: std::path::PathBuf,

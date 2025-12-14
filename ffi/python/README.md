@@ -33,8 +33,8 @@ if speller.is_correct("word"):
 else:
     # Get suggestions
     suggestions = speller.suggest("word")
-    for suggestion in suggestions:
-        print(f"  - {suggestion}")
+    for sug in suggestions:
+        print(f"  - {sug.value} (weight: {sug.weight:.4f})")
 
 # Tokenize text
 for index, word in tokenize("This is a test"):
@@ -59,13 +59,22 @@ Opens a speller archive file.
   - `speller() -> Speller`: Get the speller instance
   - `locale() -> str`: Get the locale of the speller
 
+### `Suggestion`
+
+A spelling suggestion with metadata.
+
+- **Attributes:**
+  - `value: str`: The suggested word
+  - `weight: float`: The weight/score of the suggestion (lower is better)
+  - `completed: Optional[bool]`: Whether the suggestion is a completion (None if unknown)
+
 ### `Speller`
 
 Spell checking interface.
 
 - **Methods:**
   - `is_correct(word: str) -> bool`: Check if a word is spelled correctly
-  - `suggest(word: str) -> List[str]`: Get spelling suggestions for a word
+  - `suggest(word: str) -> List[Suggestion]`: Get spelling suggestions for a word
 
 ### `tokenize(text: str) -> List[Tuple[int, str]]`
 

@@ -74,14 +74,55 @@ rust_slice_t DFST_VecSuggestion_getValue(
     size_t index,
     cffi_exception_callback exception
 );
+float DFST_VecSuggestion_getWeight(
+    DFST_VecSuggestion suggestions,
+    size_t index,
+    cffi_exception_callback exception
+);
+uint8_t DFST_VecSuggestion_getCompleted(
+    DFST_VecSuggestion suggestions,
+    size_t index,
+    cffi_exception_callback exception
+);
 
 // Memory management
-void DFST_cstr_free(rust_slice_t str);
+void DFST_cstr_free(const char *_Nonnull str);
+void cffi_string_free(rust_slice_t str);
+void cffi_vec_free(rust_slice_t vec);
 
 // Word indices (tokenization) functions
 DFST_WordIndices _Nonnull DFST_WordIndices_new(const char*_Nonnull utf8_string);
 uint8_t DFST_WordIndices_next(DFST_WordIndices _Nonnull iterator, uint64_t*_Nonnull out_index, char*_Nonnull*_Nonnull out_string);
 void DFST_WordIndices_free(DFST_WordIndices _Nonnull iterator);
+
+// Tokenizer cursor context types
+typedef struct CCow_s {
+    const uint8_t *_Nullable ptr;
+    uintptr_t len;
+    uint8_t is_owned;
+} CCow;
+
+typedef struct CRustStr_s {
+    const uint8_t *_Nullable ptr;
+    uintptr_t len;
+} CRustStr;
+
+typedef struct CWordContext_s {
+    CCow current;
+    CRustStr first_before;
+    CRustStr second_before;
+    CRustStr first_after;
+    CRustStr second_after;
+} CWordContext;
+
+// Tokenizer cursor context functions
+CWordContext DFST_Tokenizer_cursorContext(
+    const uint8_t *_Nonnull first_half_ptr,
+    uintptr_t first_half_len,
+    const uint8_t *_Nonnull second_half_ptr,
+    uintptr_t second_half_len
+);
+void DFST_WordContext_freeCurrent(CCow current);
 
 #ifdef __cplusplus
 }

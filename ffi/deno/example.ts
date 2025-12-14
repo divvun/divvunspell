@@ -47,7 +47,9 @@ function main() {
       const suggestions = speller.suggest(word);
       console.log(`  Found ${suggestions.length} suggestions:`);
       for (let i = 0; i < Math.min(suggestions.length, 5); i++) {
-        console.log(`    ${i + 1}. ${suggestions[i]}`);
+        const sug = suggestions[i];
+        const completedStr = sug.completed === null ? "unknown" : (sug.completed ? "completed" : "not completed");
+        console.log(`    ${i + 1}. ${sug.value} (weight: ${sug.weight.toFixed(4)}, ${completedStr})`);
       }
     }
     console.log();

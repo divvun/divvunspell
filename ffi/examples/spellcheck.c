@@ -90,13 +90,18 @@ int main(int argc, char *argv[]) {
 
                 for (rust_usize_t j = 0; j < len && j < 5; j++) {
                     rust_slice_t suggestion = DFST_VecSuggestion_getValue(suggestions, j, error_callback);
+                    float weight = DFST_VecSuggestion_getWeight(suggestions, j, error_callback);
+                    uint8_t completed = DFST_VecSuggestion_getCompleted(suggestions, j, error_callback);
+
                     char* suggestion_cstr = NULL;
                     if (!rust_slice_to_cstr(suggestion, &suggestion_cstr)) {
                         fprintf(stderr, "    Failed to convert suggestion to C string\n");
                         continue;
                     }
-                    printf("    %zu. %s\n", j + 1, suggestion_cstr);
-                    DFST_cstr_free(suggestion);
+
+                    const char* completed_str = completed == 0 ? "unknown" : (completed == 2 ? "completed" : "not completed");
+                    printf("    %zu. %s (weight: %.4f, %s)\n", j + 1, suggestion_cstr, weight, completed_str);
+                    cffi_string_free(suggestion);
                     free(suggestion_cstr);
                 }
             }
