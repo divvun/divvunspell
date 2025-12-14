@@ -92,7 +92,6 @@ pub extern "C" fn DFST_cstr_free(handle: *mut c_char) {
     drop(unsafe { CString::from_raw(handle) });
 }
 
-
 // Note: This function returns CRustStr pointers that reference the input strings.
 // The caller MUST keep first_half and second_half alive for the lifetime of the returned CWordContext.
 // WARNING: The current field may be owned (is_owned=1). Call DFST_WordContext_freeCurrent() to free.
@@ -136,12 +135,10 @@ pub unsafe extern "C" fn DFST_Tokenizer_cursorContext(
 pub unsafe extern "C" fn DFST_WordContext_freeCurrent(current: CCow) {
     if current.is_owned != 0 && !current.ptr.is_null() {
         unsafe {
-            let _ = std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::new(
-                Box::from_raw(std::slice::from_raw_parts_mut(
-                    current.ptr as *mut u8,
-                    current.len,
-                ) as *mut [u8] as *mut str),
-            ));
+            let _ = std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::new(Box::from_raw(
+                std::slice::from_raw_parts_mut(current.ptr as *mut u8, current.len) as *mut [u8]
+                    as *mut str,
+            )));
         }
     }
 }
@@ -249,6 +246,7 @@ impl FromForeign<*const std::ffi::c_void, SpellerConfig> for SpellerConfigMarsha
             node_pool_size: config.node_pool_size,
             recase: true,
             completion_marker: None,
+            verbose: false,
         };
 
         Ok(out)
@@ -299,6 +297,26 @@ pub extern "C" fn DFST_VecSuggestion_getValue(
     index: usize,
 ) -> String {
     suggestions[index].value().to_string()
+}
+
+#[cffi::marshal]
+pub extern "C" fn DFST_VecSuggestion_getWeight(
+    #[marshal(SuggestionVecRefMarshaler)] suggestions: &[Suggestion],
+    index: usize,
+) -> f32 {
+    suggestions[index].weight().0
+}
+
+#[cffi::marshal]
+pub extern "C" fn DFST_VecSuggestion_getCompleted(
+    #[marshal(SuggestionVecRefMarshaler)] suggestions: &[Suggestion],
+    index: usize,
+) -> u8 {
+    match suggestions[index].completed() {
+        None => 0,
+        Some(false) => 1,
+        Some(true) => 2,
+    }
 }
 
 #[cffi::marshal(return_marshaler = cffi::ArcMarshaler::<dyn SpellerArchive + Send + Sync>)]

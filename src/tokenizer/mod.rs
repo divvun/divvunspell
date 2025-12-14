@@ -129,17 +129,18 @@ pub fn cursor_context<'a>(first_half: &'a str, second_half: &'a str) -> WordCont
             let index = first_half.len() + second_half_first_item.0;
             (index, Cow::Borrowed(second_half_first_item.1))
         } else if second_half_first_item.1.is_empty() {
-            (first_half_last_item.0, Cow::Borrowed(first_half_last_item.1))
+            (
+                first_half_last_item.0,
+                Cow::Borrowed(first_half_last_item.1),
+            )
         } else {
             let first_word = format!("{}{}", first_half_last_item.1, second_half_first_item.1);
             (first_half_last_item.0, Cow::Owned(first_word))
         }
     };
 
-    let mut first_half_iter = first_half_iter
-        .filter(|x| x.1.chars().any(is_alphanumeric));
-    let mut second_half_iter = second_half_iter
-        .filter(|x| x.1.chars().any(is_alphanumeric));
+    let mut first_half_iter = first_half_iter.filter(|x| x.1.chars().any(is_alphanumeric));
+    let mut second_half_iter = second_half_iter.filter(|x| x.1.chars().any(is_alphanumeric));
 
     WordContext {
         current,

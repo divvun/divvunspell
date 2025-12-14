@@ -75,8 +75,24 @@ const symbols = {
     parameters: [{ struct: ["pointer", "usize"] }, "usize", "function"],
     result: { struct: ["pointer", "usize"] },
   },
+  DFST_VecSuggestion_getWeight: {
+    parameters: [{ struct: ["pointer", "usize"] }, "usize", "function"],
+    result: "f32",
+  },
+  DFST_VecSuggestion_getCompleted: {
+    parameters: [{ struct: ["pointer", "usize"] }, "usize", "function"],
+    result: "u8",
+  },
   DFST_cstr_free: {
     parameters: ["pointer"],
+    result: "void",
+  },
+  cffi_string_free: {
+    parameters: [{ struct: ["pointer", "usize"] }],
+    result: "void",
+  },
+  cffi_vec_free: {
+    parameters: [{ struct: ["pointer", "usize"] }],
     result: "void",
   },
   DFST_WordIndices_new: {
@@ -164,6 +180,15 @@ function isTraitObjectNull(obj: Uint8Array): boolean {
 const BRAND = Symbol();
 
 /**
+ * A spelling suggestion with metadata.
+ */
+export interface Suggestion {
+  value: string;
+  weight: number;
+  completed: boolean | null;
+}
+
+/**
  * Spell checker interface.
  */
 export class Speller {
@@ -195,7 +220,7 @@ export class Speller {
   /**
    * Get spelling suggestions for a word.
    */
-  suggest(word: string): string[] {
+  suggest(word: string): Suggestion[] {
     const wordSlice = stringToRustSlice(word);
     const suggestionsSlice = lib.symbols.DFST_Speller_suggest(
       this.#handle,
@@ -220,30 +245,46 @@ export class Speller {
     ) as number;
     checkError();
 
-    const results: string[] = [];
+    const results: Suggestion[] = [];
     for (let i = 0; i < length; i++) {
-      const suggestionSlice = lib.symbols.DFST_VecSuggestion_getValue(
+      const valueSlice = lib.symbols.DFST_VecSuggestion_getValue(
         suggestionsSlice,
         i,
         errorCallback.pointer,
       ) as Uint8Array;
       checkError();
 
-      const view = new DataView(
-        suggestionSlice.buffer,
-        suggestionSlice.byteOffset,
-        suggestionSlice.byteLength,
+      const valueView = new DataView(
+        valueSlice.buffer,
+        valueSlice.byteOffset,
+        valueSlice.byteLength,
       );
-      const data = view.getBigUint64(0, true);
-      const len = Number(view.getBigUint64(8, true));
+      const valueData = valueView.getBigUint64(0, true);
+      const valueLen = Number(valueView.getBigUint64(8, true));
+      const value = rustSliceToString({ data: valueData, len: valueLen });
 
-      results.push(rustSliceToString({ data, len }));
+      lib.symbols.cffi_string_free(valueSlice);
 
-      if (data !== 0n) {
-        lib.symbols.DFST_cstr_free(Deno.UnsafePointer.create(data));
-      }
+      const weight = lib.symbols.DFST_VecSuggestion_getWeight(
+        suggestionsSlice,
+        i,
+        errorCallback.pointer,
+      ) as number;
+      checkError();
+
+      const completedByte = lib.symbols.DFST_VecSuggestion_getCompleted(
+        suggestionsSlice,
+        i,
+        errorCallback.pointer,
+      ) as number;
+      checkError();
+
+      const completed = completedByte === 0 ? null : (completedByte === 2);
+
+      results.push({ value, weight, completed });
     }
 
+    lib.symbols.cffi_vec_free(suggestionsSlice);
     return results;
   }
 }
@@ -317,9 +358,7 @@ export class SpellerArchive {
     const len = Number(view.getBigUint64(8, true));
 
     const locale = rustSliceToString({ data, len });
-    if (data !== 0n) {
-      lib.symbols.DFST_cstr_free(Deno.UnsafePointer.create(data));
-    }
+    lib.symbols.cffi_string_free(localeSlice);
     return locale;
   }
 }
