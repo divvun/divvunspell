@@ -1,6 +1,6 @@
 [package]
 name = "accuracy"
-version = "1.0.0-beta.1"
+version = "1.0.0-beta.2"
 authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
 edition = "2024"
 license = "GPL-3.0"
