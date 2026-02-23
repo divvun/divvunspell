@@ -27,6 +27,37 @@
 		results = results
 	}
 
+	function getPositionSortValue(result) {
+		// No suggestions is worst
+		if (result.position === null && result.suggestions.length === 0) {
+			return Number.MAX_SAFE_INTEGER
+		}
+		// Only wrong suggestions is second worst
+		if (result.position === null && result.suggestions.length > 0) {
+			return Number.MAX_SAFE_INTEGER - 1
+		}
+		// Actual positions
+		return result.position
+	}
+
+	function sortByPosition() {
+		const sorter = (a, b) => {
+			const aVal = getPositionSortValue(a)
+			const bVal = getPositionSortValue(b)
+			return aVal - bVal
+		}
+
+		if (sortMode === "position:asc") {
+			results.reverse()
+			sortMode = "position:desc"
+		} else {
+			results.sort(sorter)
+			sortMode = "position:asc"
+		}
+		
+		results = results
+	}
+
 	function asPercentage(input) {
 		const v = input / report.results.length * 100
 		return v.toFixed(2)
@@ -252,9 +283,13 @@ strong {
 {#if sortMode == null}
 <p>Sorted by input order</p>
 {:else if sortMode === "time:asc"}
-<p>Sorted by time, ascending</p>
+<p>Sorted by time, ascending (slowest first)</p>
 {:else if sortMode === "time:desc"}
-<p>Sorted by time, descending</p>
+<p>Sorted by time, descending (fastest first)</p>
+{:else if sortMode === "position:asc"}
+<p>Sorted by position, ascending (best first)</p>
+{:else if sortMode === "position:desc"}
+<p>Sorted by position, descending (worst first)</p>
 {:else}
 <p>Sorted in some unknown way (this is a bug)</p>
 {/if}
@@ -264,7 +299,8 @@ strong {
 {#if results == null}
 Loading
 {:else}
-<a href="#" on:click={sortByTime}>Sort by Time</a>
+<a href="#" on:click={sortByTime}>Sort by Time</a> | 
+<a href="#" on:click={sortByPosition}>Sort by Position</a>
 <table class="table">
 	<tbody>
 {#each results as result}
