@@ -152,6 +152,37 @@ accuracy -w 1000 -t results.tsv typos.tsv language.zhfst
 accuracy -c config.json typos.tsv language.zhfst
 ```
 
+**Configuration format** (`config.json`): Fine-tune the spell checker algorithm with a JSON configuration file. All fields are optional and will use defaults if omitted:
+
+```json
+{
+  "n-best": 10,
+  "max-weight": 10000.0,
+  "beam": 5000.0,
+  "reweight": {
+    "start-penalty": 10.0,
+    "end-penalty": 10.0,
+    "mid-penalty": 5.0
+  },
+  "node-pool-size": 128,
+  "recase": true,
+  "completion-marker": null
+}
+```
+
+**Configuration options:**
+
+- **`n-best`** (default: `10`): Maximum number of suggestions to return
+- **`max-weight`** (default: `10000.0`): Maximum weight for any suggestion. Suggestions with higher weight are discarded
+- **`beam`** (default: `null`): Weight distance between best and worst suggestion. Set to `null` to disable beam search
+- **`reweight`**: Additional penalties for different edit distance error types
+  - **`start-penalty`** (default: `10.0`): Penalty for errors at the start of the word
+  - **`end-penalty`** (default: `10.0`): Penalty for errors at the end of the word
+  - **`mid-penalty`** (default: `5.0`): Penalty for errors in the middle of the word
+- **`node-pool-size`** (default: `128`): Size of node pool for parallelization
+- **`recase`** (default: `true`): Whether to try fixing capitalization before other suggestions
+- **`completion-marker`** (default: `null`): Marker used when suggesting incomplete word parts. Set to `null` to disable
+
 **Input format** (`typos.tsv`): Tab-separated values with typo in first column, expected correction in second:
 
 ```
