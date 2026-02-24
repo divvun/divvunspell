@@ -119,6 +119,8 @@ struct Summary {
     fastest_lookup: Time,
     average_time: Time,
     average_time_95pc: Time,
+    average_position_of_correct: f32,
+    average_suggestions_for_correct: f32,
 }
 
 impl std::fmt::Display for Summary {
@@ -174,6 +176,28 @@ impl Summary {
             .min_by(|x, y| x.time.cmp(&y.time))
             .unwrap()
             .time;
+
+        // Calculate average position and average suggestions for correct results only
+        let correct_results: Vec<_> = results
+            .iter()
+            .filter(|r| r.position.is_some())
+            .collect();
+        
+        if !correct_results.is_empty() {
+            let total_position: usize = correct_results
+                .iter()
+                .map(|r| r.position.unwrap())
+                .sum();
+            summary.average_position_of_correct = 
+                total_position as f32 / correct_results.len() as f32;
+            
+            let total_suggestions: usize = correct_results
+                .iter()
+                .map(|r| r.suggestions.len())
+                .sum();
+            summary.average_suggestions_for_correct = 
+                total_suggestions as f32 / correct_results.len() as f32;
+        }
 
         summary
     }

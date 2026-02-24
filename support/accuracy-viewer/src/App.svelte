@@ -307,6 +307,16 @@ button:hover {
 <li>
 	% only wrong: {onlyWrong()}%
 </li>
+{#if report.summary && report.summary.average_position_of_correct !== undefined}
+<li>
+	Average position of correct: {report.summary.average_position_of_correct.toFixed(2)}
+</li>
+{/if}
+{#if report.summary && report.summary.average_suggestions_for_correct !== undefined}
+<li>
+	Average suggestions for correct: {report.summary.average_suggestions_for_correct.toFixed(2)}
+</li>
+{/if}
 </ul>
 
 {#if sortMode == null}
