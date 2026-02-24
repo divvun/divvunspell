@@ -231,6 +231,19 @@ strong {
 .right {
 	text-align: right;
 }
+button {
+	background-color: #4a90e2;
+	color: white;
+	border: none;
+	padding: 0.5em 1em;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 1em;
+	margin: 0.5em 0.25em;
+}
+button:hover {
+	background-color: #357abd;
+}
 
 </style>
 
@@ -299,9 +312,15 @@ strong {
 {#if results == null}
 Loading
 {:else}
-<a href="#" on:click={sortByTime}>Sort by Time</a> | 
-<a href="#" on:click={sortByPosition}>Sort by Position</a>
+<button on:click={sortByTime}>Sort by Time</button>
+<button on:click={sortByPosition}>Sort by Position</button>
 <table class="table">
+	<thead>
+		<tr>
+			<th>Spelling error data</th>
+			<th>Suggestion list</th>
+		</tr>
+	</thead>
 	<tbody>
 {#each results as result}
 	<tr class={resultClass(result)} id="{result.input}">
