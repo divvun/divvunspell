@@ -58,6 +58,22 @@
 		results = results
 	}
 
+	function sortByDistance() {
+		const sorter = (a, b) => {
+			return a.distance - b.distance
+		}
+
+		if (sortMode === "distance:asc") {
+			results.reverse()
+			sortMode = "distance:desc"
+		} else {
+			results.sort(sorter)
+			sortMode = "distance:asc"
+		}
+		
+		results = results
+	}
+
 	function asPercentage(input) {
 		const v = input / report.results.length * 100
 		return v.toFixed(2)
@@ -303,6 +319,10 @@ button:hover {
 <p>Sorted by position, ascending (best first)</p>
 {:else if sortMode === "position:desc"}
 <p>Sorted by position, descending (worst first)</p>
+{:else if sortMode === "distance:asc"}
+<p>Sorted by edit distance, ascending (smallest first)</p>
+{:else if sortMode === "distance:desc"}
+<p>Sorted by edit distance, descending (largest first)</p>
 {:else}
 <p>Sorted in some unknown way (this is a bug)</p>
 {/if}
@@ -314,6 +334,7 @@ Loading
 {:else}
 <button on:click={sortByTime}>Sort by Time</button>
 <button on:click={sortByPosition}>Sort by Position</button>
+<button on:click={sortByDistance}>Sort by Edit Distance</button>
 <table class="table">
 	<thead>
 		<tr>
@@ -339,6 +360,9 @@ Loading
 			{:else}
 				Suggestion {result.position + 1}
 			{/if}
+			</p>
+			<p>
+				<strong>Edit distance:</strong> {result.distance}
 			</p>
 			<p>
 			<strong>Time:</strong> {humanTimeMillis(result.time)}
