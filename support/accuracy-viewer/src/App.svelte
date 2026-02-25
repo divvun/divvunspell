@@ -1,6 +1,7 @@
 <script>
 	let report = null
 	let results = null
+	let originalResults = null
 	let sortMode = null
 	$: totalRuntime = calculateTotalRuntime(report)
 
@@ -72,6 +73,11 @@
 		}
 		
 		results = results
+	}
+
+	function sortByInputOrder() {
+		results = originalResults.slice()
+		sortMode = null
 	}
 
 	function asPercentage(input) {
@@ -200,6 +206,7 @@
 				.then(r => r.json())
 				.then(data => { 
 					report = data
+					originalResults = report.results.slice()
 					results = report.results.slice()
 				})
 	}
@@ -492,6 +499,7 @@ Loading
 <p>Sorted in some unknown way (this is a bug)</p>
 {/if}
 
+<button on:click={sortByInputOrder}>Sort by Input Order</button>
 <button on:click={sortByTime}>Sort by Time</button>
 <button on:click={sortByPosition}>Sort by Position</button>
 <button on:click={sortByDistance}>Sort by Edit Distance</button>
