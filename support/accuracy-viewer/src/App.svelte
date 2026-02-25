@@ -304,6 +304,16 @@ button:hover {
 		<td>{wordsPerSecond(totalRuntime)}</td>
 		<td>{humanTime(totalRuntime)}</td>
 	</tr>
+	<tr>
+		<th>Average per word</th>
+		<td>-</td>
+		<td>{humanTimeMillis(report.summary.average_time)}</td>
+	</tr>
+	<tr>
+		<th>Average per word (95%)<br><small>(excluding slowest 5%)</small></th>
+		<td>-</td>
+		<td>{humanTimeMillis(report.summary.average_time_95pc)}</td>
+	</tr>
 </table>
 
 <ul>
