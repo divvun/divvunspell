@@ -578,6 +578,15 @@ where
         if let Some(n_best) = config.n_best {
             out.truncate(n_best);
         }
+        
+        // Apply beam filtering: remove suggestions that are more than beam away from best
+        if let Some(beam) = config.beam {
+            if let Some(best) = out.first() {
+                let beam_threshold = best.weight() + beam;
+                out.retain(|s| s.weight() <= beam_threshold);
+            }
+        }
+        
         out
     }
 }
