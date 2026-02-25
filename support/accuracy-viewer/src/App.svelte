@@ -177,6 +177,17 @@
 				})
 	}
 
+	function getSpellerTitle(report) {
+		if (!report || !report.metadata || !report.metadata.info) {
+			return "Spellchecker Accuracy Report"
+		}
+		const locale = report.metadata.info.locale || "?"
+		const title = report.metadata.info.title && report.metadata.info.title[0] 
+			? report.metadata.info.title[0].$value || "Spellchecker"
+			: "Spellchecker"
+		return `${title} (${locale})`
+	}
+
 	fetchReport()
 </script>
 
@@ -275,15 +286,42 @@ button {
 button:hover {
 	background-color: #357abd;
 }
+h1 {
+	margin-top: 1em;
+	font-size: 2em;
+	color: #333;
+}
+h2 {
+	margin-top: 1.5em;
+	font-size: 1.3em;
+	color: #555;
+}
+.config-block {
+	background-color: #f5f5f5;
+	border: 1px solid #ddd;
+	border-radius: 4px;
+	padding: 0.7em;
+	margin: 1em 0;
+	overflow-x: auto;
+}
+.config-block pre {
+	margin: 0;
+	font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+	font-size: 0.65em;
+	line-height: 1.3;
+}
 
 </style>
 
 {#if report != null}
-<p>Speller configuration:</p>
-<pre>
-{JSON.stringify(report.config, null, 2)}
-</pre>
+<h1>{getSpellerTitle(report)} - Accuracy Report</h1>
 
+<h2>Speller Configuration</h2>
+<div class="config-block">
+<pre>{JSON.stringify(report.config, null, 2)}</pre>
+</div>
+
+<h2>Performance Statistics</h2>
 <table class="stats-table">
 	<tr>
 		<th>Words: {report.results.length}</th>
@@ -316,6 +354,7 @@ button:hover {
 	</tr>
 </table>
 
+<h2>Accuracy Statistics</h2>
 <ul>
 <li>
 	% in 1st position: {firstPosition()}%
@@ -344,6 +383,13 @@ button:hover {
 {/if}
 </ul>
 
+{/if}
+
+{#if results == null}
+Loading
+{:else}
+<h2>Detailed Results</h2>
+
 {#if sortMode == null}
 <p>Sorted by input order</p>
 {:else if sortMode === "time:asc"}
@@ -362,11 +408,6 @@ button:hover {
 <p>Sorted in some unknown way (this is a bug)</p>
 {/if}
 
-{/if}
-
-{#if results == null}
-Loading
-{:else}
 <button on:click={sortByTime}>Sort by Time</button>
 <button on:click={sortByPosition}>Sort by Position</button>
 <button on:click={sortByDistance}>Sort by Edit Distance</button>
