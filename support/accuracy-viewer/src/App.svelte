@@ -247,6 +247,21 @@ strong {
 .right {
 	text-align: right;
 }
+.stats-table {
+	border-collapse: collapse;
+	margin: 1em 0;
+}
+.stats-table th, .stats-table td {
+	border: 1px solid #cecece;
+	padding: 0.5em 1em;
+}
+.stats-table td {
+	text-align: right;
+}
+.stats-table th {
+	text-align: left;
+	background-color: #f5f5f5;
+}
 button {
 	background-color: #4a90e2;
 	color: white;
@@ -269,7 +284,7 @@ button:hover {
 {JSON.stringify(report.config, null, 2)}
 </pre>
 
-<table>
+<table class="stats-table">
 	<tr>
 		<th>Words: {report.results.length}</th>
 	  <th>
@@ -280,12 +295,12 @@ button:hover {
 		</th>
 	</tr>
   <tr>
-		<th>Real</th>
+		<th>Real<br><small>(clock time, parallelised processing)</small></th>
 		<td>{wordsPerSecond(report.total_time)}</td>
 		<td>{humanTime(report.total_time)}</td>
 	</tr>
 	<tr>
-		<th>CPU<br><small>(linear "user" time)</small></th>
+		<th>CPU<br><small>(estimated serial processing time)</small></th>
 		<td>{wordsPerSecond(totalRuntime)}</td>
 		<td>{humanTime(totalRuntime)}</td>
 	</tr>
