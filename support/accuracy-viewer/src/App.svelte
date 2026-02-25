@@ -99,6 +99,33 @@
 		return asPercentage(report.results.filter(r => r.position === null && r.suggestions.length > 0).length)
 	}
 
+	function precision() {
+		const anywhereCount = report.results.filter(r => r.position !== null).length
+		const withSuggestions = report.results.filter(r => r.suggestions.length > 0).length
+		if (withSuggestions === 0) return "0.00"
+		return ((anywhereCount / withSuggestions) * 100).toFixed(2)
+	}
+
+	function recall() {
+		const anywhereCount = report.results.filter(r => r.position !== null).length
+		return ((anywhereCount / report.results.length) * 100).toFixed(2)
+	}
+
+	function accuracy() {
+		// Accuracy: correct suggestions / total suggestions (including all wrong ones)
+		const correctCount = report.results.filter(r => r.position !== null).length
+		const totalSuggestions = report.results.reduce((sum, r) => sum + r.suggestions.length, 0)
+		if (totalSuggestions === 0) return "0.00"
+		return ((correctCount / totalSuggestions) * 100).toFixed(2)
+	}
+
+	function fScore() {
+		const p = parseFloat(precision())
+		const r = parseFloat(recall())
+		if (p + r === 0) return "0.00"
+		return ((2 * p * r) / (p + r)).toFixed(2)
+	}
+
 	function humanTimeMillis(time) {
 		const ms = time.secs * 1000 + time.subsec_nanos / 1000000
 		return `${ms} ms`
@@ -260,11 +287,12 @@ strong {
 }
 .stats-table {
 	border-collapse: collapse;
-	margin: 1em 0;
+	margin: 0.5em 0;
+	font-size: 0.9em;
 }
 .stats-table th, .stats-table td {
 	border: 1px solid #cecece;
-	padding: 0.5em 1em;
+	padding: 0.3em 0.6em;
 }
 .stats-table td {
 	text-align: right;
@@ -310,6 +338,35 @@ h2 {
 	font-size: 0.65em;
 	line-height: 1.3;
 }
+.accuracy-stats-container {
+	display: flex;
+	gap: 2em;
+	align-items: flex-start;
+}
+.accuracy-stats-container > * {
+	flex: 1;
+}
+.metrics-box ul {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+.metrics-box li {
+	margin-bottom: 0.8em;
+}
+.metrics-box li strong {
+	display: inline-block;
+	min-width: 8em;
+	font-size: 1.05em;
+}
+.metrics-box li small {
+	display: block;
+	color: #666;
+	font-size: 0.85em;
+	margin-top: 0.2em;
+	margin-left: 0;
+	opacity: 1;
+}
 
 </style>
 
@@ -354,34 +411,61 @@ h2 {
 	</tr>
 </table>
 
-<h2>Accuracy Statistics</h2>
-<ul>
-<li>
-	% in 1st position: {firstPosition()}%
-</li>
-<li>
-	% in top 5: {topFive()}%
-</li>
-<li>
-	% anywhere: {anywhere()}%
-</li>
-<li>
-	% no suggestions: {noSuggestions()}%
-</li>
-<li>
-	% only wrong: {onlyWrong()}%
-</li>
-{#if report.summary && report.summary.average_position_of_correct !== undefined}
-<li>
-	Average position of correct: {report.summary.average_position_of_correct.toFixed(2)}
-</li>
-{/if}
-{#if report.summary && report.summary.average_suggestions_for_correct !== undefined}
-<li>
-	Average suggestions for correct: {report.summary.average_suggestions_for_correct.toFixed(2)}
-</li>
-{/if}
-</ul>
+<h2>Suggestion Statistics</h2>
+<div class="accuracy-stats-container">
+	<div>
+		<ul>
+		<li>
+			% in 1st position: {firstPosition()}%
+		</li>
+		<li>
+			% in top 5: {topFive()}%
+		</li>
+		<li>
+			% anywhere: {anywhere()}%
+		</li>
+		<li>
+			% no suggestions: {noSuggestions()}%
+		</li>
+		<li>
+			% only wrong: {onlyWrong()}%
+		</li>
+		</ul>
+		
+		<ul>
+		{#if report.summary && report.summary.average_position_of_correct !== undefined}
+		<li>
+			Average position of correct: {report.summary.average_position_of_correct.toFixed(2)}
+		</li>
+		{/if}
+		{#if report.summary && report.summary.average_suggestions_for_correct !== undefined}
+		<li>
+			Average suggestions for correct: {report.summary.average_suggestions_for_correct.toFixed(2)}
+		</li>
+		{/if}
+		</ul>
+	</div>
+	<div class="metrics-box">
+		<ul>
+			<li>
+				<strong>Precision:</strong> {precision()}%
+				<small>Of words that got suggestions, how many got the correct one</small>
+			</li>
+			<li>
+				<strong>Recall:</strong> {recall()}%
+				<small>Of all misspelled words, how many got the correct suggestion</small>
+			</li>
+			<li>
+				<strong>Accuracy:</strong> {accuracy()}%
+				<small>Correct suggestions out of all suggestions (indicates noise level)</small>
+			</li>
+			<li>
+				<strong>F-score:</strong> {fScore()}%
+				<small>Harmonic mean of precision and recall; high only when both are good</small>
+			</li>
+		</ul>
+	</div>
+</div>
 
 {/if}
 
