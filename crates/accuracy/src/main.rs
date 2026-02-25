@@ -177,6 +177,32 @@ impl Summary {
             .unwrap()
             .time;
 
+        // Calculate average time for all results
+        let total_nanos: u128 = results
+            .iter()
+            .map(|r| (r.time.secs as u128 * 1_000_000_000) + r.time.subsec_nanos as u128)
+            .sum();
+        let avg_nanos = total_nanos / results.len() as u128;
+        summary.average_time = Time {
+            secs: (avg_nanos / 1_000_000_000) as u64,
+            subsec_nanos: (avg_nanos % 1_000_000_000) as u32,
+        };
+
+        // Calculate average time for 95% fastest results (exclude slowest 5%)
+        let mut sorted_times: Vec<_> = results.iter().map(|r| r.time).collect();
+        sorted_times.sort();
+        let percentile_95_count = (results.len() as f32 * 0.95).ceil() as usize;
+        let total_nanos_95pc: u128 = sorted_times
+            .iter()
+            .take(percentile_95_count)
+            .map(|t| (t.secs as u128 * 1_000_000_000) + t.subsec_nanos as u128)
+            .sum();
+        let avg_nanos_95pc = total_nanos_95pc / percentile_95_count as u128;
+        summary.average_time_95pc = Time {
+            secs: (avg_nanos_95pc / 1_000_000_000) as u64,
+            subsec_nanos: (avg_nanos_95pc % 1_000_000_000) as u32,
+        };
+
         // Calculate average position and average suggestions for correct results only
         let correct_results: Vec<_> = results
             .iter()
