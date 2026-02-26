@@ -207,6 +207,20 @@ pub trait Speller {
         config: &SpellerConfig,
     ) -> Vec<Suggestion>;
 
+    /// Get lexicon weight for a word form (lexicon-only traversal).
+    ///
+    /// Returns the weight of the best analysis using only the lexicon FST.
+    /// If the word is not in the lexicon, returns Weight(0.0).
+    /// Useful for separating lexicon vs mutator contributions to total weight.
+    #[must_use]
+    fn get_lexicon_weight(self: Arc<Self>, word: &str) -> Weight {
+        self.get_lexicon_weight_with_config(word, &SpellerConfig::default())
+    }
+
+    /// Get lexicon weight with custom config.
+    #[must_use]
+    fn get_lexicon_weight_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Weight;
+
     /// Analyze the suggested word forms.
     ///
     /// Generates spelling corrections using the error model, then returns them with
@@ -323,6 +337,28 @@ where
     #[inline]
     fn analyze_input(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
         self.analyze_input_with_config(word, &SpellerConfig::default())
+    }
+
+    fn get_lexicon_weight(self: Arc<Self>, word: &str) -> Weight {
+        self.get_lexicon_weight_with_config(word, &SpellerConfig::default())
+    }
+
+    fn get_lexicon_weight_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Weight {
+        if word.is_empty() {
+            return Weight(0.0);
+        }
+
+        // Analyze output form using lexicon-only traversal (without error model)
+        // This gives us the weight from the lexicon/acceptor alone
+        let worker = SpellerWorker::new(
+            self.clone(),
+            self.to_input_vec(word),
+            SpellerConfig { verbose: false, ..config.clone() },
+            OutputMode::WithoutTags,
+        );
+
+        let analyses = worker.analyze();
+        analyses.first().map(|s| s.weight()).unwrap_or(Weight(0.0))
     }
 
     fn analyze_output_with_config(
