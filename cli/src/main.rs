@@ -24,7 +24,7 @@ use divvunspell::{
 
 trait OutputWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool);
-    fn write_suggestions(&mut self, word: &str, suggestions: &[Suggestion]);
+    fn write_suggestions(&mut self, word: &str, suggestions: &[Suggestion], verbose: bool);
     fn write_input_analyses(&mut self, word: &str, analyses: &[Suggestion]);
     fn write_output_analyses(&mut self, word: &str, analyses: &[Suggestion]);
     fn finish(&mut self);
@@ -43,18 +43,40 @@ impl OutputWriter for StdoutWriter {
         );
     }
 
-    fn write_suggestions(&mut self, _word: &str, suggestions: &[Suggestion]) {
+    fn write_suggestions(&mut self, _word: &str, suggestions: &[Suggestion], verbose: bool) {
         if let Some(s) = &self.has_continuation_marker {
             for sugg in suggestions {
                 print!("{}", sugg.value);
                 if sugg.completed == Some(true) {
                     print!("{s}");
                 }
-                println!("\t\t{}", sugg.weight);
+                print!("\t\t{:.5}", sugg.weight.0);
+                if verbose {
+                    if let Some(details) = &sugg.weight_details {
+                        print!(" (lex: {:.5}, mut: {:.5}, rew: {:.0}/{:.0}/{:.0})", 
+                            details.lexicon_weight.0,
+                            details.mutator_weight.0,
+                            details.reweight_start,
+                            details.reweight_mid,
+                            details.reweight_end);
+                    }
+                }
+                println!();
             }
         } else {
             for sugg in suggestions {
-                println!("{}\t\t{}", sugg.value, sugg.weight);
+                print!("{}\t\t{:.5}", sugg.value, sugg.weight.0);
+                if verbose {
+                    if let Some(details) = &sugg.weight_details {
+                        print!(" (lex: {:.5}, mut: {:.5}, rew: {:.0}/{:.0}/{:.0})", 
+                            details.lexicon_weight.0,
+                            details.mutator_weight.0,
+                            details.reweight_start,
+                            details.reweight_mid,
+                            details.reweight_end);
+                    }
+                }
+                println!();
             }
         }
         println!();
@@ -118,7 +140,7 @@ impl OutputWriter for JsonWriter {
         });
     }
 
-    fn write_suggestions(&mut self, _word: &str, suggestions: &[Suggestion]) {
+    fn write_suggestions(&mut self, _word: &str, suggestions: &[Suggestion], _verbose: bool) {
         let i = self.suggest.len() - 1;
         self.suggest[i].suggestions = suggestions.to_vec();
     }
@@ -150,6 +172,7 @@ fn run(
     is_suggesting: bool,
     is_always_suggesting: bool,
     suggest_cfg: &SpellerConfig,
+    verbose: bool,
 ) {
     for word in words {
         let is_correct = speller.clone().is_correct_with_config(&word, &suggest_cfg);
@@ -157,7 +180,7 @@ fn run(
 
         if is_suggesting && (is_always_suggesting || !is_correct) {
             let suggestions = speller.clone().suggest_with_config(&word, &suggest_cfg);
-            writer.write_suggestions(&word, &suggestions);
+            writer.write_suggestions(&word, &suggestions, verbose);
         }
 
         if is_analyzing {
@@ -174,7 +197,7 @@ fn run(
             let final_suggs = speller
                 .clone()
                 .analyze_suggest_with_config(&word, &suggest_cfg);
-            writer.write_suggestions(&word, &final_suggs);
+            writer.write_suggestions(&word, &final_suggs, verbose);
         }
     }
 }
@@ -246,6 +269,10 @@ struct SuggestArgs {
     /// Output in JSON format
     #[arg(long)]
     json: bool,
+
+    /// Show detailed weight information for each suggestion
+    #[arg(short = 'v', long)]
+    verbose: bool,
 
     /// Words to be processed
     inputs: Vec<String>,
@@ -368,6 +395,7 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
         suggest_cfg.recase = false;
     }
     suggest_cfg.completion_marker = args.continuation_marker.clone();
+    suggest_cfg.verbose = args.verbose;
     if let Some(v) = args.nbest {
         if v == 0 {
             suggest_cfg.n_best = None;
@@ -415,6 +443,7 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
         true,
         args.always_suggest,
         &suggest_cfg,
+        args.verbose,
     );
 
     writer.finish();
