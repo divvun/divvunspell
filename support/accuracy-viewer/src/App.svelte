@@ -254,6 +254,11 @@ strong {
 	opacity: 0.8;
 	margin-left: 1em;
 }
+.weight-details {
+	display: inline-block;
+	color: #666;
+	font-size: 0.9em;
+}
 .indicator-only-wrong {
 	background-color: #f001;
 }
@@ -544,7 +549,16 @@ Loading
 					<span class={wordClass(result, i)}>
 						{suggestion.value}
 					</span>
-					<small>{suggestion.weight}</small>
+					<small>
+						{suggestion.weight.toFixed(5)}
+						{#if suggestion.weight_details}
+							<span class="weight-details">
+								(lex: {suggestion.weight_details.lexicon_weight.toFixed(5)}, 
+								mut: {suggestion.weight_details.mutator_weight.toFixed(5)}, 
+								rew: {suggestion.weight_details.reweight_start.toFixed(0)}/{suggestion.weight_details.reweight_mid.toFixed(0)}/{suggestion.weight_details.reweight_end.toFixed(0)})
+							</span>
+						{/if}
+					</small>
 				</li>
 			{/each}
 			</ol>
