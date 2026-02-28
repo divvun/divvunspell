@@ -528,7 +528,7 @@ where
                 config.clone(),
                 output_mode,
             );
-            let mut suggestions = worker.suggest();
+            let suggestions = worker.suggest();
             
             match mode {
                 CaseMode::MergeAll => {
