@@ -38,7 +38,7 @@ use divvunspell::archive;
 use divvunspell::speller::suggestion::Suggestion;
 use divvunspell::speller::{ReweightingConfig, SpellerConfig};
 use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator, IntoParallelIterator};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::Serialize;
 use std::path::PathBuf;
 
