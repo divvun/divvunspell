@@ -530,25 +530,12 @@ where
             );
             let mut suggestions = worker.suggest();
             
-            match mutation {
-                CaseMutation::FirstCaps => {
-                    suggestions.iter_mut().for_each(|x| {
-                        x.value = upper_first(x.value());
-                    });
-                }
-                CaseMutation::AllCaps => {
-                    suggestions.iter_mut().for_each(|x| {
-                        x.value = upper_case(x.value());
-                    });
-                }
-                _ => {}
-            }
-
             match mode {
                 CaseMode::MergeAll => {
                     tracing::trace!("Case merge all");
-                    for sugg in suggestions.into_iter() {
+                    for mut sugg in suggestions.into_iter() {
                         tracing::trace!("for {}", sugg.value);
+                        // Calculate penalties BEFORE applying case mutation
                         let penalty_start =
                             if !sugg.value().starts_with(word.chars().next().unwrap()) {
                                 reweight.start_penalty - reweight.mid_penalty
@@ -561,6 +548,17 @@ where
                             } else {
                                 0.0
                             };
+                        
+                        // Apply case mutation AFTER calculating penalties
+                        match mutation {
+                            CaseMutation::FirstCaps => {
+                                sugg.value = upper_first(sugg.value());
+                            }
+                            CaseMutation::AllCaps => {
+                                sugg.value = upper_case(sugg.value());
+                            }
+                            _ => {}
+                        }
 
                         let distance =
                             strsim::damerau_levenshtein(&words[0].as_str(), &word.as_str())
