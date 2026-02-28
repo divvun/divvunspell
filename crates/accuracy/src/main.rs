@@ -281,9 +281,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         None => CFG.clone(),
     };
 
-    // Remember if verbose was requested, but don't set it in config yet
-    // to avoid serial execution in suggest_with_config
-    let verbose_requested = args.verbose;
+    // Set verbose mode if requested
+    cfg.verbose = args.verbose;
 
     let archive = match args.zhfst {
         Some(path) => archive::open(Path::new(&path))?,
@@ -334,61 +333,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         })
         .collect::<Vec<_>>();
-
-    // If verbose mode was requested, populate weight_details in parallel
-    let results = if verbose_requested {
-        use divvunspell::speller::suggestion::WeightDetails;
-        use std::collections::{HashSet, HashMap};
-        
-        // Collect all unique suggestion words to avoid duplicate analysis
-        let unique_words: HashSet<String> = results
-            .iter()
-            .flat_map(|r| r.suggestions.iter().map(|s| s.value.to_string()))
-            .collect();
-        
-        // Analyze all unique words in parallel and build a cache
-        let lexicon_weights: HashMap<String, Weight> = unique_words
-            .par_iter()
-            .map(|word| {
-                let weight = archive.speller().get_lexicon_weight_with_config(word, &cfg);
-                (word.clone(), weight)
-            })
-            .collect();
-        
-        // Now update all suggestions using the cached analysis
-        results
-            .into_par_iter()
-            .map(|mut result| {
-                result.suggestions = result
-                    .suggestions
-                    .into_iter()
-                    .map(|mut sugg| {
-                        let lexicon_weight = lexicon_weights.get(sugg.value.as_str())
-                            .copied()
-                            .unwrap_or(Weight(0.0));
-                        let mutator_weight = sugg.weight - lexicon_weight;
-                        
-                        sugg.weight_details = Some(WeightDetails {
-                            lexicon_weight,
-                            mutator_weight,
-                            reweight_start: 0.0,
-                            reweight_mid: 0.0,
-                            reweight_end: 0.0,
-                        });
-                        sugg
-                    })
-                    .collect();
-                result
-            })
-            .collect()
-    } else {
-        results
-    };
-   
-    // Set verbose in config for JSON output
-    if verbose_requested {
-        cfg.verbose = true;
-    }
 
     let now = start_time.elapsed();
     let total_time = Time {
