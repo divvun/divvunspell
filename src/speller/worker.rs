@@ -694,13 +694,21 @@ where
         let mut c: Vec<Suggestion>;
         
         if self.config.verbose {
-            // When verbose, analyze output form to get lexicon weight
+            // When verbose, analyze each unique suggestion to get lexicon weight
+            // Caching avoids analyzing the same suggestion multiple times
+            let mut lexicon_cache: HashMap<SmolStr, Weight> = HashMap::new();
+            
+            for word in corrections.keys() {
+                let lexicon_weight = self.analyze_output_form(word.as_str());
+                lexicon_cache.insert(word.clone(), lexicon_weight);
+            }
+            
+            // Now build suggestions using cached weights
             if let Some(s) = &self.config.completion_marker {
                 c = corrections
                     .into_iter()
                     .map(|x| {
-                        // Analyze the output form using only lexicon to get lexicon weight
-                        let lexicon_weight = self.analyze_output_form(x.0.as_str());
+                        let lexicon_weight = lexicon_cache.get(x.0.as_str()).copied().unwrap_or(Weight::ZERO);
                         let mutator_weight = *x.1 - lexicon_weight;
                         
                         let weight_details = WeightDetails {
@@ -717,8 +725,7 @@ where
                 c = corrections
                     .into_iter()
                     .map(|x| {
-                        // Analyze the output form using only lexicon to get lexicon weight
-                        let lexicon_weight = self.analyze_output_form(x.0.as_str());
+                        let lexicon_weight = lexicon_cache.get(x.0.as_str()).copied().unwrap_or(Weight::ZERO);
                         let mutator_weight = *x.1 - lexicon_weight;
                         
                         let weight_details = WeightDetails {
