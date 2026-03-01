@@ -15,6 +15,24 @@ pub struct Suggestion {
     /// whether the word is completed or partial
     #[serde(skip_serializing_if = "Option::is_none")]
     pub completed: Option<bool>,
+    /// detailed weight information (only filled when verbose mode is enabled)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub weight_details: Option<WeightDetails>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+/// Detailed weight information for a suggestion
+pub struct WeightDetails {
+    /// weight from the lexicon (acceptor)
+    pub lexicon_weight: Weight,
+    /// weight from the error model (mutator)
+    pub mutator_weight: Weight,
+    /// reweighting penalty at start of word
+    pub reweight_start: f32,
+    /// reweighting penalty in middle of word  
+    pub reweight_mid: f32,
+    /// reweighting penalty at end of word
+    pub reweight_end: f32,
 }
 
 impl Suggestion {
@@ -24,6 +42,22 @@ impl Suggestion {
             value,
             weight,
             completed,
+            weight_details: None,
+        }
+    }
+    
+    /// creates a spelling correction suggestion with detailed weight information
+    pub fn new_with_details(
+        value: SmolStr,
+        weight: Weight,
+        completed: Option<bool>,
+        details: WeightDetails,
+    ) -> Suggestion {
+        Suggestion {
+            value,
+            weight,
+            completed,
+            weight_details: Some(details),
         }
     }
 
@@ -40,6 +74,11 @@ impl Suggestion {
     /// returns whether this suggestion is a full word or partial
     pub fn completed(&self) -> Option<bool> {
         self.completed
+    }
+    
+    /// gets the detailed weight information if available
+    pub fn weight_details(&self) -> Option<&WeightDetails> {
+        self.weight_details.as_ref()
     }
 }
 

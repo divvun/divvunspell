@@ -50,6 +50,7 @@ static CFG: SpellerConfig = SpellerConfig {
     node_pool_size: 128,
     recase: true,
     completion_marker: None,
+    verbose: false,
 };
 
 fn load_words(
@@ -261,6 +262,10 @@ struct Args {
     /// Minimum precision @ 5 for automated testing
     #[arg(short = 'T', long)]
     threshold: Option<f32>,
+
+    /// Enable verbose mode to include weight details in output
+    #[arg(short = 'v', long)]
+    verbose: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -268,13 +273,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let args = Args::parse();
 
-    let cfg: SpellerConfig = match args.config {
+    let mut cfg: SpellerConfig = match args.config {
         Some(path) => {
             let file = std::fs::File::open(path)?;
             serde_json::from_reader(file)?
         }
         None => CFG.clone(),
     };
+
+    // Set verbose mode if requested
+    cfg.verbose = args.verbose;
 
     let archive = match args.zhfst {
         Some(path) => archive::open(Path::new(&path))?,

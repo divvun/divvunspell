@@ -18,6 +18,19 @@ use crate::types::{SymbolNumber, Weight};
 pub mod suggestion;
 mod worker;
 
+/// Temporary struct to store weight details during suggestion generation
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+struct SuggestionData {
+    weight: Weight,
+    base_weight: Weight,
+    lexicon_weight: Weight,
+    mutator_weight: Weight,
+    reweight_start: f32,
+    reweight_mid: f32,
+    reweight_end: f32,
+}
+
 /// Controls whether morphological tags are preserved in FST output.
 ///
 /// When traversing an FST, epsilon transitions can either preserve their symbols
@@ -103,6 +116,9 @@ pub struct SpellerConfig {
     /// used when suggesting unfinished word parts
     #[serde(default)]
     pub completion_marker: Option<String>,
+    /// whether to output detailed weight information (not serialized)
+    #[serde(skip)]
+    pub verbose: bool,
 }
 
 impl SpellerConfig {
@@ -113,6 +129,7 @@ impl SpellerConfig {
     /// * reweight = default (c.f. ReweightingConfig::default())
     /// * node_pool_size = 128
     /// * recase = true
+    /// * verbose = false
     pub const fn default() -> SpellerConfig {
         SpellerConfig {
             n_best: default_n_best(),
@@ -122,6 +139,7 @@ impl SpellerConfig {
             node_pool_size: default_node_pool_size(),
             recase: default_recase(),
             completion_marker: None,
+            verbose: false,
         }
     }
 }
@@ -188,6 +206,20 @@ pub trait Speller {
         word: &str,
         config: &SpellerConfig,
     ) -> Vec<Suggestion>;
+
+    /// Get lexicon weight for a word form (lexicon-only traversal).
+    ///
+    /// Returns the weight of the best analysis using only the lexicon FST.
+    /// If the word is not in the lexicon, returns Weight(0.0).
+    /// Useful for separating lexicon vs mutator contributions to total weight.
+    #[must_use]
+    fn get_lexicon_weight(self: Arc<Self>, word: &str) -> Weight {
+        self.get_lexicon_weight_with_config(word, &SpellerConfig::default())
+    }
+
+    /// Get lexicon weight with custom config.
+    #[must_use]
+    fn get_lexicon_weight_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Weight;
 
     /// Analyze the suggested word forms.
     ///
@@ -305,6 +337,28 @@ where
     #[inline]
     fn analyze_input(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
         self.analyze_input_with_config(word, &SpellerConfig::default())
+    }
+
+    fn get_lexicon_weight(self: Arc<Self>, word: &str) -> Weight {
+        self.get_lexicon_weight_with_config(word, &SpellerConfig::default())
+    }
+
+    fn get_lexicon_weight_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Weight {
+        if word.is_empty() {
+            return Weight(0.0);
+        }
+
+        // Analyze output form using lexicon-only traversal (without error model)
+        // This gives us the weight from the lexicon/acceptor alone
+        let worker = SpellerWorker::new(
+            self.clone(),
+            self.to_input_vec(word),
+            SpellerConfig { verbose: false, ..config.clone() },
+            OutputMode::WithoutTags,
+        );
+
+        let analyses = worker.analyze();
+        analyses.first().map(|s| s.weight()).unwrap_or(Weight(0.0))
     }
 
     fn analyze_output_with_config(
@@ -464,6 +518,7 @@ where
             words,
         } = case;
         let mut best: HashMap<SmolStr, Weight> = HashMap::new();
+        let mut suggestion_data: HashMap<SmolStr, SuggestionData> = HashMap::new();
 
         for word in std::iter::once(&original_input).chain(words.iter()) {
             tracing::trace!("suggesting for word {}", word);
@@ -473,55 +528,75 @@ where
                 config.clone(),
                 output_mode,
             );
-            let mut suggestions = worker.suggest();
-
-            match mutation {
-                CaseMutation::FirstCaps => {
-                    suggestions.iter_mut().for_each(|x| {
-                        x.value = upper_first(x.value());
-                    });
-                }
-                CaseMutation::AllCaps => {
-                    suggestions.iter_mut().for_each(|x| {
-                        x.value = upper_case(x.value());
-                    });
-                }
-                _ => {}
-            }
-
+            let suggestions = worker.suggest();
+            
             match mode {
                 CaseMode::MergeAll => {
                     tracing::trace!("Case merge all");
-                    for sugg in suggestions.into_iter() {
+                    for mut sugg in suggestions.into_iter() {
                         tracing::trace!("for {}", sugg.value);
+                        // Calculate penalties BEFORE applying case mutation
                         let penalty_start =
                             if !sugg.value().starts_with(word.chars().next().unwrap()) {
-                                reweight.start_penalty - reweight.mid_penalty
+                                reweight.start_penalty
                             } else {
                                 0.0
                             };
                         let penalty_end =
                             if !sugg.value().ends_with(word.chars().rev().next().unwrap()) {
-                                reweight.end_penalty - reweight.mid_penalty
+                                reweight.end_penalty
                             } else {
                                 0.0
                             };
+                        
+                        // Apply case mutation AFTER calculating penalties
+                        match mutation {
+                            CaseMutation::FirstCaps => {
+                                sugg.value = upper_first(sugg.value());
+                            }
+                            CaseMutation::AllCaps => {
+                                sugg.value = upper_case(sugg.value());
+                            }
+                            _ => {}
+                        }
 
-                        let distance =
-                            strsim::damerau_levenshtein(&words[0].as_str(), &word.as_str())
-                                + strsim::damerau_levenshtein(&word.as_str(), sugg.value());
-                        let penalty_middle = reweight.mid_penalty * distance as f32;
+                        // Calculate mid-distance: exclude first/last chars if they differ
+                        let skip_first = original_input.chars().next() != sugg.value().chars().next();
+                        let skip_last = original_input.chars().rev().next() != sugg.value().chars().rev().next();
+                        
+                        let mid_distance = if original_input.chars().count() > 1 && sugg.value().chars().count() > 1 {
+                            let input_chars: Vec<char> = original_input.chars().collect();
+                            let sugg_chars: Vec<char> = sugg.value().chars().collect();
+                            
+                            let input_start = if skip_first { 1 } else { 0 };
+                            let input_end = input_chars.len() - if skip_last { 1 } else { 0 };
+                            let sugg_start = if skip_first { 1 } else { 0 };
+                            let sugg_end = sugg_chars.len() - if skip_last { 1 } else { 0 };
+                            
+                            if input_start < input_end && sugg_start < sugg_end {
+                                let input_mid: String = input_chars[input_start..input_end].iter().collect();
+                                let sugg_mid: String = sugg_chars[sugg_start..sugg_end].iter().collect();
+                                strsim::damerau_levenshtein(&input_mid, &sugg_mid)
+                            } else {
+                                0
+                            }
+                        } else {
+                            0
+                        };
+                        
+                        let penalty_middle = reweight.mid_penalty * mid_distance as f32;
                         let additional_weight =
                             Weight(if sugg.value.chars().all(|c| is_emoji(c)) {
                                 0.0
                             } else {
                                 penalty_start + penalty_end + penalty_middle
                             });
+                        
                         tracing::trace!(
                             "Penalty: +{} = {} + {} * {} + {}",
                             additional_weight,
                             penalty_start,
-                            distance,
+                            mid_distance,
                             reweight.mid_penalty,
                             penalty_end
                         );
@@ -537,10 +612,42 @@ where
                                     additional_weight
                                 );
                                 if entry as &_ > &weight {
-                                    *entry = weight
+                                    *entry = weight;
+                                    // Update suggestion data
+                                    let (lex_w, mut_w) = if let Some(ref details) = sugg.weight_details {
+                                        (details.lexicon_weight, details.mutator_weight)
+                                    } else {
+                                        (Weight(0.0), Weight(0.0))
+                                    };
+                                    suggestion_data.insert(sugg.value.clone(), SuggestionData {
+                                        weight,
+                                        base_weight: sugg.weight,
+                                        lexicon_weight: lex_w,
+                                        mutator_weight: mut_w,
+                                        reweight_start: penalty_start,
+                                        reweight_mid: penalty_middle,
+                                        reweight_end: penalty_end,
+                                    });
                                 }
                             })
-                            .or_insert(sugg.weight + additional_weight);
+                            .or_insert_with(|| {
+                                let weight = sugg.weight + additional_weight;
+                                let (lex_w, mut_w) = if let Some(ref details) = sugg.weight_details {
+                                    (details.lexicon_weight, details.mutator_weight)
+                                } else {
+                                    (Weight(0.0), Weight(0.0))
+                                };
+                                suggestion_data.insert(sugg.value.clone(), SuggestionData {
+                                    weight,
+                                    base_weight: sugg.weight,
+                                    lexicon_weight: lex_w,
+                                    mutator_weight: mut_w,
+                                    reweight_start: penalty_start,
+                                    reweight_mid: penalty_middle,
+                                    reweight_end: penalty_end,
+                                });
+                                weight
+                            });
                     }
                 }
                 CaseMode::FirstResults => {
@@ -555,24 +662,70 @@ where
             return vec![];
         }
         let mut out: Vec<Suggestion>;
-        if let Some(s) = &config.completion_marker {
-            out = best
-                .into_iter()
-                .map(|(k, v)| Suggestion {
-                    value: k.clone(),
-                    weight: v,
-                    completed: Some(!k.ends_with(s)),
-                })
-                .collect::<Vec<_>>();
+        if config.verbose {
+            // Verbose mode: include weight details
+            if let Some(s) = &config.completion_marker {
+                out = best
+                    .into_iter()
+                    .map(|(k, v)| {
+                        let data = suggestion_data.get(&k);
+                        Suggestion {
+                            value: k.clone(),
+                            weight: v,
+                            completed: Some(!k.ends_with(s)),
+                            weight_details: data.map(|d| suggestion::WeightDetails {
+                                lexicon_weight: d.lexicon_weight,
+                                mutator_weight: d.mutator_weight,
+                                reweight_start: d.reweight_start,
+                                reweight_mid: d.reweight_mid,
+                                reweight_end: d.reweight_end,
+                            }),
+                        }
+                    })
+                    .collect::<Vec<_>>();
+            } else {
+                out = best
+                    .into_iter()
+                    .map(|(k, v)| {
+                        let data = suggestion_data.get(&k);
+                        Suggestion {
+                            value: k,
+                            weight: v,
+                            completed: None,
+                            weight_details: data.map(|d| suggestion::WeightDetails {
+                                lexicon_weight: d.lexicon_weight,
+                                mutator_weight: d.mutator_weight,
+                                reweight_start: d.reweight_start,
+                                reweight_mid: d.reweight_mid,
+                                reweight_end: d.reweight_end,
+                            }),
+                        }
+                    })
+                    .collect::<Vec<_>>();
+            }
         } else {
-            out = best
-                .into_iter()
-                .map(|(k, v)| Suggestion {
-                    value: k,
-                    weight: v,
-                    completed: None,
-                })
-                .collect::<Vec<_>>();
+            // Normal mode: no weight details
+            if let Some(s) = &config.completion_marker {
+                out = best
+                    .into_iter()
+                    .map(|(k, v)| Suggestion {
+                        value: k.clone(),
+                        weight: v,
+                        completed: Some(!k.ends_with(s)),
+                        weight_details: None,
+                    })
+                    .collect::<Vec<_>>();
+            } else {
+                out = best
+                    .into_iter()
+                    .map(|(k, v)| Suggestion {
+                        value: k,
+                        weight: v,
+                        completed: None,
+                        weight_details: None,
+                    })
+                    .collect::<Vec<_>>();
+            }
         }
         out.sort();
         if let Some(n_best) = config.n_best {

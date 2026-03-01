@@ -5,7 +5,7 @@ use std::sync::Arc;
 use lifeguard::{Pool, Recycled};
 
 use super::{HfstSpeller, OutputMode, SpellerConfig};
-use crate::speller::suggestion::Suggestion;
+use crate::speller::suggestion::{Suggestion, WeightDetails};
 use crate::transducer::Transducer;
 use crate::transducer::tree_node::TreeNode;
 use crate::types::{SymbolNumber, TransitionTableIndex, ValueNumber, Weight};
@@ -559,17 +559,42 @@ where
             }
             self.lexicon_epsilons(&pool, Weight::INFINITE, &next_node, &mut nodes);
             self.lexicon_consume(&pool, Weight::INFINITE, &next_node, &mut nodes);
-            analyses = self.generate_sorted_suggestions(&lookups);
+            analyses = self.generate_sorted_suggestions_basic(&lookups);
         }
         analyses
     }
 
+    fn generate_sorted_suggestions_basic(
+        &self,
+        lookups: &HashMap<SmolStr, Weight>,
+    ) -> Vec<Suggestion> {
+        let mut c: Vec<Suggestion>;
+        if let Some(s) = &self.config.completion_marker {
+            c = lookups
+                .into_iter()
+                .map(|x| Suggestion::new(x.0.clone(), *x.1, Some(x.0.ends_with(s))))
+                .collect();
+        } else {
+            c = lookups
+                .into_iter()
+                .map(|x| Suggestion::new(x.0.clone(), *x.1, None))
+                .collect();
+        }
+        c.sort();
+
+        if let Some(n) = self.config.n_best {
+            c.truncate(n);
+        }
+        c
+    }
+
     pub(crate) fn suggest(&self) -> Vec<Suggestion> {
+
         tracing::trace!("Beginning suggest");
 
         let pool = Pool::with_size_and_max(self.config.node_pool_size, self.config.node_pool_size);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
-        let mut corrections = HashMap::new();
+        let mut corrections: HashMap<SmolStr, Weight> = HashMap::new();
         let mut suggestions: Vec<Suggestion> = vec![];
         let mut best_weight = Weight::MAX;
         let key_table = self.speller.mutator().alphabet().key_table();
@@ -611,17 +636,18 @@ where
                 continue;
             }
 
-            let weight = next_node.weight()
-                + self
-                    .speller
-                    .lexicon()
-                    .final_weight(next_node.lexicon_state)
-                    .unwrap()
-                + self
-                    .speller
-                    .mutator()
-                    .final_weight(next_node.mutator_state)
-                    .unwrap();
+            let node_weight = next_node.weight();
+            let lexicon_final = self
+                .speller
+                .lexicon()
+                .final_weight(next_node.lexicon_state)
+                .unwrap();
+            let mutator_final = self
+                .speller
+                .mutator()
+                .final_weight(next_node.mutator_state)
+                .unwrap();
+            let weight = node_weight + lexicon_final + mutator_final;
 
             if !self.is_under_weight_limit(max_weight, weight) {
                 continue;
@@ -632,6 +658,7 @@ where
                 .lexicon()
                 .alphabet()
                 .string_from_symbols(&next_node.string);
+            
             // tracing::trace!("suggesting? {}::{}", string, weight);
             if weight < best_weight {
                 best_weight = weight;
@@ -665,22 +692,135 @@ where
     ) -> Vec<Suggestion> {
         //tracing::trace!("Generating sorted suggestions");
         let mut c: Vec<Suggestion>;
-        if let Some(s) = &self.config.completion_marker {
-            c = corrections
-                .into_iter()
-                .map(|x| Suggestion::new(x.0.clone(), *x.1, Some(x.0.ends_with(s))))
-                .collect();
+        
+        if self.config.verbose {
+            // When verbose, analyze each unique suggestion to get lexicon weight
+            // Caching avoids analyzing the same suggestion multiple times
+            let mut lexicon_cache: HashMap<SmolStr, Weight> = HashMap::new();
+            
+            for word in corrections.keys() {
+                let lexicon_weight = self.analyze_output_form(word.as_str());
+                lexicon_cache.insert(word.clone(), lexicon_weight);
+            }
+            
+            // Now build suggestions using cached weights
+            if let Some(s) = &self.config.completion_marker {
+                c = corrections
+                    .into_iter()
+                    .map(|x| {
+                        let lexicon_weight = lexicon_cache.get(x.0.as_str()).copied().unwrap_or(Weight::ZERO);
+                        let mutator_weight = *x.1 - lexicon_weight;
+                        
+                        let weight_details = WeightDetails {
+                            lexicon_weight,
+                            mutator_weight,
+                            reweight_start: 0.0,
+                            reweight_mid: 0.0,
+                            reweight_end: 0.0,
+                        };
+                        Suggestion::new_with_details(x.0.clone(), *x.1, Some(x.0.ends_with(s)), weight_details)
+                    })
+                    .collect();
+            } else {
+                c = corrections
+                    .into_iter()
+                    .map(|x| {
+                        let lexicon_weight = lexicon_cache.get(x.0.as_str()).copied().unwrap_or(Weight::ZERO);
+                        let mutator_weight = *x.1 - lexicon_weight;
+                        
+                        let weight_details = WeightDetails {
+                            lexicon_weight,
+                            mutator_weight,
+                            reweight_start: 0.0,
+                            reweight_mid: 0.0,
+                            reweight_end: 0.0,
+                        };
+                        Suggestion::new_with_details(x.0.clone(), *x.1, None, weight_details)
+                    })
+                    .collect();
+            }
         } else {
-            c = corrections
-                .into_iter()
-                .map(|x| Suggestion::new(x.0.clone(), *x.1, None))
-                .collect();
+            // When not verbose, just use basic constructor
+            if let Some(s) = &self.config.completion_marker {
+                c = corrections
+                    .into_iter()
+                    .map(|x| Suggestion::new(x.0.clone(), *x.1, Some(x.0.ends_with(s))))
+                    .collect();
+            } else {
+                c = corrections
+                    .into_iter()
+                    .map(|x| Suggestion::new(x.0.clone(), *x.1, None))
+                    .collect();
+            }
         }
+        
         c.sort();
 
         if let Some(n) = self.config.n_best {
             c.truncate(n);
         }
         c
+    }
+    
+    // Analyze an output form using only the lexicon to get its weight
+    fn analyze_output_form(&self, form: &str) -> Weight {
+        use unic_segment::Graphemes;
+        
+        // Convert form to input symbols using MUTATOR alphabet
+        let alphabet = self.speller.mutator().alphabet();
+        let key_table = alphabet.key_table();
+        
+        let temp_input: Vec<SymbolNumber> = Graphemes::new(form)
+            .map(|ch| {
+                let s = ch.to_string();
+                key_table
+                    .iter()
+                    .position(|x| x == &s)
+                    .map(|x| SymbolNumber(x as u16))
+                    .unwrap_or_else(|| alphabet.unknown().unwrap_or(SymbolNumber::ZERO))
+            })
+            .collect();
+        
+        if temp_input.is_empty() {
+            return Weight(0.0);
+        }
+        
+        // Manually traverse lexicon-only (like analyze() does)
+        let pool = Pool::with_size_and_max(0, 0);
+        let lexicon = self.speller.lexicon();
+        let mut nodes = speller_start_node(&pool, self.state_size() as usize);
+        let mut best_weight = Weight::MAX;
+        
+        // Create a temporary config without verbose mode to avoid infinite recursion
+        let temp_config = SpellerConfig {
+            verbose: false,
+            ..self.config.clone()
+        };
+        
+        let temp_worker = SpellerWorker {
+            speller: self.speller.clone(),
+            input: temp_input,
+            config: temp_config,
+            output_mode: OutputMode::WithoutTags,
+        };
+        
+        while let Some(next_node) = nodes.pop() {
+            if next_node.input_state.0 as usize == temp_worker.input.len()
+                && lexicon.is_final(next_node.lexicon_state)
+            {
+                let weight = next_node.weight() + lexicon.final_weight(next_node.lexicon_state).unwrap();
+                if weight < best_weight {
+                    best_weight = weight;
+                }
+            }
+            temp_worker.lexicon_epsilons(&pool, Weight::INFINITE, &next_node, &mut nodes);
+            temp_worker.lexicon_consume(&pool, Weight::INFINITE, &next_node, &mut nodes);
+        }
+        
+        if best_weight == Weight::MAX {
+            Weight(0.0)
+        } else {
+            best_weight
+        }
     }
 }
