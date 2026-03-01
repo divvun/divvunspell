@@ -560,10 +560,31 @@ where
                             _ => {}
                         }
 
-                        let distance =
-                            strsim::damerau_levenshtein(&words[0].as_str(), &word.as_str())
-                                + strsim::damerau_levenshtein(&word.as_str(), sugg.value());
-                        let penalty_middle = reweight.mid_penalty * distance as f32;
+                        // Calculate mid-distance: exclude first/last chars if they differ
+                        let skip_first = original_input.chars().next() != sugg.value().chars().next();
+                        let skip_last = original_input.chars().rev().next() != sugg.value().chars().rev().next();
+                        
+                        let mid_distance = if original_input.chars().count() > 1 && sugg.value().chars().count() > 1 {
+                            let input_chars: Vec<char> = original_input.chars().collect();
+                            let sugg_chars: Vec<char> = sugg.value().chars().collect();
+                            
+                            let input_start = if skip_first { 1 } else { 0 };
+                            let input_end = input_chars.len() - if skip_last { 1 } else { 0 };
+                            let sugg_start = if skip_first { 1 } else { 0 };
+                            let sugg_end = sugg_chars.len() - if skip_last { 1 } else { 0 };
+                            
+                            if input_start < input_end && sugg_start < sugg_end {
+                                let input_mid: String = input_chars[input_start..input_end].iter().collect();
+                                let sugg_mid: String = sugg_chars[sugg_start..sugg_end].iter().collect();
+                                strsim::damerau_levenshtein(&input_mid, &sugg_mid)
+                            } else {
+                                0
+                            }
+                        } else {
+                            0
+                        };
+                        
+                        let penalty_middle = reweight.mid_penalty * mid_distance as f32;
                         let additional_weight =
                             Weight(if sugg.value.chars().all(|c| is_emoji(c)) {
                                 0.0
@@ -575,7 +596,7 @@ where
                             "Penalty: +{} = {} + {} * {} + {}",
                             additional_weight,
                             penalty_start,
-                            distance,
+                            mid_distance,
                             reweight.mid_penalty,
                             penalty_end
                         );
