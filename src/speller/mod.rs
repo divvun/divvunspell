@@ -538,13 +538,13 @@ where
                         // Calculate penalties BEFORE applying case mutation
                         let penalty_start =
                             if !sugg.value().starts_with(word.chars().next().unwrap()) {
-                                reweight.start_penalty - reweight.mid_penalty
+                                reweight.start_penalty
                             } else {
                                 0.0
                             };
                         let penalty_end =
                             if !sugg.value().ends_with(word.chars().rev().next().unwrap()) {
-                                reweight.end_penalty - reweight.mid_penalty
+                                reweight.end_penalty
                             } else {
                                 0.0
                             };
