@@ -573,43 +573,151 @@ where
                             _ => {}
                         }
 
-                        // Calculate mid-distance: exclude first/last chars if they differ
-                        let skip_first = original_input.chars().next() != sugg.value().chars().next();
-                        let skip_last = original_input.chars().rev().next() != sugg.value().chars().rev().next();
+                        // Calculate distances based on case-insensitive alignment
+                        // by scanning from both ends and splicing in the middle
+                        let input_lower: Vec<char> = original_input.to_lowercase().chars().collect();
+                        let sugg_lower: Vec<char> = sugg.value().to_lowercase().chars().collect();
                         
-                        let mid_distance = if original_input.chars().count() > 1 && sugg.value().chars().count() > 1 {
-                            let input_chars: Vec<char> = original_input.chars().collect();
-                            let sugg_chars: Vec<char> = sugg.value().chars().collect();
+                        // Special case: both input and suggestion are 2 chars or less - no middle section
+                        let is_short = input_lower.len() <= 2 && sugg_lower.len() <= 2;
+                        
+                        let (start_dist, mid_dist, end_dist): (usize, i32, usize) = if input_lower.is_empty() && sugg_lower.is_empty() {
+                            (0, 0, 0)
+                        } else if is_short {
+                            // For very short words, compare first and last only (no middle)
+                            let start_d = if !input_lower.is_empty() && !sugg_lower.is_empty() {
+                                if input_lower[0] != sugg_lower[0] { 1 } else { 0 }
+                            } else {
+                                input_lower.len().max(sugg_lower.len()).min(1)
+                            };
                             
-                            let input_start = if skip_first { 1 } else { 0 };
-                            let input_end = input_chars.len() - if skip_last { 1 } else { 0 };
-                            let sugg_start = if skip_first { 1 } else { 0 };
-                            let sugg_end = sugg_chars.len() - if skip_last { 1 } else { 0 };
-                            
-                            if input_start < input_end && sugg_start < sugg_end {
-                                let input_mid: String = input_chars[input_start..input_end].iter().collect();
-                                let sugg_mid: String = sugg_chars[sugg_start..sugg_end].iter().collect();
-                                strsim::damerau_levenshtein(&input_mid, &sugg_mid)
+                            let end_d = if input_lower.len() > 1 && sugg_lower.len() > 1 {
+                                if input_lower[input_lower.len()-1] != sugg_lower[sugg_lower.len()-1] { 1 } else { 0 }
                             } else {
                                 0
-                            }
+                            };
+                            
+                            // Use -1 to signal no middle section (will be displayed as "-")
+                            (start_d, -1, end_d)
                         } else {
-                            0
+                            // Scan from start and end independently to find best alignment
+                            
+                            // Find best start alignment
+                            let start_alignments = vec![
+                                (0, 0), // no offset
+                                (1, 0), // skip first in input
+                                (0, 1), // skip first in sugg
+                            ];
+                            
+                            let (start_in_off, start_su_off, prefix_len, start_d) = start_alignments.iter()
+                                .filter(|(off_in, off_su)| *off_in < input_lower.len() && *off_su < sugg_lower.len())
+                                .map(|(off_in, off_su)| {
+                                    let inp = &input_lower[*off_in..];
+                                    let sug = &sugg_lower[*off_su..];
+                                    let prefix_len = inp.iter().zip(sug.iter())
+                                        .take_while(|(a, b)| a == b)
+                                        .count();
+                                    let start_d = if *off_in > 0 || *off_su > 0 { 1 } else { 0 };
+                                    (*off_in, *off_su, prefix_len, start_d)
+                                })
+                                .max_by_key(|(_, _, prefix_len, _)| *prefix_len)
+                                .unwrap_or((0, 0, 0, 0));
+                            
+                            // Find best end alignment (working backwards from end)
+                            let end_alignments = vec![
+                                (0, 0), // no offset
+                                (1, 0), // skip last in input
+                                (0, 1), // skip last in sugg
+                            ];
+                            
+                            let (end_in_off, end_su_off, suffix_len, end_d) = end_alignments.iter()
+                                .filter(|(off_in, off_su)| *off_in < input_lower.len() && *off_su < sugg_lower.len())
+                                .map(|(off_in, off_su)| {
+                                    let inp_len = input_lower.len() - off_in;
+                                    let sug_len = sugg_lower.len() - off_su;
+                                    if inp_len == 0 || sug_len == 0 {
+                                        return (*off_in, *off_su, 0, if *off_in > 0 || *off_su > 0 { 1 } else { 0 });
+                                    }
+                                    let inp = &input_lower[..inp_len];
+                                    let sug = &sugg_lower[..sug_len];
+                                    let suffix_len = inp.iter().rev().zip(sug.iter().rev())
+                                        .take_while(|(a, b)| a == b)
+                                        .count();
+                                    let end_d = if *off_in > 0 || *off_su > 0 { 1 } else { 0 };
+                                    (*off_in, *off_su, suffix_len, end_d)
+                                })
+                                .max_by_key(|(_, _, suffix_len, _)| *suffix_len)
+                                .unwrap_or((0, 0, 0, 0));
+                            
+                            // Calculate middle: what's between prefix and suffix
+                            // But: if prefix+suffix would overlap, adjust to avoid counting same changes twice
+                            let min_total_len = (input_lower.len() - start_in_off - end_in_off)
+                                .min(sugg_lower.len() - start_su_off - end_su_off);
+                            
+                            // If prefix + suffix >= total available length, there's no middle
+                            // We need to reduce suffix to avoid overlap
+                            let actual_suffix = if prefix_len + suffix_len > min_total_len {
+                                min_total_len.saturating_sub(prefix_len)
+                            } else {
+                                suffix_len
+                            };
+                            
+                            // Calculate what's between prefix and suffix
+                            // Start position after prefix (with offset)
+                            let inp_start_pos = start_in_off + prefix_len;
+                            let sug_start_pos = start_su_off + prefix_len;
+                            
+                            // End position before suffix (accounting for end offset)
+                            let inp_end_pos = input_lower.len() - end_in_off - actual_suffix;
+                            let sug_end_pos = sugg_lower.len() - end_su_off - actual_suffix;
+                            
+                            // Check if there's a real middle section
+                            // If what's left is just the last character(s), it should be counted as "end" not "mid"
+                            let inp_remaining = inp_end_pos.saturating_sub(inp_start_pos);
+                            let sug_remaining = sug_end_pos.saturating_sub(sug_start_pos);
+                            
+                            // If nothing left after prefix, or only at most 1 char left AND suffix is 0,
+                            // then it's an end change, not mid
+                            let (mid_d, adjusted_end_d) = if inp_remaining == 0 && sug_remaining == 0 {
+                                // No middle section
+                                (0, end_d)
+                            } else if (inp_remaining <= 1 &&  sug_remaining <= 1) && actual_suffix == 0 {
+                                // Only 1 char left and no suffix match - this is an end change
+                                let end_change = inp_remaining.max(sug_remaining) > 0;
+                                (0, if end_change { 1 } else { end_d })
+                            } else if inp_start_pos < inp_end_pos || sug_start_pos < sug_end_pos {
+                                // There's a real middle section
+                                let inp_mid: String = input_lower[inp_start_pos.min(inp_end_pos)..inp_end_pos.max(inp_start_pos)].iter().collect();
+                                let sug_mid: String = sugg_lower[sug_start_pos.min(sug_end_pos)..sug_end_pos.max(sug_start_pos)].iter().collect();
+                                let d = strsim::damerau_levenshtein(&inp_mid, &sug_mid) as i32;
+                                (d, end_d)
+                            } else {
+                                // No middle section
+                                (0, end_d)
+                            };
+                            
+                            (start_d, mid_d, adjusted_end_d)
                         };
                         
-                        let penalty_middle = reweight.mid_penalty * mid_distance as f32;
+                        let penalty_start = if start_dist > 0 { reweight.start_penalty } else { 0.0 };
+                        let penalty_middle = if mid_dist < 0 { 
+                            -1.0  // Signal for no middle section (will be displayed as "-")
+                        } else { 
+                            reweight.mid_penalty * mid_dist as f32 
+                        };
+                        let penalty_end = if end_dist > 0 { reweight.end_penalty } else { 0.0 };
                         let additional_weight =
                             Weight(if sugg.value.chars().all(|c| is_emoji(c)) {
                                 0.0
                             } else {
-                                penalty_start + penalty_end + penalty_middle
+                                penalty_start + penalty_end + penalty_middle.max(0.0)  // Don't add -1 to weight
                             });
                         
                         tracing::trace!(
                             "Penalty: +{} = {} + {} * {} + {}",
                             additional_weight,
                             penalty_start,
-                            mid_distance,
+                            mid_dist,
                             reweight.mid_penalty,
                             penalty_end
                         );
