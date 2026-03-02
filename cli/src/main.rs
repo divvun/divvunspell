@@ -53,11 +53,16 @@ impl OutputWriter for StdoutWriter {
                 print!("\t\t{:.5}", sugg.weight.0);
                 if verbose {
                     if let Some(details) = &sugg.weight_details {
-                        print!(" (lex: {:.5}, mut: {:.5}, rew: {:.0}/{:.0}/{:.0})", 
+                        let mid_str = if details.reweight_mid < 0.0 {
+                            "-".to_string()
+                        } else {
+                            format!("{:.0}", details.reweight_mid)
+                        };
+                        print!(" (lex: {:.5}, mut: {:.5}, rew: {:.0}/{}/{:.0})", 
                             details.lexicon_weight.0,
                             details.mutator_weight.0,
                             details.reweight_start,
-                            details.reweight_mid,
+                            mid_str,
                             details.reweight_end);
                     }
                 }
@@ -68,11 +73,16 @@ impl OutputWriter for StdoutWriter {
                 print!("{}\t\t{:.5}", sugg.value, sugg.weight.0);
                 if verbose {
                     if let Some(details) = &sugg.weight_details {
-                        print!(" (lex: {:.5}, mut: {:.5}, rew: {:.0}/{:.0}/{:.0})", 
+                        let mid_str = if details.reweight_mid < 0.0 {
+                            "-".to_string()
+                        } else {
+                            format!("{:.0}", details.reweight_mid)
+                        };
+                        print!(" (lex: {:.5}, mut: {:.5}, rew: {:.0}/{}/{:.0})", 
                             details.lexicon_weight.0,
                             details.mutator_weight.0,
                             details.reweight_start,
-                            details.reweight_mid,
+                            mid_str,
                             details.reweight_end);
                     }
                 }
