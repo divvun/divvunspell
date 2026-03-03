@@ -208,7 +208,11 @@ impl Summary {
         let correct_results: Vec<_> = results.iter().filter(|r| r.position.is_some()).collect();
 
         if !correct_results.is_empty() {
-            let total_position: usize = correct_results.iter().map(|r| r.position.unwrap()).sum();
+            // Convert 0-indexed positions to 1-indexed (1st place, 2nd place, etc)
+            let total_position: usize = correct_results
+                .iter()
+                .map(|r| r.position.unwrap() + 1) // +1 to convert from 0-indexed to 1-indexed
+                .sum();
             summary.average_position_of_correct =
                 total_position as f32 / correct_results.len() as f32;
 
