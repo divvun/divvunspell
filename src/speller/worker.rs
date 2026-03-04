@@ -783,8 +783,10 @@ where
     fn analyze_output_form(&self, form: &str) -> Weight {
         use unic_segment::Graphemes;
         
-        // Convert form to input symbols using MUTATOR alphabet
-        let alphabet = self.speller.mutator().alphabet();
+        // Convert form to input symbols using LEXICON alphabet
+        // The output form comes from lexicon.alphabet().string_from_symbols()
+        // so we must use the same alphabet to convert it back
+        let alphabet = self.speller.lexicon().alphabet();
         let key_table = alphabet.key_table();
         
         let temp_input: Vec<SymbolNumber> = Graphemes::new(form)
