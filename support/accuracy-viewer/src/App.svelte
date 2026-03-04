@@ -179,6 +179,9 @@
 	}
 
 	function resultClass(result) {
+		if (result.false_accept) {
+			return "indicator-false-accept"
+		}
 		switch (result.position) {
 		case null: {
 			if (result.suggestions.length === 0) {
@@ -261,6 +264,9 @@ strong {
 }
 .indicator-only-wrong {
 	background-color: #f001;
+}
+.indicator-false-accept {
+	background-color: #f601;
 }
 .indicator-first {
 	background-color: #0f02;
@@ -542,7 +548,9 @@ Loading
 			</p>
 		</td>
 		<td>
-		{#if result.suggestions.length > 0}
+		{#if result.false_accept}
+			<em>Incorrectly accepted as correct</em>
+		{:else if result.suggestions.length > 0}
 			<ol>
 			{#each result.suggestions as suggestion, i}
 				<li>
