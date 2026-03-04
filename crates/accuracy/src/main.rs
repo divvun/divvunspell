@@ -96,6 +96,7 @@ struct AccuracyResult<'a> {
     suggestions: Vec<Suggestion>,
     position: Option<usize>,
     time: Time,
+    false_accept: bool,  // True if input was incorrectly accepted as correct
 }
 
 #[derive(Debug, Serialize)]
@@ -116,6 +117,7 @@ struct Summary {
     any_position: u32,
     no_suggestions: u32,
     only_wrong: u32,
+    false_accept: u32,  // Words incorrectly accepted as correct
     slowest_lookup: Time,
     fastest_lookup: Time,
     average_time: Time,
@@ -131,12 +133,13 @@ impl std::fmt::Display for Summary {
 
         write!(
             f,
-            "[#1] {} [^5] {} [any] {} [none] {} [wrong] {} [fast] {} [slow] {}",
+            "[#1] {} [^5] {} [any] {} [none] {} [wrong] {} [false+] {} [fast] {} [slow] {}",
             percent(self.first_position),
             percent(self.top_five),
             percent(self.any_position),
             percent(self.no_suggestions),
             percent(self.only_wrong),
+            percent(self.false_accept),
             self.fastest_lookup,
             self.slowest_lookup
         )
@@ -150,7 +153,9 @@ impl Summary {
         results.iter().for_each(|result| {
             summary.total_words += 1;
 
-            if let Some(position) = result.position {
+            if result.false_accept {
+                summary.false_accept += 1;
+            } else if let Some(position) = result.position {
                 summary.any_position += 1;
 
                 if position == 0 {
@@ -308,15 +313,26 @@ fn main() -> Result<(), Box<dyn Error>> {
         .progress_with(pb)
         .map(|(input, expected)| {
             let now = Instant::now();
-            let suggestions = archive.speller().suggest_with_config(&input, &cfg);
+            
+            // Check if the input is incorrectly accepted as correct
+            let is_accepted = archive.speller().is_correct(&input);
+            
+            let (suggestions, position, false_accept) = if is_accepted {
+                // Input was accepted - this is a false accept since all test words should be incorrect
+                (Vec::new(), None, true)
+            } else {
+                // Input was rejected - generate suggestions
+                let suggestions = archive.speller().suggest_with_config(&input, &cfg);
+                let position = suggestions.iter().position(|x| x.value == expected);
+                (suggestions, position, false)
+            };
+            
             let now = now.elapsed();
 
             let time = Time {
                 secs: now.as_secs(),
                 subsec_nanos: now.subsec_nanos(),
             };
-
-            let position = suggestions.iter().position(|x| x.value == expected);
 
             let distance = damerau_levenshtein(input, expected);
             AccuracyResult {
@@ -326,6 +342,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 time,
                 suggestions,
                 position,
+                false_accept,
             }
         })
         .collect::<Vec<_>>();
