@@ -132,6 +132,41 @@
 		return ((2 * p * r) / (p + r)).toFixed(2)
 	}
 
+	// Spell checker classification metrics (based on accept/reject behavior)
+	function classifierPrecision() {
+		const tp = report.summary.true_positive || 0
+		const fp = report.summary.false_accept || 0
+		if (tp + fp === 0) return "N/A"
+		return ((tp / (tp + fp)) * 100).toFixed(2)
+	}
+
+	function classifierRecall() {
+		const tp = report.summary.true_positive || 0
+		const fn = report.summary.false_negative || 0
+		if (tp + fn === 0) return "N/A"
+		return ((tp / (tp + fn)) * 100).toFixed(2)
+	}
+
+	function classifierAccuracy() {
+		const tp = report.summary.true_positive || 0
+		const tn = report.summary.true_negative || 0
+		const fp = report.summary.false_accept || 0
+		const fn = report.summary.false_negative || 0
+		const total = tp + tn + fp + fn
+		if (total === 0) return "N/A"
+		return (((tp + tn) / total) * 100).toFixed(2)
+	}
+
+	function classifierFScore() {
+		const p = classifierPrecision()
+		const r = classifierRecall()
+		if (p === "N/A" || r === "N/A") return "N/A"
+		const pNum = parseFloat(p)
+		const rNum = parseFloat(r)
+		if (pNum + rNum === 0) return "0.00"
+		return ((2 * pNum * rNum) / (pNum + rNum)).toFixed(2)
+	}
+
 	function humanTimeMillis(time) {
 		const ms = time.secs * 1000 + time.subsec_nanos / 1000000
 		return `${ms} ms`
@@ -430,28 +465,50 @@ h2 {
 	</div>
 	<div>
 		<h3>Spell Checker Classification</h3>
-		<table class="stats-table">
-			<tr>
-				<th>Total words</th>
-				<td>{report.results.length}</td>
-			</tr>
-			<tr>
-				<th>True positive<br><small>(correct accept)</small></th>
-				<td>{report.summary.true_positive || 0}</td>
-			</tr>
-			<tr>
-				<th>False negative<br><small>(incorrect reject)</small></th>
-				<td>{report.summary.false_negative || 0}</td>
-			</tr>
-			<tr>
-				<th>True negative<br><small>(correct reject)</small></th>
-				<td>{report.summary.true_negative || 0}</td>
-			</tr>
-			<tr>
-				<th>False positive<br><small>(incorrect accept)</small></th>
-				<td>{report.summary.false_accept || 0}</td>
-			</tr>
-		</table>
+		<div class="accuracy-stats-container">
+			<table class="stats-table">
+				<tr>
+					<th>Total words</th>
+					<td>{report.results.length}</td>
+				</tr>
+				<tr>
+					<th>True positive<br><small>(correct accept)</small></th>
+					<td>{report.summary.true_positive || 0}</td>
+				</tr>
+				<tr>
+					<th>False negative<br><small>(incorrect reject)</small></th>
+					<td>{report.summary.false_negative || 0}</td>
+				</tr>
+				<tr>
+					<th>True negative<br><small>(correct reject)</small></th>
+					<td>{report.summary.true_negative || 0}</td>
+				</tr>
+				<tr>
+					<th>False positive<br><small>(incorrect accept)</small></th>
+					<td>{report.summary.false_accept || 0}</td>
+				</tr>
+			</table>
+			<div class="metrics-box">
+				<ul>
+					<li>
+						<strong>Precision:</strong> {classifierPrecision()}%
+						<small>Of accepted words, how many should be accepted</small>
+					</li>
+					<li>
+						<strong>Recall:</strong> {classifierRecall()}%
+						<small>Of words that should be accepted, how many were accepted</small>
+					</li>
+					<li>
+						<strong>Accuracy:</strong> {classifierAccuracy()}%
+						<small>Correct classifications (TP+TN) out of all words</small>
+					</li>
+					<li>
+						<strong>F-score:</strong> {classifierFScore()}%
+						<small>Harmonic mean of precision and recall</small>
+					</li>
+				</ul>
+			</div>
+		</div>
 	</div>
 </div>
 
