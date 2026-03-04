@@ -200,6 +200,38 @@ npm i && npm run dev
 # Open http://localhost:5000
 ```
 
+If you are using a config file, use this variant of the first command above:
+
+```sh
+accuracy -c config.json -o support/accuracy-viewer/public/report.json typos.txt language.zhfst
+```
+
+The configuration used is always printed at the top of the web report, with default values printed if no configuration file is specified.
+
+#### `accuracy` with detailed weight information
+
+By adding `--verbose` to the command above, every suggestion will have all weight details listed, to help debug suggestion issues.
+The `accuracy` command will be something like this:
+
+```sh
+accuracy --verbose -c config.json -o support/accuracy-viewer/public/report.json typos.txt language.zhfst
+```
+
+The result in the web report looks like this:
+
+![Weight details](images/weight_details.png)
+
+The total weight for a suggestion is printed after each suggestion, as usual. In addition, a parenthesis is added with the following weight details:
+
+- **lex:** lexicon weight, includes both frequency weight and tag weights as specified in `tools/spellcheckers/weights/tags.reweight`
+- **mut:** mutator weight, ie the weight added by the error model
+- **rew:** position-based reweighting, separated by `/`:
+	- first position
+	- middle positions (all but first and last)
+	- last position
+
+The reweight weights are specified in the configuration, default weights (see above) will be used if not specified. At least one reweight will always be added, based on where the mutation from input to suggestion is done.
+
 ## Building from Source
 
 ### Install Rust
