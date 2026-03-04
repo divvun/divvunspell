@@ -56,7 +56,7 @@ static CFG: SpellerConfig = SpellerConfig {
 fn load_words(
     path: &str,
     max_words: Option<usize>,
-) -> Result<Vec<(String, String)>, Box<dyn Error>> {
+) -> Result<Vec<(String, Option<String>)>, Box<dyn Error>> {
     let mut rdr = csv::ReaderBuilder::new()
         .comment(Some(b'#'))
         .delimiter(b'\t')
@@ -68,8 +68,10 @@ fn load_words(
         .records()
         .filter_map(Result::ok)
         .filter_map(|r| {
-            r.get(0)
-                .and_then(|x| r.get(1).map(|y| (x.to_string(), y.to_string())))
+            r.get(0).map(|x| {
+                let expected = r.get(1).map(|y| y.to_string());
+                (x.to_string(), expected)
+            })
         })
         .take(max_words.unwrap_or(std::usize::MAX))
         .collect())
@@ -91,7 +93,7 @@ impl std::fmt::Display for Time {
 #[derive(Debug, Serialize)]
 struct AccuracyResult<'a> {
     input: &'a str,
-    expected: &'a str,
+    expected: Option<&'a str>,
     distance: usize,
     suggestions: Vec<Suggestion>,
     position: Option<usize>,
@@ -117,7 +119,11 @@ struct Summary {
     any_position: u32,
     no_suggestions: u32,
     only_wrong: u32,
-    false_accept: u32,  // Words incorrectly accepted as correct
+    false_accept: u32,  // Words incorrectly accepted as correct (false positive)
+    // Spell checker classification statistics
+    true_positive: u32,   // Should accept & accepted (words without corrections)
+    false_negative: u32,  // Should accept & rejected (words without corrections that got suggestions)
+    true_negative: u32,   // Should reject & rejected (words with corrections)
     slowest_lookup: Time,
     fastest_lookup: Time,
     average_time: Time,
@@ -153,22 +159,47 @@ impl Summary {
         results.iter().for_each(|result| {
             summary.total_words += 1;
 
-            if result.false_accept {
-                summary.false_accept += 1;
-            } else if let Some(position) = result.position {
-                summary.any_position += 1;
-
-                if position == 0 {
-                    summary.first_position += 1;
+            // Classify based on spell checker behavior
+            match result.expected {
+                None => {
+                    // Should accept (no correction expected)
+                    if result.suggestions.is_empty() && !result.false_accept {
+                        // Correctly accepted
+                        summary.true_positive += 1;
+                    } else {
+                        // Should accept but rejected (got suggestions)
+                        summary.false_negative += 1;
+                    }
                 }
-
-                if position < 5 {
-                    summary.top_five += 1;
+                Some(_) => {
+                    // Should reject (correction expected)
+                    if result.false_accept {
+                        // Incorrectly accepted (false positive)
+                        summary.false_accept += 1;
+                    } else {
+                        // Correctly rejected
+                        summary.true_negative += 1;
+                    }
                 }
-            } else if result.suggestions.is_empty() {
-                summary.no_suggestions += 1;
-            } else {
-                summary.only_wrong += 1;
+            }
+
+            // Count suggestion positions (only for words that should be rejected)
+            if result.expected.is_some() && !result.false_accept {
+                if let Some(position) = result.position {
+                    summary.any_position += 1;
+
+                    if position == 0 {
+                        summary.first_position += 1;
+                    }
+
+                    if position < 5 {
+                        summary.top_five += 1;
+                    }
+                } else if result.suggestions.is_empty() {
+                    summary.no_suggestions += 1;
+                } else {
+                    summary.only_wrong += 1;
+                }
             }
         });
 
@@ -314,17 +345,33 @@ fn main() -> Result<(), Box<dyn Error>> {
         .map(|(input, expected)| {
             let now = Instant::now();
             
-            // Check if the input is incorrectly accepted as correct
+            // Check if the input is accepted by the spell checker
             let is_accepted = archive.speller().is_correct(&input);
             
-            let (suggestions, position, false_accept) = if is_accepted {
-                // Input was accepted - this is a false accept since all test words should be incorrect
-                (Vec::new(), None, true)
-            } else {
-                // Input was rejected - generate suggestions
-                let suggestions = archive.speller().suggest_with_config(&input, &cfg);
-                let position = suggestions.iter().position(|x| x.value == expected);
-                (suggestions, position, false)
+            let (suggestions, position, false_accept) = match expected.as_ref() {
+                None => {
+                    // Word should be accepted (no correction expected)
+                    if is_accepted {
+                        // Correctly accepted
+                        (Vec::new(), None, false)
+                    } else {
+                        // Should accept but rejected - generate suggestions anyway
+                        let suggestions = archive.speller().suggest_with_config(&input, &cfg);
+                        (suggestions, None, false)
+                    }
+                }
+                Some(exp) => {
+                    // Word should be rejected (correction expected)
+                    if is_accepted {
+                        // Incorrectly accepted - false positive
+                        (Vec::new(), None, true)
+                    } else {
+                        // Correctly rejected - generate suggestions
+                        let suggestions = archive.speller().suggest_with_config(&input, &cfg);
+                        let position = suggestions.iter().position(|x| &x.value == exp);
+                        (suggestions, position, false)
+                    }
+                }
             };
             
             let now = now.elapsed();
@@ -334,10 +381,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                 subsec_nanos: now.subsec_nanos(),
             };
 
-            let distance = damerau_levenshtein(input, expected);
+            let distance = match expected.as_ref() {
+                Some(exp) => damerau_levenshtein(input, exp),
+                None => 0,
+            };
+            
             AccuracyResult {
                 input,
-                expected,
+                expected: expected.as_deref(),
                 distance,
                 time,
                 suggestions,
