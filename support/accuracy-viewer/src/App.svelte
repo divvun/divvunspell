@@ -345,7 +345,7 @@ strong {
 }
 .stats-table th, .stats-table td {
 	border: 1px solid #cecece;
-	padding: 0.3em 0.6em;
+	padding: 0.25em 0.4em;
 }
 .stats-table td {
 	text-align: right;
@@ -353,6 +353,8 @@ strong {
 .stats-table th {
 	text-align: left;
 	background-color: #f5f5f5;
+	max-width: 150px;
+	word-wrap: break-word;
 }
 button {
 	background-color: #4a90e2;
@@ -393,7 +395,7 @@ h2 {
 }
 .accuracy-stats-container {
 	display: flex;
-	gap: 2em;
+	gap: 1em;
 	align-items: flex-start;
 }
 .accuracy-stats-container > * {
@@ -409,7 +411,7 @@ h2 {
 }
 .metrics-box li strong {
 	display: inline-block;
-	min-width: 8em;
+	min-width: 6em;
 	font-size: 1.05em;
 }
 .metrics-box li small {
