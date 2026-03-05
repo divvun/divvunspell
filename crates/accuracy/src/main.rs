@@ -119,11 +119,11 @@ struct Summary {
     any_position: u32,
     no_suggestions: u32,
     only_wrong: u32,
-    false_accept: u32,  // Words incorrectly accepted as correct (false positive)
+    false_accept: u32,  // False Positive: Correct words incorrectly flagged as errors
     // Spell checker classification statistics
-    true_positive: u32,   // Should accept & accepted (words without corrections)
-    false_negative: u32,  // Should accept & rejected (words without corrections that got suggestions)
-    true_negative: u32,   // Should reject & rejected (words with corrections)
+    true_positive: u32,   // Error words correctly flagged as errors
+    false_negative: u32,  // Error words incorrectly accepted as correct
+    true_negative: u32,   // Correct words correctly accepted as correct
     slowest_lookup: Time,
     fastest_lookup: Time,
     average_time: Time,
@@ -162,23 +162,23 @@ impl Summary {
             // Classify based on spell checker behavior
             match result.expected {
                 None => {
-                    // Should accept (no correction expected)
+                    // Correct word (no correction expected)
                     if result.suggestions.is_empty() && !result.false_accept {
-                        // Correctly accepted
-                        summary.true_positive += 1;
+                        // Correctly accepted as correct
+                        summary.true_negative += 1;
                     } else {
-                        // Should accept but rejected (got suggestions)
-                        summary.false_negative += 1;
+                        // Incorrectly flagged as error
+                        summary.false_accept += 1;
                     }
                 }
                 Some(_) => {
-                    // Should reject (correction expected)
+                    // Error word (correction expected)
                     if result.false_accept {
-                        // Incorrectly accepted (false positive)
-                        summary.false_accept += 1;
+                        // Incorrectly accepted as correct
+                        summary.false_negative += 1;
                     } else {
-                        // Correctly rejected
-                        summary.true_negative += 1;
+                        // Correctly flagged as error
+                        summary.true_positive += 1;
                     }
                 }
             }
