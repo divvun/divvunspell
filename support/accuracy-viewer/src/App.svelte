@@ -355,9 +355,14 @@
 
 .table td, .table th {
   border: 1px solid #cecece;
-	padding: 0.5em 1em;
+	padding: 0.3em 0.6em;
 	vertical-align: top;
 }
+
+.table p {
+	margin: 0.3em 0;
+}
+
 strong {
 	font-weight: 600;
 }
