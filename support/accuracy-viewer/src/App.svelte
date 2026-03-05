@@ -538,24 +538,29 @@ h2 {
 		<div class="accuracy-stats-container">
 			<table class="stats-table">
 				<tr>
+					<th>True positive<br><small>(correctly flagged)</small></th>
+					<td>{report.summary.true_positive || 0}</td>
+					<td>{((report.summary.true_positive || 0) / report.results.length * 100).toFixed(1)}%</td>
+				</tr>
+				<tr>
+					<th>False negative<br><small>(incorrectly accepted)</small></th>
+					<td>{report.summary.false_negative || 0}</td>
+					<td>{((report.summary.false_negative || 0) / report.results.length * 100).toFixed(1)}%</td>
+				</tr>
+				<tr>
+					<th>True negative<br><small>(correctly accepted)</small></th>
+					<td>{report.summary.true_negative || 0}</td>
+					<td>{((report.summary.true_negative || 0) / report.results.length * 100).toFixed(1)}%</td>
+				</tr>
+				<tr>
+					<th>False positive<br><small>(incorrectly flagged)</small></th>
+					<td>{report.summary.false_accept || 0}</td>
+					<td>{((report.summary.false_accept || 0) / report.results.length * 100).toFixed(1)}%</td>
+				</tr>
+				<tr>
 					<th>Total words</th>
 					<td>{report.results.length}</td>
-				</tr>
-				<tr>
-					<th>True positive<br><small>(correct accept)</small></th>
-					<td>{report.summary.true_positive || 0}</td>
-				</tr>
-				<tr>
-					<th>False negative<br><small>(incorrect reject)</small></th>
-					<td>{report.summary.false_negative || 0}</td>
-				</tr>
-				<tr>
-					<th>True negative<br><small>(correct reject)</small></th>
-					<td>{report.summary.true_negative || 0}</td>
-				</tr>
-				<tr>
-					<th>False positive<br><small>(incorrect accept)</small></th>
-					<td>{report.summary.false_accept || 0}</td>
+					<td>100%</td>
 				</tr>
 			</table>
 			<div class="metrics-box">
