@@ -368,9 +368,15 @@ strong {
 }
 
 .table ol {
-	margin: 0;
+	margin: 0.6em 0 0 0;
 	padding-left: 1.2em;
 }
+
+.table td > em {
+	display: block;
+	margin-top: 0.6em;
+}
+
 .table ol li {
 	margin-top: 0.2em;
 	margin-bottom: 0.2em;
@@ -809,7 +815,7 @@ Loading
 			{/each}
 			</ol>
 		{:else if getClassificationType(result) !== 'TN'}
-			No suggestions
+			<em>No suggestions</em>
 		{/if}
 		</td>
 	</tr>
