@@ -213,30 +213,60 @@
 		return "word"
 	}
 
-	function resultClass(result) {
-		if (result.false_accept) {
-			return "indicator-false-accept"
-		}
-		switch (result.position) {
-		case null: {
-			if (result.suggestions.length === 0) {
-				return "indicator-no-suggestions"
+	function getClassificationType(result) {
+		const isPair = result.expected !== null;  // Is this a test pair (error word)?
+		const spellcheckerSaysIncorrect = result.suggestions.length > 0 && !result.false_accept;
+		
+		if (isPair) {
+			// Input is an error word (expected has a correction)
+			if (spellcheckerSaysIncorrect) {
+				return 'TP'; // True Positive: error word classified as incorrect
+			} else {
+				return 'FN'; // False Negative: error word classified as correct
 			}
-			return "indicator-only-wrong"
+		} else {
+			// Input is a correct word (expected is null)
+			if (spellcheckerSaysIncorrect) {
+				return 'FP'; // False Positive: correct word classified as incorrect
+			} else {
+				return 'TN'; // True Negative: correct word classified as correct
+			}
 		}
-		case 0:
-		  return "indicator-first"
-		case 1:
-		  return "indicator-second"
-		case 2:
-		  return "indicator-third"
-		case 3:
-		  return "indicator-fourth"
-		case 4:
-		  return "indicator-fifth"
-		default:
-		  return "indicator-after-fifth"
+	}
+	
+	function getClassificationLabel(result) {
+		const type = getClassificationType(result);
+		switch(type) {
+			case 'TP': return 'True positive';
+			case 'FN': return 'False negative';
+			case 'TN': return 'True negative';
+			case 'FP': return 'False positive';
+			default: return '';
 		}
+	}
+
+	function resultClass(result) {
+		const classType = getClassificationType(result);
+		
+		if (classType === 'TP') {
+			// True Positive: error word correctly classified as error
+			// Show different shades based on whether correction was found
+			if (result.position === 0) {
+				return "indicator-tp-first"; // Correction in first position
+			} else if (result.position !== null) {
+				return "indicator-tp-found"; // Correction found elsewhere
+			} else {
+				return "indicator-true-positive"; // Classified correctly, correction not in suggestions
+			}
+		} else if (classType === 'FN') {
+			return "indicator-false-negative"; // Error word incorrectly classified as correct (false accept)
+		} else if (classType === 'TN') {
+			return "indicator-true-negative"; // Correct word correctly classified as correct
+		} else if (classType === 'FP') {
+			return "indicator-false-positive"; // Correct word incorrectly classified as error
+		}
+		
+		return "indicator-default";
 	}
 
 	function fetchReport() {
@@ -297,11 +327,49 @@ strong {
 	color: #666;
 	font-size: 0.9em;
 }
+/* Classification-based indicators */
+.indicator-true-positive {
+	background-color: #ff02;  /* Light orange - TP but correction not in suggestions */
+}
+.indicator-tp-first {
+	background-color: #0f04;  /* Light green - TP with correction in first position */
+}
+.indicator-tp-found {
+	background-color: #6f03;  /* Light olive - TP with correction found elsewhere */
+}
+.indicator-false-negative {
+	background-color: #f006;  /* Strong red - error word incorrectly classified as correct */
+}
+.indicator-true-negative {
+	background-color: #0f06;  /* Strong green - correct word correctly classified */
+}
+.indicator-false-positive {
+	background-color: #f006;  /* Strong red - correct word incorrectly classified as error */
+}
+.indicator-default {
+	background-color: #ccc3;  /* Gray - fallback */
+}
+/* Old indicators for backward compatibility */
 .indicator-only-wrong {
 	background-color: #f001;
 }
 .indicator-false-accept {
 	background-color: #f601;
+}
+.indicator-true-negative {
+	background-color: #0f03;
+}
+.indicator-tn-first {
+	background-color: #0f04;
+}
+.indicator-tn-found {
+	background-color: #6f02;
+}
+.indicator-tn-not-found {
+	background-color: #ff02;
+}
+.indicator-tn-no-sugg {
+	background-color: #ccc3;
 }
 .indicator-first {
 	background-color: #0f02;
@@ -617,20 +685,29 @@ Loading
 			</p>
 			<p>
 				<strong>Result:</strong>
-			{#if result.position === null}
-				Not in suggestions
-			{:else if result.position === 0}
-				Top suggestion
-			{:else}
-				Suggestion {result.position + 1}
+				<span class="classification-label" style="font-weight: bold; color: {getClassificationType(result) === 'FP' || getClassificationType(result) === 'FN' ? '#d00' : '#080'};">
+					{getClassificationLabel(result)}
+				</span>
+			{#if getClassificationType(result) === 'TP'}
+				{#if result.position === null}
+					<br><small>Not in suggestions</small>
+				{:else if result.position === 0}
+					<br><small>Top suggestion</small>
+				{:else}
+					<br><small>Suggestion {result.position + 1}</small>
+				{/if}
 			{/if}
 			</p>
+			{#if getClassificationType(result) === 'TP' || getClassificationType(result) === 'FN'}
 			<p>
 				<strong>Edit distance:</strong> {result.distance}
 			</p>
+			{/if}
+			{#if getClassificationType(result) === 'TP'}
 			<p>
 			<strong>Time:</strong> {humanTimeMillis(result.time)}
 			</p>
+			{/if}
 		</td>
 		<td>
 		{#if result.false_accept}
@@ -655,7 +732,7 @@ Loading
 				</li>
 			{/each}
 			</ol>
-		{:else}
+		{:else if getClassificationType(result) !== 'TN'}
 			No suggestions
 		{/if}
 		</td>
