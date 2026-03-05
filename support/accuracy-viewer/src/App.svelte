@@ -85,44 +85,96 @@
 		return v.toFixed(2)
 	}
 
+	// Get only True Positive words (error words classified as incorrect)
+	function getTruePositives() {
+		return report.results.filter(r => {
+			const isPair = r.expected !== null;
+			if (isPair) {
+				// Error word: TP if not false_accept (false_accept must be explicitly true)
+				return r.false_accept !== true;
+			}
+			// Correct word: never TP
+			return false;
+		});
+	}
+
 	function firstPosition() {
-		return asPercentage(report.results.filter(r => r.position === 0).length)
+		const tpWords = getTruePositives();
+		if (tpWords.length === 0) return "0.00";
+		const count = tpWords.filter(r => r.position === 0).length;
+		return ((count / tpWords.length) * 100).toFixed(2);
 	}
 
 	function topFive() {
-		return asPercentage(report.results.filter(r => r.position !== null && r.position < 5).length)
+		const tpWords = getTruePositives();
+		if (tpWords.length === 0) return "0.00";
+		const count = tpWords.filter(r => r.position !== null && r.position < 5).length;
+		return ((count / tpWords.length) * 100).toFixed(2);
 	}
 
 	function anywhere() {
-		return asPercentage(report.results.filter(r => r.position !== null).length)
+		const tpWords = getTruePositives();
+		if (tpWords.length === 0) return "0.00";
+		const count = tpWords.filter(r => r.position !== null).length;
+		return ((count / tpWords.length) * 100).toFixed(2);
 	}
 
 	function noSuggestions() {
-		return asPercentage(report.results.filter(r => r.suggestions.length === 0).length)
+		const tpWords = getTruePositives();
+		if (tpWords.length === 0) return "0.00";
+		const count = tpWords.filter(r => r.suggestions.length === 0).length;
+		return ((count / tpWords.length) * 100).toFixed(2);
 	}
 
 	function onlyWrong() {
-		return asPercentage(report.results.filter(r => r.position === null && r.suggestions.length > 0).length)
+		const tpWords = getTruePositives();
+		if (tpWords.length === 0) return "0.00";
+		const count = tpWords.filter(r => r.position === null && r.suggestions.length > 0).length;
+		return ((count / tpWords.length) * 100).toFixed(2);
+	}
+
+	function firstPositionCount() {
+		return getTruePositives().filter(r => r.position === 0).length;
+	}
+
+	function topFiveCount() {
+		return getTruePositives().filter(r => r.position !== null && r.position < 5).length;
+	}
+
+	function anywhereCount() {
+		return getTruePositives().filter(r => r.position !== null).length;
+	}
+
+	function noSuggestionsCount() {
+		return getTruePositives().filter(r => r.suggestions.length === 0).length;
+	}
+
+	function onlyWrongCount() {
+		return getTruePositives().filter(r => r.position === null && r.suggestions.length > 0).length;
 	}
 
 	function precision() {
-		const anywhereCount = report.results.filter(r => r.position !== null).length
-		const withSuggestions = report.results.filter(r => r.suggestions.length > 0).length
+		const tpWords = getTruePositives();
+		const anywhereCount = tpWords.filter(r => r.position !== null).length;
+		const withSuggestions = tpWords.filter(r => r.suggestions.length > 0).length;
 		if (withSuggestions === 0) return "0.00"
 		return ((anywhereCount / withSuggestions) * 100).toFixed(2)
 	}
 
 	function recall() {
-		const anywhereCount = report.results.filter(r => r.position !== null).length
-		return ((anywhereCount / report.results.length) * 100).toFixed(2)
+		const tpWords = getTruePositives();
+		if (tpWords.length === 0) return "0.00";
+		const anywhereCount = tpWords.filter(r => r.position !== null).length;
+		return ((anywhereCount / tpWords.length) * 100).toFixed(2);
 	}
 
 	function accuracy() {
 		// Accuracy: correct suggestions / total suggestions (including all wrong ones)
-		const correctCount = report.results.filter(r => r.position !== null).length
-		const totalSuggestions = report.results.reduce((sum, r) => sum + r.suggestions.length, 0)
-		if (totalSuggestions === 0) return "0.00"
-		return ((correctCount / totalSuggestions) * 100).toFixed(2)
+		const tpWords = getTruePositives();
+		const correctCount = tpWords.filter(r => r.position !== null).length;
+		const totalSuggestions = tpWords.reduce((sum, r) => sum + r.suggestions.length, 0);
+		if (totalSuggestions === 0) return "0.00";
+		return ((correctCount / totalSuggestions) * 100).toFixed(2);
 	}
 
 	function fScore() {
@@ -215,21 +267,22 @@
 
 	function getClassificationType(result) {
 		const isPair = result.expected !== null;  // Is this a test pair (error word)?
-		const spellcheckerSaysIncorrect = result.suggestions.length > 0 && !result.false_accept;
 		
 		if (isPair) {
 			// Input is an error word (expected has a correction)
-			if (spellcheckerSaysIncorrect) {
-				return 'TP'; // True Positive: error word classified as incorrect
+			// For error words, false_accept determines if spellchecker accepts or flags it
+			if (!result.false_accept) {
+				return 'TP'; // True Positive: error word flagged as incorrect
 			} else {
-				return 'FN'; // False Negative: error word classified as correct
+				return 'FN'; // False Negative: error word incorrectly accepted
 			}
 		} else {
 			// Input is a correct word (expected is null)
-			if (spellcheckerSaysIncorrect) {
-				return 'FP'; // False Positive: correct word classified as incorrect
+			// For correct words, presence of suggestions determines classification
+			if (result.suggestions.length > 0) {
+				return 'FP'; // False Positive: correct word incorrectly flagged
 			} else {
-				return 'TN'; // True Negative: correct word classified as correct
+				return 'TN'; // True Negative: correct word correctly accepted
 			}
 		}
 	}
@@ -588,25 +641,36 @@ h2 {
 </div>
 
 <h2>Suggestion Statistics</h2>
+<p><em>This statistics applies only to true positive words ({report.summary.true_positive || 0} words).</em></p>
 <div class="accuracy-stats-container">
 	<div>
-		<ul>
-		<li>
-			% in 1st position: {firstPosition()}%
-		</li>
-		<li>
-			% in top 5: {topFive()}%
-		</li>
-		<li>
-			% anywhere: {anywhere()}%
-		</li>
-		<li>
-			% no suggestions: {noSuggestions()}%
-		</li>
-		<li>
-			% only wrong: {onlyWrong()}%
-		</li>
-		</ul>
+		<table class="stats-table">
+			<tr>
+				<th>In 1st position</th>
+				<td>{firstPositionCount()}</td>
+				<td>{firstPosition()}%</td>
+			</tr>
+			<tr>
+				<th>In top 5</th>
+				<td>{topFiveCount()}</td>
+				<td>{topFive()}%</td>
+			</tr>
+			<tr>
+				<th>Anywhere</th>
+				<td>{anywhereCount()}</td>
+				<td>{anywhere()}%</td>
+			</tr>
+			<tr>
+				<th>No suggestions</th>
+				<td>{noSuggestionsCount()}</td>
+				<td>{noSuggestions()}%</td>
+			</tr>
+			<tr>
+				<th>Only wrong</th>
+				<td>{onlyWrongCount()}</td>
+				<td>{onlyWrong()}%</td>
+			</tr>
+		</table>
 		
 		<ul>
 		{#if report.summary && report.summary.average_position_of_correct !== undefined}
