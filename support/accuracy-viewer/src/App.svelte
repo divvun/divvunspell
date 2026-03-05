@@ -749,8 +749,10 @@ Loading
 		<td class="right">
 			<p>
 				<a href="#{result.input}" class="word">{result.input}</a>
-				&rarr;
-				<span class="word">{result.expected}</span>
+				{#if result.expected !== null}
+					&rarr;
+					<span class="word">{result.expected}</span>
+				{/if}
 			</p>
 			<p>
 				<strong>Result:</strong>
