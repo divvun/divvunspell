@@ -204,24 +204,16 @@ impl Summary {
         };
 
         // Calculate average position and average suggestions for correct results only
-        let correct_results: Vec<_> = results
-            .iter()
-            .filter(|r| r.position.is_some())
-            .collect();
-        
+        let correct_results: Vec<_> = results.iter().filter(|r| r.position.is_some()).collect();
+
         if !correct_results.is_empty() {
-            let total_position: usize = correct_results
-                .iter()
-                .map(|r| r.position.unwrap())
-                .sum();
-            summary.average_position_of_correct = 
+            let total_position: usize = correct_results.iter().map(|r| r.position.unwrap()).sum();
+            summary.average_position_of_correct =
                 total_position as f32 / correct_results.len() as f32;
-            
-            let total_suggestions: usize = correct_results
-                .iter()
-                .map(|r| r.suggestions.len())
-                .sum();
-            summary.average_suggestions_for_correct = 
+
+            let total_suggestions: usize =
+                correct_results.iter().map(|r| r.suggestions.len()).sum();
+            summary.average_suggestions_for_correct =
                 total_suggestions as f32 / correct_results.len() as f32;
         }
 
