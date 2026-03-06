@@ -699,7 +699,10 @@ where
         
         if self.config.verbose {
             // When verbose, analyze each unique suggestion to get lexicon weight
-            // Using thread-local cache to avoid analyzing the same word across multiple inputs
+            // Clear cache at start to ensure correctness across different speller instances
+            LEXICON_WEIGHT_CACHE.with(|cache| {
+                cache.borrow_mut().clear();
+            });
             
             LEXICON_WEIGHT_CACHE.with(|cache| {
                 let mut cache_mut = cache.borrow_mut();

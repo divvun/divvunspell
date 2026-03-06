@@ -555,7 +555,7 @@ Loading
 							<span class="weight-details">
 								(lex: {suggestion.weight_details.lexicon_weight.toFixed(5)}, 
 								mut: {suggestion.weight_details.mutator_weight.toFixed(5)}, 
-								rew: {suggestion.weight_details.reweight_start.toFixed(0)}/{suggestion.weight_details.reweight_mid.toFixed(0)}/{suggestion.weight_details.reweight_end.toFixed(0)})
+								rew: {suggestion.weight_details.reweight_start.toFixed(0)}/{suggestion.weight_details.reweight_mid < 0 ? '-' : suggestion.weight_details.reweight_mid.toFixed(0)}/{suggestion.weight_details.reweight_end.toFixed(0)})
 							</span>
 						{/if}
 					</small>
