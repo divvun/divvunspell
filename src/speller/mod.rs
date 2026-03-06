@@ -985,6 +985,7 @@ pub(crate) mod ffi {
                 node_pool_size: config.node_pool_size,
                 recase: true,
                 completion_marker: None,
+                verbose: false,
             };
 
             Ok(out)
