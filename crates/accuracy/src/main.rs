@@ -345,8 +345,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         .map(|(input, expected)| {
             let now = Instant::now();
             
-            // Check if the input is accepted by the spell checker
-            let is_accepted = archive.speller().is_correct(&input);
+            // Check if the input is accepted by the spell checker (using same config as suggestions)
+            let is_accepted = archive.speller().is_correct_with_config(&input, &cfg);
             
             let (suggestions, position, false_accept) = match expected.as_ref() {
                 None => {
@@ -355,15 +355,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                         // Correctly accepted
                         (Vec::new(), None, false)
                     } else {
-                        // Should accept but rejected - generate suggestions anyway
+                        // Incorrectly rejected (false positive) - generate suggestions anyway
                         let suggestions = archive.speller().suggest_with_config(&input, &cfg);
-                        (suggestions, None, false)
+                        (suggestions, None, true)
                     }
                 }
                 Some(exp) => {
                     // Word should be rejected (correction expected)
                     if is_accepted {
-                        // Incorrectly accepted - false positive
+                        // Incorrectly accepted misspelling - false negative (missed error)
                         (Vec::new(), None, true)
                     } else {
                         // Correctly rejected - generate suggestions
