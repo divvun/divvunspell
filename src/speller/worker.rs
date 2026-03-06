@@ -571,7 +571,7 @@ where
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
         let mut corrections = HashMap::new();
         let mut suggestions: Vec<Suggestion> = vec![];
-        let mut best_weight = self.config.max_weight.unwrap_or(Weight::MAX);
+        let mut best_weight = Weight::MAX;
         let key_table = self.speller.mutator().alphabet().key_table();
 
         let mut iteration_count = 0usize;
@@ -647,6 +647,7 @@ where
 
             suggestions = self.generate_sorted_suggestions(&corrections);
         }
+
         suggestions
     }
 
