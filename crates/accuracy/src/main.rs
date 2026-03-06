@@ -163,12 +163,12 @@ impl Summary {
             match result.expected {
                 None => {
                     // Correct word (no correction expected)
-                    if result.suggestions.is_empty() && !result.false_accept {
-                        // Correctly accepted as correct
-                        summary.true_negative += 1;
-                    } else {
+                    if result.false_accept {
                         // Incorrectly flagged as error
                         summary.false_accept += 1;
+                    } else {
+                        // Correctly accepted as correct
+                        summary.true_negative += 1;
                     }
                 }
                 Some(_) => {
