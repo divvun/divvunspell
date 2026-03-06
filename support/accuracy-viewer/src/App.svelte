@@ -793,7 +793,7 @@ Loading
 			{/if}
 		</td>
 		<td>
-		{#if result.false_accept}
+		{#if result.false_accept && getClassificationType(result) === 'FN'}
 			<em>Incorrectly accepted as correct</em>
 		{:else if result.suggestions.length > 0}
 			<ol>
