@@ -647,15 +647,7 @@ where
 
             suggestions = self.generate_sorted_suggestions(&corrections);
         }
-        
-        // Apply beam filtering: remove suggestions that are more than beam away from best
-        if let Some(beam) = self.config.beam {
-            if let Some(best) = suggestions.first() {
-                let beam_threshold = best.weight() + beam;
-                suggestions.retain(|s| s.weight() <= beam_threshold);
-            }
-        }
-        
+
         suggestions
     }
 
