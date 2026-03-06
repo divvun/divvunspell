@@ -20,10 +20,7 @@ mod worker;
 
 /// Temporary struct to store weight details during suggestion generation
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 struct SuggestionData {
-    weight: Weight,
-    base_weight: Weight,
     lexicon_weight: Weight,
     mutator_weight: Weight,
     reweight_start: f32,
@@ -549,7 +546,8 @@ where
                     for mut sugg in suggestions.into_iter() {
                         tracing::trace!("for {}", sugg.value);
                         
-                        // Apply case mutation AFTER calculating penalties
+                        // Apply case mutation to output value
+                        // (penalty calculation below uses case-insensitive comparison)
                         match mutation {
                             CaseMutation::FirstCaps => {
                                 sugg.value = upper_first(sugg.value());
@@ -748,8 +746,6 @@ where
                                         (Weight(0.0), Weight(0.0))
                                     };
                                     suggestion_data.insert(sugg.value.clone(), SuggestionData {
-                                        weight,
-                                        base_weight: sugg.weight,
                                         lexicon_weight: lex_w,
                                         mutator_weight: mut_w,
                                         reweight_start: penalty_start,
@@ -766,8 +762,6 @@ where
                                     (Weight(0.0), Weight(0.0))
                                 };
                                 suggestion_data.insert(sugg.value.clone(), SuggestionData {
-                                    weight,
-                                    base_weight: sugg.weight,
                                     lexicon_weight: lex_w,
                                     mutator_weight: mut_w,
                                     reweight_start: penalty_start,
