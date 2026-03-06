@@ -219,6 +219,10 @@
 		return ((2 * pNum * rNum) / (pNum + rNum)).toFixed(2)
 	}
 
+	function formatMetric(value) {
+		return value === "N/A" ? value : value + "%"
+	}
+
 	function humanTimeMillis(time) {
 		const ms = time.secs * 1000 + time.subsec_nanos / 1000000
 		return `${ms} ms`
@@ -278,8 +282,8 @@
 			}
 		} else {
 			// Input is a correct word (expected is null)
-			// For correct words, presence of suggestions determines classification
-			if (result.suggestions.length > 0) {
+			// Use false_accept flag to determine classification
+			if (result.false_accept) {
 				return 'FP'; // False Positive: correct word incorrectly flagged
 			} else {
 				return 'TN'; // True Negative: correct word correctly accepted
@@ -419,9 +423,6 @@ strong {
 }
 .indicator-false-accept {
 	background-color: #f601;
-}
-.indicator-true-negative {
-	background-color: #0f03;
 }
 .indicator-tn-first {
 	background-color: #0f04;
@@ -630,19 +631,19 @@ h2 {
 			<div class="metrics-box">
 				<ul>
 					<li>
-						<strong>Precision:</strong> {classifierPrecision()}%
-						<small>Of accepted words, how many should be accepted</small>
+						<strong>Precision:</strong> {formatMetric(classifierPrecision())}
+						<small>Of words flagged as incorrect, how many are actually incorrect</small>
 					</li>
 					<li>
-						<strong>Recall:</strong> {classifierRecall()}%
-						<small>Of words that should be accepted, how many were accepted</small>
+						<strong>Recall:</strong> {formatMetric(classifierRecall())}
+						<small>Of words that are actually incorrect, how many were flagged as incorrect</small>
 					</li>
 					<li>
-						<strong>Accuracy:</strong> {classifierAccuracy()}%
+						<strong>Accuracy:</strong> {formatMetric(classifierAccuracy())}
 						<small>Correct classifications (TP+TN) out of all words</small>
 					</li>
 					<li>
-						<strong>F-score:</strong> {classifierFScore()}%
+						<strong>F-score:</strong> {formatMetric(classifierFScore())}
 						<small>Harmonic mean of precision and recall</small>
 					</li>
 				</ul>
