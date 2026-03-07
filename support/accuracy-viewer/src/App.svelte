@@ -80,6 +80,26 @@
 		sortMode = null
 	}
 
+	function sortByClassification() {
+		const classificationOrder = { 'TP': 0, 'TN': 1, 'FP': 2, 'FN': 3 };
+		
+		const sorter = (a, b) => {
+			const aType = getClassificationType(a);
+			const bType = getClassificationType(b);
+			return classificationOrder[aType] - classificationOrder[bType];
+		}
+
+		if (sortMode === "classification:asc") {
+			results.reverse()
+			sortMode = "classification:desc"
+		} else {
+			results.sort(sorter)
+			sortMode = "classification:asc"
+		}
+		
+		results = results
+	}
+
 	function asPercentage(input) {
 		const v = input / report.results.length * 100
 		return v.toFixed(2)
@@ -740,6 +760,10 @@ Loading
 <p>Sorted by edit distance, ascending (smallest first)</p>
 {:else if sortMode === "distance:desc"}
 <p>Sorted by edit distance, descending (largest first)</p>
+{:else if sortMode === "classification:asc"}
+<p>Sorted by classification (TP → TN → FP → FN)</p>
+{:else if sortMode === "classification:desc"}
+<p>Sorted by classification (FN → FP → TN → TP)</p>
 {:else}
 <p>Sorted in some unknown way (this is a bug)</p>
 {/if}
@@ -748,6 +772,7 @@ Loading
 <button on:click={sortByTime}>Sort by Time</button>
 <button on:click={sortByPosition}>Sort by Position</button>
 <button on:click={sortByDistance}>Sort by Edit Distance</button>
+<button on:click={sortByClassification}>Sort by Classification</button>
 <table class="table">
 	<thead>
 		<tr>
