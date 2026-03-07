@@ -13,17 +13,24 @@
 	<script>
 		// Apply theme immediately before page renders to avoid flash
 		(function() {
-			const savedTheme = localStorage.getItem('theme') || 'auto';
-			let themeToApply;
-			
-			if (savedTheme === 'auto') {
-				const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-				themeToApply = prefersDark ? 'dark' : 'light';
-			} else {
-				themeToApply = savedTheme;
+			try {
+				const savedTheme = localStorage.getItem('theme');
+				const allowedThemes = ['light', 'dark', 'auto'];
+				const validTheme = allowedThemes.includes(savedTheme) ? savedTheme : 'auto';
+				let themeToApply;
+				
+				if (validTheme === 'auto') {
+					const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+					themeToApply = prefersDark ? 'dark' : 'light';
+				} else {
+					themeToApply = validTheme;
+				}
+				
+				document.documentElement.setAttribute('data-theme', themeToApply);
+			} catch (e) {
+				// If localStorage is blocked or throws, default to light theme
+				document.documentElement.setAttribute('data-theme', 'light');
 			}
-			
-			document.documentElement.setAttribute('data-theme', themeToApply);
 		})();
 	</script>
 
