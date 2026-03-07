@@ -1,9 +1,63 @@
 <script>
+	import { onMount } from 'svelte';
+	
 	let report = null
 	let results = null
 	let originalResults = null
 	let sortMode = null
+	let theme = 'auto'; // 'light', 'dark', or 'auto'
+	
 	$: totalRuntime = calculateTotalRuntime(report)
+	$: themeIcon = theme === 'light' ? '☀️' : theme === 'dark' ? '🌙' : '💻'
+	$: themeLabel = theme === 'light' ? 'Light' : theme === 'dark' ? 'Dark' : 'Auto'
+	
+	// Theme management
+	onMount(() => {
+		// Load theme preference from localStorage with validation
+		const savedTheme = localStorage.getItem('theme');
+		const allowedThemes = ['light', 'dark', 'auto'];
+		const initialTheme = allowedThemes.includes(savedTheme) ? savedTheme : 'auto';
+		theme = initialTheme;
+		// Sync with the theme that was already applied by inline script in index.html
+		applyTheme(initialTheme);
+		
+		// Listen for system theme changes
+		const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+		const handleChange = (e) => {
+			if (theme === 'auto') {
+				applyTheme('auto');
+			}
+		};
+		mediaQuery.addEventListener('change', handleChange);
+
+		// Cleanup: remove event listener when component unmounts
+		return () => {
+			mediaQuery.removeEventListener('change', handleChange);
+		};
+	});
+	
+	function cycleTheme() {
+		const themes = ['light', 'dark', 'auto'];
+		const currentIndex = themes.indexOf(theme);
+		theme = themes[(currentIndex + 1) % themes.length];
+		try {
+			localStorage.setItem('theme', theme);
+		} catch (e) {
+			// Ignore storage errors; still apply the theme so the toggle continues to work
+		}
+		applyTheme(theme);
+	}
+	
+	function applyTheme(newTheme) {
+		const root = document.documentElement;
+		
+		if (newTheme === 'auto') {
+			const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+			root.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+		} else {
+			root.setAttribute('data-theme', newTheme);
+		}
+	}
 
 	function sortByTime() {
 		const sorter = (a, b) => {
@@ -525,16 +579,23 @@ button:hover {
 h1 {
 	margin-top: 1em;
 	font-size: 2em;
-	color: #333;
+	color: var(--text-color);
 }
 h2 {
 	margin-top: 1.5em;
 	font-size: 1.3em;
-	color: #555;
+	color: var(--text-secondary);
+}
+.loading {
+	margin-top: 2em;
+	font-size: 1.5em;
+	color: var(--text-color);
+	text-align: center;
+	padding: 2em;
 }
 .config-block {
-	background-color: #f5f5f5;
-	border: 1px solid #ddd;
+	background-color: var(--bg-subtle);
+	border: 1px solid var(--border-light);
 	border-radius: 4px;
 	padding: 0.7em;
 	margin: 1em 0;
@@ -576,7 +637,122 @@ h2 {
 	opacity: 1;
 }
 
+/* Theme toggle button */
+.theme-toggle {
+	position: fixed;
+	top: 1em;
+	right: 1em;
+	z-index: 1000;
+	background-color: #4a90e2;
+	color: white;
+	border: none;
+	padding: 0.6em 1em;
+	border-radius: 4px;
+	cursor: pointer;
+	font-size: 0.9em;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+}
+
+.theme-toggle:hover {
+	background-color: #357abd;
+}
+
+/* Dark mode styles */
+:global(:root) {
+	--bg-color: white;
+	--text-color: #333;
+	--text-secondary: #555;
+	--text-muted: #666;
+	--border-color: #cecece;
+	--border-light: #ddd;
+	--bg-subtle: #f5f5f5;
+	--bg-word: #fffa;
+	--bg-word-correct: #0f04;
+	--border-word-correct: #4d4;
+	--table-header-bg: #f5f5f5;
+	background-color: var(--bg-color);
+	color: var(--text-color);
+}
+
+:global([data-theme="dark"]) {
+	--bg-color: #1a1a1a;
+	--text-color: #e0e0e0;
+	--text-secondary: #b0b0b0;
+	--text-muted: #888;
+	--border-color: #444;
+	--border-light: #333;
+	--bg-subtle: #2a2a2a;
+	--bg-word: #3a3a3a;
+	--bg-word-correct: #0f06;
+	--border-word-correct: #4d4;
+	--table-header-bg: #2a2a2a;
+	background-color: var(--bg-color);
+	color: var(--text-color);
+}
+
+:global(body) {
+	background-color: var(--bg-color);
+	color: var(--text-color);
+	transition: background-color 0.3s ease, color 0.3s ease;
+	margin: 0;
+	padding: 0;
+}
+
+.table td, .table th {
+	border: 1px solid var(--border-color);
+}
+
+.stats-table th, .stats-table td {
+	border: 1px solid var(--border-color);
+}
+
+.stats-table th {
+	background-color: var(--table-header-bg);
+}
+
+.word {
+	border: 1px solid var(--border-color);
+	background-color: var(--bg-word);
+}
+
+.word.word-correct {
+	background-color: var(--bg-word-correct);
+	border-color: var(--border-word-correct);
+}
+
+.metrics-box li small {
+	color: var(--text-muted);
+}
+
+:global([data-theme="dark"]) .weight-details {
+	color: #aaa;
+}
+
+:global([data-theme="dark"]) button {
+	background-color: #5a9fe2;
+}
+
+:global([data-theme="dark"]) button:hover {
+	background-color: #4a8fd2;
+}
+
+:global([data-theme="dark"]) .theme-toggle {
+	background-color: #5a9fe2;
+}
+
+:global([data-theme="dark"]) .theme-toggle:hover {
+	background-color: #4a8fd2;
+}
+
 </style>
+
+<button class="theme-toggle" on:click={cycleTheme} aria-label="Toggle theme">
+	<span>{themeIcon}</span>
+	<span>{themeLabel}</span>
+</button>
 
 {#if report != null}
 <h1>{getSpellerTitle(report)} - Accuracy Report</h1>
@@ -742,7 +918,7 @@ h2 {
 {/if}
 
 {#if results == null}
-Loading
+<div class="loading">Loading...</div>
 {:else}
 <h2>Detailed Results</h2>
 
