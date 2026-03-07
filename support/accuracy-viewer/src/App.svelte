@@ -13,26 +13,38 @@
 	
 	// Theme management
 	onMount(() => {
-		// Load theme preference from localStorage
-		const savedTheme = localStorage.getItem('theme') || 'auto';
-		theme = savedTheme;
+		// Load theme preference from localStorage with validation
+		const savedTheme = localStorage.getItem('theme');
+		const allowedThemes = ['light', 'dark', 'auto'];
+		const initialTheme = allowedThemes.includes(savedTheme) ? savedTheme : 'auto';
+		theme = initialTheme;
 		// Sync with the theme that was already applied by inline script in index.html
-		applyTheme(theme);
+		applyTheme(initialTheme);
 		
 		// Listen for system theme changes
 		const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-		mediaQuery.addEventListener('change', (e) => {
+		const handleChange = (e) => {
 			if (theme === 'auto') {
 				applyTheme('auto');
 			}
-		});
+		};
+		mediaQuery.addEventListener('change', handleChange);
+
+		// Cleanup: remove event listener when component unmounts
+		return () => {
+			mediaQuery.removeEventListener('change', handleChange);
+		};
 	});
 	
 	function cycleTheme() {
 		const themes = ['light', 'dark', 'auto'];
 		const currentIndex = themes.indexOf(theme);
 		theme = themes[(currentIndex + 1) % themes.length];
-		localStorage.setItem('theme', theme);
+		try {
+			localStorage.setItem('theme', theme);
+		} catch (e) {
+			// Ignore storage errors; still apply the theme so the toggle continues to work
+		}
 		applyTheme(theme);
 	}
 	
@@ -577,13 +589,9 @@ h2 {
 .loading {
 	margin-top: 2em;
 	font-size: 1.5em;
-	color: #333;
+	color: var(--text-color);
 	text-align: center;
 	padding: 2em;
-}
-
-:global([data-theme="dark"]) .loading {
-	color: #e0e0e0;
 }
 .config-block {
 	background-color: var(--bg-subtle);
