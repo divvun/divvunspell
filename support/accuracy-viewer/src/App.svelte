@@ -80,49 +80,121 @@
 		sortMode = null
 	}
 
+	function sortByClassification() {
+		const classificationOrder = { 'TP': 0, 'TN': 1, 'FP': 2, 'FN': 3 };
+		
+		const sorter = (a, b) => {
+			const aType = getClassificationType(a);
+			const bType = getClassificationType(b);
+			return classificationOrder[aType] - classificationOrder[bType];
+		}
+
+		if (sortMode === "classification:asc") {
+			results.reverse()
+			sortMode = "classification:desc"
+		} else {
+			results.sort(sorter)
+			sortMode = "classification:asc"
+		}
+		
+		results = results
+	}
+
 	function asPercentage(input) {
 		const v = input / report.results.length * 100
 		return v.toFixed(2)
 	}
 
+	// Get only True Positive words (error words classified as incorrect)
+	function getTruePositives() {
+		return report.results.filter(r => {
+			const isPair = r.expected !== null;
+			if (isPair) {
+				// Error word: TP if not false_accept (false_accept must be explicitly true)
+				return r.false_accept !== true;
+			}
+			// Correct word: never TP
+			return false;
+		});
+	}
+
 	function firstPosition() {
-		return asPercentage(report.results.filter(r => r.position === 0).length)
+		const tpWords = getTruePositives();
+		if (tpWords.length === 0) return "0.00";
+		const count = tpWords.filter(r => r.position === 0).length;
+		return ((count / tpWords.length) * 100).toFixed(2);
 	}
 
 	function topFive() {
-		return asPercentage(report.results.filter(r => r.position !== null && r.position < 5).length)
+		const tpWords = getTruePositives();
+		if (tpWords.length === 0) return "0.00";
+		const count = tpWords.filter(r => r.position !== null && r.position < 5).length;
+		return ((count / tpWords.length) * 100).toFixed(2);
 	}
 
 	function anywhere() {
-		return asPercentage(report.results.filter(r => r.position !== null).length)
+		const tpWords = getTruePositives();
+		if (tpWords.length === 0) return "0.00";
+		const count = tpWords.filter(r => r.position !== null).length;
+		return ((count / tpWords.length) * 100).toFixed(2);
 	}
 
 	function noSuggestions() {
-		return asPercentage(report.results.filter(r => r.suggestions.length === 0).length)
+		const tpWords = getTruePositives();
+		if (tpWords.length === 0) return "0.00";
+		const count = tpWords.filter(r => r.suggestions.length === 0).length;
+		return ((count / tpWords.length) * 100).toFixed(2);
 	}
 
 	function onlyWrong() {
-		return asPercentage(report.results.filter(r => r.position === null && r.suggestions.length > 0).length)
+		const tpWords = getTruePositives();
+		if (tpWords.length === 0) return "0.00";
+		const count = tpWords.filter(r => r.position === null && r.suggestions.length > 0).length;
+		return ((count / tpWords.length) * 100).toFixed(2);
+	}
+
+	function firstPositionCount() {
+		return getTruePositives().filter(r => r.position === 0).length;
+	}
+
+	function topFiveCount() {
+		return getTruePositives().filter(r => r.position !== null && r.position < 5).length;
+	}
+
+	function anywhereCount() {
+		return getTruePositives().filter(r => r.position !== null).length;
+	}
+
+	function noSuggestionsCount() {
+		return getTruePositives().filter(r => r.suggestions.length === 0).length;
+	}
+
+	function onlyWrongCount() {
+		return getTruePositives().filter(r => r.position === null && r.suggestions.length > 0).length;
 	}
 
 	function precision() {
-		const anywhereCount = report.results.filter(r => r.position !== null).length
-		const withSuggestions = report.results.filter(r => r.suggestions.length > 0).length
+		const tpWords = getTruePositives();
+		const anywhereCount = tpWords.filter(r => r.position !== null).length;
+		const withSuggestions = tpWords.filter(r => r.suggestions.length > 0).length;
 		if (withSuggestions === 0) return "0.00"
 		return ((anywhereCount / withSuggestions) * 100).toFixed(2)
 	}
 
 	function recall() {
-		const anywhereCount = report.results.filter(r => r.position !== null).length
-		return ((anywhereCount / report.results.length) * 100).toFixed(2)
+		const tpWords = getTruePositives();
+		if (tpWords.length === 0) return "0.00";
+		const anywhereCount = tpWords.filter(r => r.position !== null).length;
+		return ((anywhereCount / tpWords.length) * 100).toFixed(2);
 	}
 
 	function accuracy() {
 		// Accuracy: correct suggestions / total suggestions (including all wrong ones)
-		const correctCount = report.results.filter(r => r.position !== null).length
-		const totalSuggestions = report.results.reduce((sum, r) => sum + r.suggestions.length, 0)
-		if (totalSuggestions === 0) return "0.00"
-		return ((correctCount / totalSuggestions) * 100).toFixed(2)
+		const tpWords = getTruePositives();
+		const correctCount = tpWords.filter(r => r.position !== null).length;
+		const totalSuggestions = tpWords.reduce((sum, r) => sum + r.suggestions.length, 0);
+		if (totalSuggestions === 0) return "0.00";
+		return ((correctCount / totalSuggestions) * 100).toFixed(2);
 	}
 
 	function fScore() {
@@ -130,6 +202,45 @@
 		const r = parseFloat(recall())
 		if (p + r === 0) return "0.00"
 		return ((2 * p * r) / (p + r)).toFixed(2)
+	}
+
+	// Spell checker classification metrics (based on accept/reject behavior)
+	function classifierPrecision() {
+		const tp = report.summary.true_positive || 0
+		const fp = report.summary.false_accept || 0
+		if (tp + fp === 0) return "N/A"
+		return ((tp / (tp + fp)) * 100).toFixed(2)
+	}
+
+	function classifierRecall() {
+		const tp = report.summary.true_positive || 0
+		const fn = report.summary.false_negative || 0
+		if (tp + fn === 0) return "N/A"
+		return ((tp / (tp + fn)) * 100).toFixed(2)
+	}
+
+	function classifierAccuracy() {
+		const tp = report.summary.true_positive || 0
+		const tn = report.summary.true_negative || 0
+		const fp = report.summary.false_accept || 0
+		const fn = report.summary.false_negative || 0
+		const total = tp + tn + fp + fn
+		if (total === 0) return "N/A"
+		return (((tp + tn) / total) * 100).toFixed(2)
+	}
+
+	function classifierFScore() {
+		const p = classifierPrecision()
+		const r = classifierRecall()
+		if (p === "N/A" || r === "N/A") return "N/A"
+		const pNum = parseFloat(p)
+		const rNum = parseFloat(r)
+		if (pNum + rNum === 0) return "0.00"
+		return ((2 * pNum * rNum) / (pNum + rNum)).toFixed(2)
+	}
+
+	function formatMetric(value) {
+		return value === "N/A" ? value : value + "%"
 	}
 
 	function humanTimeMillis(time) {
@@ -178,27 +289,61 @@
 		return "word"
 	}
 
-	function resultClass(result) {
-		switch (result.position) {
-		case null: {
-			if (result.suggestions.length === 0) {
-				return "indicator-no-suggestions"
+	function getClassificationType(result) {
+		const isPair = result.expected !== null;  // Is this a test pair (error word)?
+		
+		if (isPair) {
+			// Input is an error word (expected has a correction)
+			// For error words, false_accept determines if spellchecker accepts or flags it
+			if (!result.false_accept) {
+				return 'TP'; // True Positive: error word flagged as incorrect
+			} else {
+				return 'FN'; // False Negative: error word incorrectly accepted
 			}
-			return "indicator-only-wrong"
+		} else {
+			// Input is a correct word (expected is null)
+			// Use false_accept flag to determine classification
+			if (result.false_accept) {
+				return 'FP'; // False Positive: correct word incorrectly flagged
+			} else {
+				return 'TN'; // True Negative: correct word correctly accepted
+			}
 		}
-		case 0:
-		  return "indicator-first"
-		case 1:
-		  return "indicator-second"
-		case 2:
-		  return "indicator-third"
-		case 3:
-		  return "indicator-fourth"
-		case 4:
-		  return "indicator-fifth"
-		default:
-		  return "indicator-after-fifth"
+	}
+	
+	function getClassificationLabel(result) {
+		const type = getClassificationType(result);
+		switch(type) {
+			case 'TP': return 'True positive';
+			case 'FN': return 'False negative';
+			case 'TN': return 'True negative';
+			case 'FP': return 'False positive';
+			default: return '';
 		}
+	}
+
+	function resultClass(result) {
+		const classType = getClassificationType(result);
+		
+		if (classType === 'TP') {
+			// True Positive: error word correctly classified as error
+			// Show different shades based on whether correction was found
+			if (result.position === 0) {
+				return "indicator-tp-first"; // Correction in first position
+			} else if (result.position !== null) {
+				return "indicator-tp-found"; // Correction found elsewhere
+			} else {
+				return "indicator-true-positive"; // Classified correctly, correction not in suggestions
+			}
+		} else if (classType === 'FN') {
+			return "indicator-false-negative"; // Error word incorrectly classified as correct (false accept)
+		} else if (classType === 'TN') {
+			return "indicator-true-negative"; // Correct word correctly classified as correct
+		} else if (classType === 'FP') {
+			return "indicator-false-positive"; // Correct word incorrectly classified as error
+		}
+		
+		return "indicator-default";
 	}
 
 	function fetchReport() {
@@ -234,17 +379,28 @@
 
 .table td, .table th {
   border: 1px solid #cecece;
-	padding: 0.5em 1em;
+	padding: 0.3em 0.6em;
 	vertical-align: top;
 }
+
+.table p {
+	margin: 0.3em 0;
+}
+
 strong {
 	font-weight: 600;
 }
 
 .table ol {
-	margin: 0;
+	margin: 0.6em 0 0 0;
 	padding-left: 1.2em;
 }
+
+.table td > em {
+	display: block;
+	margin-top: 0.6em;
+}
+
 .table ol li {
 	margin-top: 0.2em;
 	margin-bottom: 0.2em;
@@ -254,8 +410,51 @@ strong {
 	opacity: 0.8;
 	margin-left: 1em;
 }
+.weight-details {
+	display: inline-block;
+	color: #666;
+	font-size: 0.9em;
+}
+/* Classification-based indicators */
+.indicator-true-positive {
+	background-color: #ff02;  /* Light orange - TP but correction not in suggestions */
+}
+.indicator-tp-first {
+	background-color: #0f04;  /* Light green - TP with correction in first position */
+}
+.indicator-tp-found {
+	background-color: #6f03;  /* Light olive - TP with correction found elsewhere */
+}
+.indicator-false-negative {
+	background-color: #f006;  /* Strong red - error word incorrectly classified as correct */
+}
+.indicator-true-negative {
+	background-color: #0f06;  /* Strong green - correct word correctly classified */
+}
+.indicator-false-positive {
+	background-color: #f006;  /* Strong red - correct word incorrectly classified as error */
+}
+.indicator-default {
+	background-color: #ccc3;  /* Gray - fallback */
+}
+/* Old indicators for backward compatibility */
 .indicator-only-wrong {
 	background-color: #f001;
+}
+.indicator-false-accept {
+	background-color: #f601;
+}
+.indicator-tn-first {
+	background-color: #0f04;
+}
+.indicator-tn-found {
+	background-color: #6f02;
+}
+.indicator-tn-not-found {
+	background-color: #ff02;
+}
+.indicator-tn-no-sugg {
+	background-color: #ccc3;
 }
 .indicator-first {
 	background-color: #0f02;
@@ -299,7 +498,7 @@ strong {
 }
 .stats-table th, .stats-table td {
 	border: 1px solid #cecece;
-	padding: 0.3em 0.6em;
+	padding: 0.25em 0.4em;
 }
 .stats-table td {
 	text-align: right;
@@ -307,6 +506,8 @@ strong {
 .stats-table th {
 	text-align: left;
 	background-color: #f5f5f5;
+	max-width: 150px;
+	word-wrap: break-word;
 }
 button {
 	background-color: #4a90e2;
@@ -347,7 +548,7 @@ h2 {
 }
 .accuracy-stats-container {
 	display: flex;
-	gap: 2em;
+	gap: 1em;
 	align-items: flex-start;
 }
 .accuracy-stats-container > * {
@@ -363,7 +564,7 @@ h2 {
 }
 .metrics-box li strong {
 	display: inline-block;
-	min-width: 8em;
+	min-width: 6em;
 	font-size: 1.05em;
 }
 .metrics-box li small {
@@ -386,58 +587,122 @@ h2 {
 </div>
 
 <h2>Performance Statistics</h2>
-<table class="stats-table">
-	<tr>
-		<th>Words: {report.results.length}</th>
-	  <th>
-			Words per second
-		</th>
-		<th>
-			Total runtime
-		</th>
-	</tr>
-  <tr>
-		<th>Real<br><small>(clock time, parallelised processing)</small></th>
-		<td>{wordsPerSecond(report.total_time)}</td>
-		<td>{humanTime(report.total_time)}</td>
-	</tr>
-	<tr>
-		<th>CPU<br><small>(estimated serial processing time)</small></th>
-		<td>{wordsPerSecond(totalRuntime)}</td>
-		<td>{humanTime(totalRuntime)}</td>
-	</tr>
-	<tr>
-		<th>Average per word</th>
-		<td>-</td>
-		<td>{humanTimeMillis(report.summary.average_time)}</td>
-	</tr>
-	<tr>
-		<th>Average per word (95%)<br><small>(excluding slowest 5%)</small></th>
-		<td>-</td>
-		<td>{humanTimeMillis(report.summary.average_time_95pc)}</td>
-	</tr>
-</table>
-
-<h2>Suggestion Statistics</h2>
 <div class="accuracy-stats-container">
 	<div>
-		<ul>
-		<li>
-			% in 1st position: {firstPosition()}%
-		</li>
-		<li>
-			% in top 5: {topFive()}%
-		</li>
-		<li>
-			% anywhere: {anywhere()}%
-		</li>
-		<li>
-			% no suggestions: {noSuggestions()}%
-		</li>
-		<li>
-			% only wrong: {onlyWrong()}%
-		</li>
-		</ul>
+		<h3>Runtime</h3>
+		<table class="stats-table">
+			<tr>
+				<th></th>
+				<th>Words per second</th>
+				<th>Total runtime</th>
+			</tr>
+			<tr>
+				<th>Real<br><small>(clock time, parallelised processing)</small></th>
+				<td>{wordsPerSecond(report.total_time)}</td>
+				<td>{humanTime(report.total_time)}</td>
+			</tr>
+			<tr>
+				<th>CPU<br><small>(estimated serial processing time)</small></th>
+				<td>{wordsPerSecond(totalRuntime)}</td>
+				<td>{humanTime(totalRuntime)}</td>
+			</tr>
+			<tr>
+				<th>Average per word</th>
+				<td>-</td>
+				<td>{humanTimeMillis(report.summary.average_time)}</td>
+			</tr>
+			<tr>
+				<th>Average per word (95%)<br><small>(excluding slowest 5%)</small></th>
+				<td>-</td>
+				<td>{humanTimeMillis(report.summary.average_time_95pc)}</td>
+			</tr>
+		</table>
+	</div>
+	<div>
+		<h3>Spell Checker Classification</h3>
+		<div class="accuracy-stats-container">
+			<table class="stats-table">
+				<tr>
+					<th>True positive<br><small>(correctly flagged)</small></th>
+					<td>{report.summary.true_positive || 0}</td>
+					<td>{((report.summary.true_positive || 0) / report.results.length * 100).toFixed(1)}%</td>
+				</tr>
+				<tr>
+					<th>False negative<br><small>(incorrectly accepted)</small></th>
+					<td>{report.summary.false_negative || 0}</td>
+					<td>{((report.summary.false_negative || 0) / report.results.length * 100).toFixed(1)}%</td>
+				</tr>
+				<tr>
+					<th>True negative<br><small>(correctly accepted)</small></th>
+					<td>{report.summary.true_negative || 0}</td>
+					<td>{((report.summary.true_negative || 0) / report.results.length * 100).toFixed(1)}%</td>
+				</tr>
+				<tr>
+					<th>False positive<br><small>(incorrectly flagged)</small></th>
+					<td>{report.summary.false_accept || 0}</td>
+					<td>{((report.summary.false_accept || 0) / report.results.length * 100).toFixed(1)}%</td>
+				</tr>
+				<tr>
+					<th>Total words</th>
+					<td>{report.results.length}</td>
+					<td>100%</td>
+				</tr>
+			</table>
+			<div class="metrics-box">
+				<ul>
+					<li>
+						<strong>Precision:</strong> {formatMetric(classifierPrecision())}
+						<small>Of words flagged as incorrect, how many are actually incorrect</small>
+					</li>
+					<li>
+						<strong>Recall:</strong> {formatMetric(classifierRecall())}
+						<small>Of words that are actually incorrect, how many were flagged as incorrect</small>
+					</li>
+					<li>
+						<strong>Accuracy:</strong> {formatMetric(classifierAccuracy())}
+						<small>Correct classifications (TP+TN) out of all words</small>
+					</li>
+					<li>
+						<strong>F-score:</strong> {formatMetric(classifierFScore())}
+						<small>Harmonic mean of precision and recall</small>
+					</li>
+				</ul>
+			</div>
+		</div>
+	</div>
+</div>
+
+<h2>Suggestion Statistics</h2>
+<p><em>This statistics applies only to true positive words ({report.summary.true_positive || 0} words).</em></p>
+<div class="accuracy-stats-container">
+	<div>
+		<table class="stats-table">
+			<tr>
+				<th>In 1st position</th>
+				<td>{firstPositionCount()}</td>
+				<td>{firstPosition()}%</td>
+			</tr>
+			<tr>
+				<th>In top 5</th>
+				<td>{topFiveCount()}</td>
+				<td>{topFive()}%</td>
+			</tr>
+			<tr>
+				<th>Anywhere</th>
+				<td>{anywhereCount()}</td>
+				<td>{anywhere()}%</td>
+			</tr>
+			<tr>
+				<th>No suggestions</th>
+				<td>{noSuggestionsCount()}</td>
+				<td>{noSuggestions()}%</td>
+			</tr>
+			<tr>
+				<th>Only wrong</th>
+				<td>{onlyWrongCount()}</td>
+				<td>{onlyWrong()}%</td>
+			</tr>
+		</table>
 		
 		<ul>
 		{#if report.summary && report.summary.average_position_of_correct !== undefined}
@@ -495,6 +760,10 @@ Loading
 <p>Sorted by edit distance, ascending (smallest first)</p>
 {:else if sortMode === "distance:desc"}
 <p>Sorted by edit distance, descending (largest first)</p>
+{:else if sortMode === "classification:asc"}
+<p>Sorted by classification (TP → TN → FP → FN)</p>
+{:else if sortMode === "classification:desc"}
+<p>Sorted by classification (FN → FP → TN → TP)</p>
 {:else}
 <p>Sorted in some unknown way (this is a bug)</p>
 {/if}
@@ -503,6 +772,7 @@ Loading
 <button on:click={sortByTime}>Sort by Time</button>
 <button on:click={sortByPosition}>Sort by Position</button>
 <button on:click={sortByDistance}>Sort by Edit Distance</button>
+<button on:click={sortByClassification}>Sort by Classification</button>
 <table class="table">
 	<thead>
 		<tr>
@@ -516,40 +786,62 @@ Loading
 		<td class="right">
 			<p>
 				<a href="#{result.input}" class="word">{result.input}</a>
-				&rarr;
-				<span class="word">{result.expected}</span>
+				{#if result.expected !== null}
+					&rarr;
+					<span class="word">{result.expected}</span>
+				{/if}
 			</p>
 			<p>
 				<strong>Result:</strong>
-			{#if result.position === null}
-				Not in suggestions
-			{:else if result.position === 0}
-				Top suggestion
-			{:else}
-				Suggestion {result.position + 1}
+				<span class="classification-label" style="font-weight: bold; color: {getClassificationType(result) === 'FP' || getClassificationType(result) === 'FN' ? '#d00' : '#080'};">
+					{getClassificationLabel(result)}
+				</span>
+			{#if getClassificationType(result) === 'TP'}
+				{#if result.position === null}
+					<br><small>Not in suggestions</small>
+				{:else if result.position === 0}
+					<br><small>Top suggestion</small>
+				{:else}
+					<br><small>Suggestion {result.position + 1}</small>
+				{/if}
 			{/if}
 			</p>
+			{#if getClassificationType(result) === 'TP' || getClassificationType(result) === 'FN'}
 			<p>
 				<strong>Edit distance:</strong> {result.distance}
 			</p>
+			{/if}
+			{#if getClassificationType(result) === 'TP'}
 			<p>
 			<strong>Time:</strong> {humanTimeMillis(result.time)}
 			</p>
+			{/if}
 		</td>
 		<td>
-		{#if result.suggestions.length > 0}
+		{#if result.false_accept && getClassificationType(result) === 'FN'}
+			<em>Incorrectly accepted as correct</em>
+		{:else if result.suggestions.length > 0}
 			<ol>
 			{#each result.suggestions as suggestion, i}
 				<li>
 					<span class={wordClass(result, i)}>
 						{suggestion.value}
 					</span>
-					<small>{suggestion.weight}</small>
+					<small>
+						{suggestion.weight.toFixed(5)}
+						{#if suggestion.weight_details}
+							<span class="weight-details">
+								(lex: {suggestion.weight_details.lexicon_weight.toFixed(5)}, 
+								mut: {suggestion.weight_details.mutator_weight.toFixed(5)}, 
+								rew: {suggestion.weight_details.reweight_start.toFixed(0)}/{suggestion.weight_details.reweight_mid < 0 ? '-' : suggestion.weight_details.reweight_mid.toFixed(0)}/{suggestion.weight_details.reweight_end.toFixed(0)})
+							</span>
+						{/if}
+					</small>
 				</li>
 			{/each}
 			</ol>
-		{:else}
-			No suggestions
+		{:else if getClassificationType(result) !== 'TN'}
+			<em>No suggestions</em>
 		{/if}
 		</td>
 	</tr>

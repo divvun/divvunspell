@@ -18,6 +18,16 @@ use crate::types::{SymbolNumber, Weight};
 pub mod suggestion;
 mod worker;
 
+/// Temporary struct to store weight details during suggestion generation
+#[derive(Clone, Debug)]
+struct SuggestionData {
+    lexicon_weight: Weight,
+    mutator_weight: Weight,
+    reweight_start: f32,
+    reweight_mid: f32,
+    reweight_end: f32,
+}
+
 /// Controls whether morphological tags are preserved in FST output.
 ///
 /// When traversing an FST, epsilon transitions can either preserve their symbols
@@ -103,6 +113,9 @@ pub struct SpellerConfig {
     /// used when suggesting unfinished word parts
     #[serde(default)]
     pub completion_marker: Option<String>,
+    /// whether to output detailed weight information (not serialized)
+    #[serde(skip)]
+    pub verbose: bool,
 }
 
 impl SpellerConfig {
@@ -113,6 +126,7 @@ impl SpellerConfig {
     /// * reweight = default (c.f. ReweightingConfig::default())
     /// * node_pool_size = 128
     /// * recase = true
+    /// * verbose = false
     pub const fn default() -> SpellerConfig {
         SpellerConfig {
             n_best: default_n_best(),
@@ -122,6 +136,7 @@ impl SpellerConfig {
             node_pool_size: default_node_pool_size(),
             recase: default_recase(),
             completion_marker: None,
+            verbose: false,
         }
     }
 }
@@ -188,6 +203,20 @@ pub trait Speller {
         word: &str,
         config: &SpellerConfig,
     ) -> Vec<Suggestion>;
+
+    /// Get lexicon weight for a word form (lexicon-only traversal).
+    ///
+    /// Returns the weight of the best analysis using only the lexicon FST.
+    /// If the word is not in the lexicon, returns Weight(0.0).
+    /// Useful for separating lexicon vs mutator contributions to total weight.
+    #[must_use]
+    fn get_lexicon_weight(self: Arc<Self>, word: &str) -> Weight {
+        self.get_lexicon_weight_with_config(word, &SpellerConfig::default())
+    }
+
+    /// Get lexicon weight with custom config.
+    #[must_use]
+    fn get_lexicon_weight_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Weight;
 
     /// Analyze the suggested word forms.
     ///
@@ -305,6 +334,28 @@ where
     #[inline]
     fn analyze_input(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
         self.analyze_input_with_config(word, &SpellerConfig::default())
+    }
+
+    fn get_lexicon_weight(self: Arc<Self>, word: &str) -> Weight {
+        self.get_lexicon_weight_with_config(word, &SpellerConfig::default())
+    }
+
+    fn get_lexicon_weight_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Weight {
+        if word.is_empty() {
+            return Weight(0.0);
+        }
+
+        // Analyze output form using lexicon-only traversal (without error model)
+        // This gives us the weight from the lexicon/acceptor alone
+        let worker = SpellerWorker::new(
+            self.clone(),
+            self.to_input_vec(word),
+            SpellerConfig { verbose: false, ..config.clone() },
+            OutputMode::WithoutTags,
+        );
+
+        let analyses = worker.analyze();
+        analyses.first().map(|s| s.weight()).unwrap_or(Weight(0.0))
     }
 
     fn analyze_output_with_config(
@@ -444,7 +495,20 @@ where
             SpellerWorker::new(self.clone(), self.to_input_vec(word), config.clone(), mode);
 
         tracing::trace!("suggesting single {}", word);
-        worker.suggest()
+        let mut suggestions = worker.suggest();
+
+        // Apply beam filtering: remove suggestions that are more than beam away from best.
+        // Only enable beam when it is strictly greater than Weight::ZERO, to match FFI behavior.
+        if let Some(beam) = config.beam {
+            if beam > Weight::ZERO {
+                if let Some(best) = suggestions.first() {
+                    let beam_threshold = best.weight() + beam;
+                    suggestions.retain(|s| s.weight() <= beam_threshold);
+                }
+            }
+        }
+
+        suggestions
     }
 
     fn suggest_case(
@@ -464,6 +528,7 @@ where
             words,
         } = case;
         let mut best: HashMap<SmolStr, Weight> = HashMap::new();
+        let mut suggestion_data: HashMap<SmolStr, SuggestionData> = HashMap::new();
 
         for word in std::iter::once(&original_input).chain(words.iter()) {
             tracing::trace!("suggesting for word {}", word);
@@ -473,55 +538,191 @@ where
                 config.clone(),
                 output_mode,
             );
-            let mut suggestions = worker.suggest();
-
-            match mutation {
-                CaseMutation::FirstCaps => {
-                    suggestions.iter_mut().for_each(|x| {
-                        x.value = upper_first(x.value());
-                    });
-                }
-                CaseMutation::AllCaps => {
-                    suggestions.iter_mut().for_each(|x| {
-                        x.value = upper_case(x.value());
-                    });
-                }
-                _ => {}
-            }
-
+            let suggestions = worker.suggest();
+            
             match mode {
                 CaseMode::MergeAll => {
                     tracing::trace!("Case merge all");
-                    for sugg in suggestions.into_iter() {
+                    for mut sugg in suggestions.into_iter() {
                         tracing::trace!("for {}", sugg.value);
-                        let penalty_start =
-                            if !sugg.value().starts_with(word.chars().next().unwrap()) {
-                                reweight.start_penalty - reweight.mid_penalty
-                            } else {
-                                0.0
-                            };
-                        let penalty_end =
-                            if !sugg.value().ends_with(word.chars().rev().next().unwrap()) {
-                                reweight.end_penalty - reweight.mid_penalty
-                            } else {
-                                0.0
-                            };
+                        
+                        // Apply case mutation to output value
+                        // (penalty calculation below uses case-insensitive comparison)
+                        match mutation {
+                            CaseMutation::FirstCaps => {
+                                sugg.value = upper_first(sugg.value());
+                            }
+                            CaseMutation::AllCaps => {
+                                sugg.value = upper_case(sugg.value());
+                            }
+                            _ => {}
+                        }
 
-                        let distance =
-                            strsim::damerau_levenshtein(&words[0].as_str(), &word.as_str())
-                                + strsim::damerau_levenshtein(&word.as_str(), sugg.value());
-                        let penalty_middle = reweight.mid_penalty * distance as f32;
+                        // Calculate distances based on case-insensitive alignment
+                        // by scanning from both ends and splicing in the middle
+                        let input_lower: Vec<char> = original_input.to_lowercase().chars().collect();
+                        let sugg_lower: Vec<char> = sugg.value().to_lowercase().chars().collect();
+                        
+                        // Special case: both input and suggestion are 2 chars or less - no middle section
+                        let is_short = input_lower.len() <= 2 && sugg_lower.len() <= 2;
+                        
+                        let (start_dist, mid_dist, end_dist): (usize, i32, usize) = if input_lower.is_empty() && sugg_lower.is_empty() {
+                            (0, 0, 0)
+                        } else if is_short {
+                            // For very short words, compare first and last only (no middle)
+                            let start_d = if !input_lower.is_empty() && !sugg_lower.is_empty() {
+                                if input_lower[0] != sugg_lower[0] { 1 } else { 0 }
+                            } else {
+                                input_lower.len().max(sugg_lower.len()).min(1)
+                            };
+                            
+                            let end_d = if input_lower.len() > 1 && sugg_lower.len() > 1 {
+                                if input_lower[input_lower.len()-1] != sugg_lower[sugg_lower.len()-1] { 1 } else { 0 }
+                            } else {
+                                0
+                            };
+                            
+                            // Use -1 to signal no middle section (will be displayed as "-")
+                            (start_d, -1, end_d)
+                        } else {
+                            // Try all combinations of start and end offsets to find best overall match
+                            let max_offset = 1;  // Try skipping up to 1 char at each end
+                            let mut start_offsets = vec![];
+                            let mut end_offsets = vec![];
+                            
+                            for i in 0..=max_offset {
+                                for j in 0..=max_offset {
+                                    start_offsets.push((i, j));
+                                    end_offsets.push((i, j));
+                                }
+                            }
+                            
+                            let mut best_score = 0;
+                            let mut best_alignment = (0, 0, 0, 0, 0, 0, 0, 0, 0); // (start_in, start_su, end_in, end_su, prefix, suffix, start_d, end_d, score)
+                            
+                            for (start_in_off, start_su_off) in &start_offsets {
+                                if *start_in_off >= input_lower.len() || *start_su_off >= sugg_lower.len() {
+                                    continue;
+                                }
+                                
+                                for (end_in_off, end_su_off) in &end_offsets {
+                                    if *end_in_off >= input_lower.len() || *end_su_off >= sugg_lower.len() {
+                                        continue;
+                                    }
+                                    
+                                    let inp = &input_lower[*start_in_off..];
+                                    let sug = &sugg_lower[*start_su_off..];
+                                    
+                                    // Find prefix length
+                                    let prefix_len = inp.iter().zip(sug.iter())
+                                        .take_while(|(a, b)| a == b)
+                                        .count();
+                                    
+                                    // Find suffix length (from the available lengths after offsets)
+                                    let inp_len = input_lower.len() - start_in_off - end_in_off;
+                                    let sug_len = sugg_lower.len() - start_su_off - end_su_off;
+                                    
+                                    if inp_len == 0 || sug_len == 0 {
+                                        continue;
+                                    }
+                                    
+                                    let inp_for_suffix = &input_lower[*start_in_off..input_lower.len() - end_in_off];
+                                    let sug_for_suffix = &sugg_lower[*start_su_off..sugg_lower.len() - end_su_off];
+                                    
+                                    let suffix_len = inp_for_suffix.iter().rev()
+                                        .zip(sug_for_suffix.iter().rev())
+                                        .take_while(|(a, b)| a == b)
+                                        .count();
+                                    
+                                    // Calculate total match score
+                                    let score = prefix_len + suffix_len;
+                                    
+                                    if score > best_score {
+                                        // Calculate start distance based on what's skipped
+                                        let start_d = if *start_in_off == 0 && *start_su_off == 0 {
+                                            0  // No offset, will be handled by prefix matching
+                                        } else {
+                                            // DL between skipped portions
+                                            let inp_start_str: String = input_lower[0..*start_in_off].iter().collect();
+                                            let sug_start_str: String = sugg_lower[0..*start_su_off].iter().collect();
+                                            strsim::damerau_levenshtein(&inp_start_str, &sug_start_str)
+                                        };
+                                        
+                                        // Calculate end distance based on what's skipped
+                                        let end_d = if *end_in_off == 0 && *end_su_off == 0 {
+                                            0  // No offset, will be handled by suffix matching
+                                        } else {
+                                            // DL between skipped portions
+                                            let inp_end_str: String = input_lower[input_lower.len().saturating_sub(*end_in_off)..].iter().collect();
+                                            let sug_end_str: String = sugg_lower[sugg_lower.len().saturating_sub(*end_su_off)..].iter().collect();
+                                            strsim::damerau_levenshtein(&inp_end_str, &sug_end_str)
+                                        };
+                                        
+                                        best_score = score;
+                                        best_alignment = (*start_in_off, *start_su_off, *end_in_off, *end_su_off, 
+                                                         prefix_len, suffix_len, start_d, end_d, score);
+                                    }
+                                }
+                            }
+                            
+                            let (start_in_off, start_su_off, end_in_off, end_su_off, prefix_len, suffix_len, start_d, end_d, _) = best_alignment;
+                            
+                            // Calculate what's between prefix and suffix, avoiding overlap
+                            let min_total_len = (input_lower.len() - start_in_off - end_in_off)
+                                .min(sugg_lower.len() - start_su_off - end_su_off);
+                            
+                            let actual_suffix = if prefix_len + suffix_len > min_total_len {
+                                min_total_len.saturating_sub(prefix_len)
+                            } else {
+                                suffix_len
+                            };
+                            
+                            // Calculate what's between prefix and suffix
+                            let inp_start_pos = start_in_off + prefix_len;
+                            let sug_start_pos = start_su_off + prefix_len;
+                            let inp_end_pos = input_lower.len() - end_in_off - actual_suffix;
+                            let sug_end_pos = sugg_lower.len() - end_su_off - actual_suffix;
+                            
+                            // Check if there's a real middle section
+                            let inp_remaining = inp_end_pos.saturating_sub(inp_start_pos);
+                            let sug_remaining = sug_end_pos.saturating_sub(sug_start_pos);
+                            
+                            let (mid_d, adjusted_end_d) = if inp_remaining == 0 && sug_remaining == 0 {
+                                (0, end_d)
+                            } else if (inp_remaining <= 1 && sug_remaining <= 1) && actual_suffix == 0 {
+                                let end_change = inp_remaining.max(sug_remaining) > 0;
+                                (0, if end_change { 1 } else { end_d })
+                            } else if inp_start_pos < inp_end_pos || sug_start_pos < sug_end_pos {
+                                let inp_mid: String = input_lower[inp_start_pos.min(inp_end_pos)..inp_end_pos.max(inp_start_pos)].iter().collect();
+                                let sug_mid: String = sugg_lower[sug_start_pos.min(sug_end_pos)..sug_end_pos.max(sug_start_pos)].iter().collect();
+                                let d = strsim::damerau_levenshtein(&inp_mid, &sug_mid) as i32;
+                                (d, end_d)
+                            } else {
+                                (0, end_d)
+                            };
+                            
+                            (start_d, mid_d, adjusted_end_d)
+                        };
+                        
+                        let penalty_start = if start_dist > 0 { reweight.start_penalty } else { 0.0 };
+                        let penalty_middle = if mid_dist < 0 { 
+                            -1.0  // Signal for no middle section (will be displayed as "-")
+                        } else { 
+                            reweight.mid_penalty * mid_dist as f32 
+                        };
+                        let penalty_end = if end_dist > 0 { reweight.end_penalty } else { 0.0 };
                         let additional_weight =
                             Weight(if sugg.value.chars().all(|c| is_emoji(c)) {
                                 0.0
                             } else {
-                                penalty_start + penalty_end + penalty_middle
+                                penalty_start + penalty_end + penalty_middle.max(0.0)  // Don't add -1 to weight
                             });
+                        
                         tracing::trace!(
                             "Penalty: +{} = {} + {} * {} + {}",
                             additional_weight,
                             penalty_start,
-                            distance,
+                            mid_dist,
                             reweight.mid_penalty,
                             penalty_end
                         );
@@ -537,10 +738,38 @@ where
                                     additional_weight
                                 );
                                 if entry as &_ > &weight {
-                                    *entry = weight
+                                    *entry = weight;
+                                    // Update suggestion data
+                                    let (lex_w, mut_w) = if let Some(ref details) = sugg.weight_details {
+                                        (details.lexicon_weight, details.mutator_weight)
+                                    } else {
+                                        (Weight(0.0), Weight(0.0))
+                                    };
+                                    suggestion_data.insert(sugg.value.clone(), SuggestionData {
+                                        lexicon_weight: lex_w,
+                                        mutator_weight: mut_w,
+                                        reweight_start: penalty_start,
+                                        reweight_mid: penalty_middle,
+                                        reweight_end: penalty_end,
+                                    });
                                 }
                             })
-                            .or_insert(sugg.weight + additional_weight);
+                            .or_insert_with(|| {
+                                let weight = sugg.weight + additional_weight;
+                                let (lex_w, mut_w) = if let Some(ref details) = sugg.weight_details {
+                                    (details.lexicon_weight, details.mutator_weight)
+                                } else {
+                                    (Weight(0.0), Weight(0.0))
+                                };
+                                suggestion_data.insert(sugg.value.clone(), SuggestionData {
+                                    lexicon_weight: lex_w,
+                                    mutator_weight: mut_w,
+                                    reweight_start: penalty_start,
+                                    reweight_mid: penalty_middle,
+                                    reweight_end: penalty_end,
+                                });
+                                weight
+                            });
                     }
                 }
                 CaseMode::FirstResults => {
@@ -555,29 +784,87 @@ where
             return vec![];
         }
         let mut out: Vec<Suggestion>;
-        if let Some(s) = &config.completion_marker {
-            out = best
-                .into_iter()
-                .map(|(k, v)| Suggestion {
-                    value: k.clone(),
-                    weight: v,
-                    completed: Some(!k.ends_with(s)),
-                })
-                .collect::<Vec<_>>();
+        if config.verbose {
+            // Verbose mode: include weight details
+            if let Some(s) = &config.completion_marker {
+                out = best
+                    .into_iter()
+                    .map(|(k, v)| {
+                        let data = suggestion_data.get(&k);
+                        Suggestion {
+                            value: k.clone(),
+                            weight: v,
+                            completed: Some(!k.ends_with(s)),
+                            weight_details: data.map(|d| suggestion::WeightDetails {
+                                lexicon_weight: d.lexicon_weight,
+                                mutator_weight: d.mutator_weight,
+                                reweight_start: d.reweight_start,
+                                reweight_mid: d.reweight_mid,
+                                reweight_end: d.reweight_end,
+                            }),
+                        }
+                    })
+                    .collect::<Vec<_>>();
+            } else {
+                out = best
+                    .into_iter()
+                    .map(|(k, v)| {
+                        let data = suggestion_data.get(&k);
+                        Suggestion {
+                            value: k,
+                            weight: v,
+                            completed: None,
+                            weight_details: data.map(|d| suggestion::WeightDetails {
+                                lexicon_weight: d.lexicon_weight,
+                                mutator_weight: d.mutator_weight,
+                                reweight_start: d.reweight_start,
+                                reweight_mid: d.reweight_mid,
+                                reweight_end: d.reweight_end,
+                            }),
+                        }
+                    })
+                    .collect::<Vec<_>>();
+            }
         } else {
-            out = best
-                .into_iter()
-                .map(|(k, v)| Suggestion {
-                    value: k,
-                    weight: v,
-                    completed: None,
-                })
-                .collect::<Vec<_>>();
+            // Normal mode: no weight details
+            if let Some(s) = &config.completion_marker {
+                out = best
+                    .into_iter()
+                    .map(|(k, v)| Suggestion {
+                        value: k.clone(),
+                        weight: v,
+                        completed: Some(!k.ends_with(s)),
+                        weight_details: None,
+                    })
+                    .collect::<Vec<_>>();
+            } else {
+                out = best
+                    .into_iter()
+                    .map(|(k, v)| Suggestion {
+                        value: k,
+                        weight: v,
+                        completed: None,
+                        weight_details: None,
+                    })
+                    .collect::<Vec<_>>();
+            }
         }
         out.sort();
         if let Some(n_best) = config.n_best {
             out.truncate(n_best);
         }
+
+        // Apply beam filtering: remove suggestions that are more than beam away from best.
+        // Only enable beam when it is strictly greater than Weight::ZERO, to match FFI behavior.
+        if let Some(beam) = config.beam {
+            if beam > Weight::ZERO {
+                if let Some(best) = out.first() {
+                    let beam_threshold = best.weight() + beam;
+                    out.retain(|s| s.weight() <= beam_threshold);
+                }
+            }
+        }
+
         out
     }
 }
@@ -692,6 +979,7 @@ pub(crate) mod ffi {
                 node_pool_size: config.node_pool_size,
                 recase: true,
                 completion_marker: None,
+                verbose: false,
             };
 
             Ok(out)

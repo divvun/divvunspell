@@ -50,12 +50,13 @@ static CFG: SpellerConfig = SpellerConfig {
     node_pool_size: 128,
     recase: true,
     completion_marker: None,
+    verbose: false,
 };
 
 fn load_words(
     path: &str,
     max_words: Option<usize>,
-) -> Result<Vec<(String, String)>, Box<dyn Error>> {
+) -> Result<Vec<(String, Option<String>)>, Box<dyn Error>> {
     let mut rdr = csv::ReaderBuilder::new()
         .comment(Some(b'#'))
         .delimiter(b'\t')
@@ -67,8 +68,10 @@ fn load_words(
         .records()
         .filter_map(Result::ok)
         .filter_map(|r| {
-            r.get(0)
-                .and_then(|x| r.get(1).map(|y| (x.to_string(), y.to_string())))
+            r.get(0).map(|x| {
+                let expected = r.get(1).map(|y| y.to_string());
+                (x.to_string(), expected)
+            })
         })
         .take(max_words.unwrap_or(std::usize::MAX))
         .collect())
@@ -90,11 +93,12 @@ impl std::fmt::Display for Time {
 #[derive(Debug, Serialize)]
 struct AccuracyResult<'a> {
     input: &'a str,
-    expected: &'a str,
+    expected: Option<&'a str>,
     distance: usize,
     suggestions: Vec<Suggestion>,
     position: Option<usize>,
     time: Time,
+    false_accept: bool,  // True if input was incorrectly accepted as correct
 }
 
 #[derive(Debug, Serialize)]
@@ -115,6 +119,11 @@ struct Summary {
     any_position: u32,
     no_suggestions: u32,
     only_wrong: u32,
+    false_accept: u32,  // False Positive: Correct words incorrectly flagged as errors
+    // Spell checker classification statistics
+    true_positive: u32,   // Error words correctly flagged as errors
+    false_negative: u32,  // Error words incorrectly accepted as correct
+    true_negative: u32,   // Correct words correctly accepted as correct
     slowest_lookup: Time,
     fastest_lookup: Time,
     average_time: Time,
@@ -130,12 +139,13 @@ impl std::fmt::Display for Summary {
 
         write!(
             f,
-            "[#1] {} [^5] {} [any] {} [none] {} [wrong] {} [fast] {} [slow] {}",
+            "[#1] {} [^5] {} [any] {} [none] {} [wrong] {} [false+] {} [fast] {} [slow] {}",
             percent(self.first_position),
             percent(self.top_five),
             percent(self.any_position),
             percent(self.no_suggestions),
             percent(self.only_wrong),
+            percent(self.false_accept),
             self.fastest_lookup,
             self.slowest_lookup
         )
@@ -149,20 +159,47 @@ impl Summary {
         results.iter().for_each(|result| {
             summary.total_words += 1;
 
-            if let Some(position) = result.position {
-                summary.any_position += 1;
-
-                if position == 0 {
-                    summary.first_position += 1;
+            // Classify based on spell checker behavior
+            match result.expected {
+                None => {
+                    // Correct word (no correction expected)
+                    if result.false_accept {
+                        // Incorrectly flagged as error
+                        summary.false_accept += 1;
+                    } else {
+                        // Correctly accepted as correct
+                        summary.true_negative += 1;
+                    }
                 }
-
-                if position < 5 {
-                    summary.top_five += 1;
+                Some(_) => {
+                    // Error word (correction expected)
+                    if result.false_accept {
+                        // Incorrectly accepted as correct
+                        summary.false_negative += 1;
+                    } else {
+                        // Correctly flagged as error
+                        summary.true_positive += 1;
+                    }
                 }
-            } else if result.suggestions.is_empty() {
-                summary.no_suggestions += 1;
-            } else {
-                summary.only_wrong += 1;
+            }
+
+            // Count suggestion positions (only for words that should be rejected)
+            if result.expected.is_some() && !result.false_accept {
+                if let Some(position) = result.position {
+                    summary.any_position += 1;
+
+                    if position == 0 {
+                        summary.first_position += 1;
+                    }
+
+                    if position < 5 {
+                        summary.top_five += 1;
+                    }
+                } else if result.suggestions.is_empty() {
+                    summary.no_suggestions += 1;
+                } else {
+                    summary.only_wrong += 1;
+                }
             }
         });
 
@@ -204,24 +241,20 @@ impl Summary {
         };
 
         // Calculate average position and average suggestions for correct results only
-        let correct_results: Vec<_> = results
-            .iter()
-            .filter(|r| r.position.is_some())
-            .collect();
-        
+        let correct_results: Vec<_> = results.iter().filter(|r| r.position.is_some()).collect();
+
         if !correct_results.is_empty() {
+            // Convert 0-indexed positions to 1-indexed (1st place, 2nd place, etc)
             let total_position: usize = correct_results
                 .iter()
-                .map(|r| r.position.unwrap())
+                .map(|r| r.position.unwrap() + 1) // +1 to convert from 0-indexed to 1-indexed
                 .sum();
-            summary.average_position_of_correct = 
+            summary.average_position_of_correct =
                 total_position as f32 / correct_results.len() as f32;
-            
-            let total_suggestions: usize = correct_results
-                .iter()
-                .map(|r| r.suggestions.len())
-                .sum();
-            summary.average_suggestions_for_correct = 
+
+            let total_suggestions: usize =
+                correct_results.iter().map(|r| r.suggestions.len()).sum();
+            summary.average_suggestions_for_correct =
                 total_suggestions as f32 / correct_results.len() as f32;
         }
 
@@ -261,6 +294,10 @@ struct Args {
     /// Minimum precision @ 5 for automated testing
     #[arg(short = 'T', long)]
     threshold: Option<f32>,
+
+    /// Enable verbose mode to include weight details in output
+    #[arg(short = 'v', long)]
+    verbose: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -268,13 +305,16 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let args = Args::parse();
 
-    let cfg: SpellerConfig = match args.config {
+    let mut cfg: SpellerConfig = match args.config {
         Some(path) => {
             let file = std::fs::File::open(path)?;
             serde_json::from_reader(file)?
         }
         None => CFG.clone(),
     };
+
+    // Set verbose mode if requested
+    cfg.verbose = args.verbose;
 
     let archive = match args.zhfst {
         Some(path) => archive::open(Path::new(&path))?,
@@ -304,7 +344,36 @@ fn main() -> Result<(), Box<dyn Error>> {
         .progress_with(pb)
         .map(|(input, expected)| {
             let now = Instant::now();
-            let suggestions = archive.speller().suggest_with_config(&input, &cfg);
+            
+            // Check if the input is accepted by the spell checker (using same config as suggestions)
+            let is_accepted = archive.speller().is_correct_with_config(&input, &cfg);
+            
+            let (suggestions, position, false_accept) = match expected.as_ref() {
+                None => {
+                    // Word should be accepted (no correction expected)
+                    if is_accepted {
+                        // Correctly accepted
+                        (Vec::new(), None, false)
+                    } else {
+                        // Incorrectly rejected (false positive) - generate suggestions anyway
+                        let suggestions = archive.speller().suggest_with_config(&input, &cfg);
+                        (suggestions, None, true)
+                    }
+                }
+                Some(exp) => {
+                    // Word should be rejected (correction expected)
+                    if is_accepted {
+                        // Incorrectly accepted misspelling - false negative (missed error)
+                        (Vec::new(), None, true)
+                    } else {
+                        // Correctly rejected - generate suggestions
+                        let suggestions = archive.speller().suggest_with_config(&input, &cfg);
+                        let position = suggestions.iter().position(|x| &x.value == exp);
+                        (suggestions, position, false)
+                    }
+                }
+            };
+            
             let now = now.elapsed();
 
             let time = Time {
@@ -312,16 +381,19 @@ fn main() -> Result<(), Box<dyn Error>> {
                 subsec_nanos: now.subsec_nanos(),
             };
 
-            let position = suggestions.iter().position(|x| x.value == expected);
-
-            let distance = damerau_levenshtein(input, expected);
+            let distance = match expected.as_ref() {
+                Some(exp) => damerau_levenshtein(input, exp),
+                None => 0,
+            };
+            
             AccuracyResult {
                 input,
-                expected,
+                expected: expected.as_deref(),
                 distance,
                 time,
                 suggestions,
                 position,
+                false_accept,
             }
         })
         .collect::<Vec<_>>();
