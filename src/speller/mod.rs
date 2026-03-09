@@ -546,8 +546,8 @@ where
                     for mut sugg in suggestions.into_iter() {
                         tracing::trace!("for {}", sugg.value);
                         
-                        // Apply case mutation to output value
-                        // (penalty calculation below uses case-insensitive comparison)
+                        // Apply case mutation first (for output display),
+                        // then calculate penalties using case-insensitive comparison below
                         match mutation {
                             CaseMutation::FirstCaps => {
                                 sugg.value = upper_first(sugg.value());

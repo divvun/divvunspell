@@ -1,7 +1,6 @@
 use hashbrown::HashMap;
 use smol_str::SmolStr;
 use std::sync::Arc;
-use std::cell::RefCell;
 
 use lifeguard::{Pool, Recycled};
 
@@ -10,11 +9,6 @@ use crate::speller::suggestion::{Suggestion, WeightDetails};
 use crate::transducer::Transducer;
 use crate::transducer::tree_node::TreeNode;
 use crate::types::{SymbolNumber, TransitionTableIndex, ValueNumber, Weight};
-
-// Global cache for lexicon weights to avoid redundant analyze_output_form() calls
-thread_local! {
-    static LEXICON_WEIGHT_CACHE: RefCell<HashMap<SmolStr, Weight>> = RefCell::new(HashMap::new());
-}
 
 #[inline(always)]
 fn speller_start_node(pool: &Pool<TreeNode>, size: usize) -> Vec<Recycled<'_, TreeNode>> {
@@ -699,31 +693,24 @@ where
         
         if self.config.verbose {
             // When verbose, analyze each unique suggestion to get lexicon weight
-            // Clear cache at start to ensure correctness across different speller instances
-            LEXICON_WEIGHT_CACHE.with(|cache| {
-                cache.borrow_mut().clear();
-            });
+            // Use a local cache to avoid cross-speller contamination
+            let mut lexicon_weight_cache: HashMap<SmolStr, Weight> = HashMap::new();
             
-            LEXICON_WEIGHT_CACHE.with(|cache| {
-                let mut cache_mut = cache.borrow_mut();
-                
-                // Check cache and analyze only missing words
-                for word in corrections.keys() {
-                    if !cache_mut.contains_key(word) {
-                        let lexicon_weight = self.analyze_output_form(word.as_str());
-                        cache_mut.insert(word.clone(), lexicon_weight);
-                    }
-                }
-            });
+            // Analyze each word to get its lexicon weight
+            for word in corrections.keys() {
+                let lexicon_weight = self.analyze_output_form(word.as_str());
+                lexicon_weight_cache.insert(word.clone(), lexicon_weight);
+            }
             
             // Now build suggestions using cached weights
             if let Some(s) = &self.config.completion_marker {
                 c = corrections
                     .into_iter()
                     .map(|x| {
-                        let lexicon_weight = LEXICON_WEIGHT_CACHE.with(|cache| {
-                            cache.borrow().get(x.0.as_str()).copied().unwrap_or(Weight::ZERO)
-                        });
+                        let lexicon_weight = lexicon_weight_cache
+                            .get(x.0.as_str())
+                            .copied()
+                            .unwrap_or(Weight::ZERO);
                         let mutator_weight = *x.1 - lexicon_weight;
                         
                         let weight_details = WeightDetails {
@@ -740,9 +727,10 @@ where
                 c = corrections
                     .into_iter()
                     .map(|x| {
-                        let lexicon_weight = LEXICON_WEIGHT_CACHE.with(|cache| {
-                            cache.borrow().get(x.0.as_str()).copied().unwrap_or(Weight::ZERO)
-                        });
+                        let lexicon_weight = lexicon_weight_cache
+                            .get(x.0.as_str())
+                            .copied()
+                            .unwrap_or(Weight::ZERO);
                         let mutator_weight = *x.1 - lexicon_weight;
                         
                         let weight_details = WeightDetails {
