@@ -1,7 +1,7 @@
 [package]
 name = "divvun-fst-ffi"
 description = "C/C++ FFI bindings for divvun-fst library."
-version = "1.0.0-beta.7"
+version.workspace = true
 authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"
