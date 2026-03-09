@@ -756,7 +756,7 @@ h2 {
 
 </style>
 
-<button class="theme-toggle" on:click={cycleTheme} aria-label="Toggle theme">
+<button class="theme-toggle" on:click={cycleTheme} aria-label="Toggle theme" title="Switch between light, dark, and auto theme modes">
 	<span>{themeIcon}</span>
 	<span>{themeLabel}</span>
 </button>
