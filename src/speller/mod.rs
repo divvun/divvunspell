@@ -215,8 +215,13 @@ pub trait Speller {
     }
 
     /// Get lexicon weight with custom config.
+    ///
+    /// Default implementation returns Weight(0.0) to preserve API compatibility.
+    /// Override this method if you want to provide lexicon weight analysis.
     #[must_use]
-    fn get_lexicon_weight_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Weight;
+    fn get_lexicon_weight_with_config(self: Arc<Self>, _word: &str, _config: &SpellerConfig) -> Weight {
+        Weight(0.0)
+    }
 
     /// Analyze the suggested word forms.
     ///
@@ -334,10 +339,6 @@ where
     #[inline]
     fn analyze_input(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
         self.analyze_input_with_config(word, &SpellerConfig::default())
-    }
-
-    fn get_lexicon_weight(self: Arc<Self>, word: &str) -> Weight {
-        self.get_lexicon_weight_with_config(word, &SpellerConfig::default())
     }
 
     fn get_lexicon_weight_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Weight {
@@ -528,7 +529,12 @@ where
             words,
         } = case;
         let mut best: HashMap<SmolStr, Weight> = HashMap::new();
-        let mut suggestion_data: HashMap<SmolStr, SuggestionData> = HashMap::new();
+        let mut suggestion_data: Option<HashMap<SmolStr, SuggestionData>> =
+            if config.verbose {
+                Some(HashMap::new())
+            } else {
+                None
+            };
 
         for word in std::iter::once(&original_input).chain(words.iter()) {
             tracing::trace!("suggesting for word {}", word);
@@ -789,13 +795,33 @@ where
                                 );
                                 if entry as &_ > &weight {
                                     *entry = weight;
-                                    // Update suggestion data
+                                    // Update suggestion data (only when verbose)
+                                    if let Some(ref mut data) = suggestion_data {
+                                        let (lex_w, mut_w) = if let Some(ref details) = sugg.weight_details {
+                                            (details.lexicon_weight, details.mutator_weight)
+                                        } else {
+                                            (Weight(0.0), Weight(0.0))
+                                        };
+                                        data.insert(sugg.value.clone(), SuggestionData {
+                                            lexicon_weight: lex_w,
+                                            mutator_weight: mut_w,
+                                            reweight_start: penalty_start,
+                                            reweight_mid: penalty_middle,
+                                            reweight_end: penalty_end,
+                                        });
+                                    }
+                                }
+                            })
+                            .or_insert_with(|| {
+                                let weight = sugg.weight + additional_weight;
+                                // Store suggestion data (only when verbose)
+                                if let Some(ref mut data) = suggestion_data {
                                     let (lex_w, mut_w) = if let Some(ref details) = sugg.weight_details {
                                         (details.lexicon_weight, details.mutator_weight)
                                     } else {
                                         (Weight(0.0), Weight(0.0))
                                     };
-                                    suggestion_data.insert(sugg.value.clone(), SuggestionData {
+                                    data.insert(sugg.value.clone(), SuggestionData {
                                         lexicon_weight: lex_w,
                                         mutator_weight: mut_w,
                                         reweight_start: penalty_start,
@@ -803,21 +829,6 @@ where
                                         reweight_end: penalty_end,
                                     });
                                 }
-                            })
-                            .or_insert_with(|| {
-                                let weight = sugg.weight + additional_weight;
-                                let (lex_w, mut_w) = if let Some(ref details) = sugg.weight_details {
-                                    (details.lexicon_weight, details.mutator_weight)
-                                } else {
-                                    (Weight(0.0), Weight(0.0))
-                                };
-                                suggestion_data.insert(sugg.value.clone(), SuggestionData {
-                                    lexicon_weight: lex_w,
-                                    mutator_weight: mut_w,
-                                    reweight_start: penalty_start,
-                                    reweight_mid: penalty_middle,
-                                    reweight_end: penalty_end,
-                                });
                                 weight
                             });
                     }
@@ -840,7 +851,7 @@ where
                 out = best
                     .into_iter()
                     .map(|(k, v)| {
-                        let data = suggestion_data.get(&k);
+                        let data = suggestion_data.as_ref().and_then(|map| map.get(&k));
                         Suggestion {
                             value: k.clone(),
                             weight: v,
@@ -859,7 +870,7 @@ where
                 out = best
                     .into_iter()
                     .map(|(k, v)| {
-                        let data = suggestion_data.get(&k);
+                        let data = suggestion_data.as_ref().and_then(|map| map.get(&k));
                         Suggestion {
                             value: k,
                             weight: v,
