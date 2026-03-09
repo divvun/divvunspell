@@ -625,22 +625,22 @@ h2 {
 				<tr>
 					<th>True positive<br><small>(correctly flagged)</small></th>
 					<td>{report.summary.true_positive || 0}</td>
-					<td>{((report.summary.true_positive || 0) / report.results.length * 100).toFixed(1)}%</td>
+					<td>{report.results.length > 0 ? ((report.summary.true_positive || 0) / report.results.length * 100).toFixed(1) + '%' : 'N/A'}</td>
 				</tr>
 				<tr>
 					<th>False negative<br><small>(incorrectly accepted)</small></th>
 					<td>{report.summary.false_negative || 0}</td>
-					<td>{((report.summary.false_negative || 0) / report.results.length * 100).toFixed(1)}%</td>
+					<td>{report.results.length > 0 ? ((report.summary.false_negative || 0) / report.results.length * 100).toFixed(1) + '%' : 'N/A'}</td>
 				</tr>
 				<tr>
 					<th>True negative<br><small>(correctly accepted)</small></th>
 					<td>{report.summary.true_negative || 0}</td>
-					<td>{((report.summary.true_negative || 0) / report.results.length * 100).toFixed(1)}%</td>
+					<td>{report.results.length > 0 ? ((report.summary.true_negative || 0) / report.results.length * 100).toFixed(1) + '%' : 'N/A'}</td>
 				</tr>
 				<tr>
 					<th>False positive<br><small>(incorrectly flagged)</small></th>
 					<td>{report.summary.false_accept || 0}</td>
-					<td>{((report.summary.false_accept || 0) / report.results.length * 100).toFixed(1)}%</td>
+					<td>{report.results.length > 0 ? ((report.summary.false_accept || 0) / report.results.length * 100).toFixed(1) + '%' : 'N/A'}</td>
 				</tr>
 				<tr>
 					<th>Total words</th>
@@ -673,7 +673,7 @@ h2 {
 </div>
 
 <h2>Suggestion Statistics</h2>
-<p><em>This statistics applies only to true positive words ({report.summary.true_positive || 0} words).</em></p>
+<p><em>These statistics apply only to true positive words ({report.summary.true_positive || 0} words).</em></p>
 <div class="accuracy-stats-container">
 	<div>
 		<table class="stats-table">

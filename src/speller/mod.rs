@@ -507,20 +507,7 @@ where
             SpellerWorker::new(self.clone(), self.to_input_vec(word), config.clone(), mode);
 
         tracing::trace!("suggesting single {}", word);
-        let mut suggestions = worker.suggest();
-
-        // Apply beam filtering: remove suggestions that are more than beam away from best.
-        // Only enable beam when it is strictly greater than Weight::ZERO, to match FFI behavior.
-        if let Some(beam) = config.beam {
-            if beam > Weight::ZERO {
-                if let Some(best) = suggestions.first() {
-                    let beam_threshold = best.weight() + beam;
-                    suggestions.retain(|s| s.weight() <= beam_threshold);
-                }
-            }
-        }
-
-        suggestions
+        worker.suggest()
     }
 
     fn suggest_case(

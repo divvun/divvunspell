@@ -69,7 +69,11 @@ fn load_words(
         .filter_map(Result::ok)
         .filter_map(|r| {
             r.get(0).map(|x| {
-                let expected = r.get(1).map(|y| y.to_string());
+                let expected = r
+                    .get(1)
+                    .map(|y| y.trim())
+                    .filter(|y| !y.is_empty())
+                    .map(|y| y.to_string());
                 (x.to_string(), expected)
             })
         })
@@ -98,7 +102,7 @@ struct AccuracyResult<'a> {
     suggestions: Vec<Suggestion>,
     position: Option<usize>,
     time: Time,
-    false_accept: bool,  // True if input was incorrectly accepted as correct
+    false_accept: bool, // True if word was misclassified (FP: correct word flagged as error, or FN: error word accepted as correct)
 }
 
 #[derive(Debug, Serialize)]
@@ -119,11 +123,11 @@ struct Summary {
     any_position: u32,
     no_suggestions: u32,
     only_wrong: u32,
-    false_accept: u32,  // False Positive: Correct words incorrectly flagged as errors
+    false_accept: u32, // False Positive: Correct words incorrectly flagged as errors
     // Spell checker classification statistics
-    true_positive: u32,   // Error words correctly flagged as errors
-    false_negative: u32,  // Error words incorrectly accepted as correct
-    true_negative: u32,   // Correct words correctly accepted as correct
+    true_positive: u32,  // Error words correctly flagged as errors
+    false_negative: u32, // Error words incorrectly accepted as correct
+    true_negative: u32,  // Correct words correctly accepted as correct
     slowest_lookup: Time,
     fastest_lookup: Time,
     average_time: Time,
@@ -344,10 +348,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         .progress_with(pb)
         .map(|(input, expected)| {
             let now = Instant::now();
-            
+
             // Check if the input is accepted by the spell checker (using same config as suggestions)
             let is_accepted = archive.speller().is_correct_with_config(&input, &cfg);
-            
+
             let (suggestions, position, false_accept) = match expected.as_ref() {
                 None => {
                     // Word should be accepted (no correction expected)
@@ -373,7 +377,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
             };
-            
+
             let now = now.elapsed();
 
             let time = Time {
@@ -385,7 +389,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 Some(exp) => damerau_levenshtein(input, exp),
                 None => 0,
             };
-            
+
             AccuracyResult {
                 input,
                 expected: expected.as_deref(),
