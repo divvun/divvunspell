@@ -593,6 +593,11 @@ h2 {
 	text-align: center;
 	padding: 2em;
 }
+.container {
+	padding: 1.5em;
+	max-width: 100%;
+}
+
 .config-block {
 	background-color: var(--bg-subtle);
 	border: 1px solid var(--border-light);
@@ -600,6 +605,8 @@ h2 {
 	padding: 0.7em;
 	margin: 1em 0;
 	overflow-x: auto;
+	width: fit-content;
+	max-width: 100%;
 }
 .config-block pre {
 	margin: 0;
@@ -754,6 +761,7 @@ h2 {
 	<span>{themeLabel}</span>
 </button>
 
+<div class="container">
 {#if report != null}
 <h1>{getSpellerTitle(report)} - Accuracy Report</h1>
 
@@ -1025,3 +1033,4 @@ h2 {
 	</tbody>
 </table>
 {/if}
+</div>
