@@ -45,7 +45,7 @@ impl Suggestion {
             weight_details: None,
         }
     }
-    
+
     /// creates a spelling correction suggestion with detailed weight information
     pub fn new_with_details(
         value: SmolStr,
@@ -75,7 +75,7 @@ impl Suggestion {
     pub fn completed(&self) -> Option<bool> {
         self.completed
     }
-    
+
     /// gets the detailed weight information if available
     pub fn weight_details(&self) -> Option<&WeightDetails> {
         self.weight_details.as_ref()

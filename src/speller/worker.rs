@@ -589,7 +589,6 @@ where
     }
 
     pub(crate) fn suggest(&self) -> Vec<Suggestion> {
-
         tracing::trace!("Beginning suggest");
 
         let pool = Pool::with_size_and_max(self.config.node_pool_size, self.config.node_pool_size);
@@ -658,7 +657,7 @@ where
                 .lexicon()
                 .alphabet()
                 .string_from_symbols(&next_node.string);
-            
+
             // tracing::trace!("suggesting? {}::{}", string, weight);
             if weight < best_weight {
                 best_weight = weight;
@@ -675,7 +674,7 @@ where
             // Use basic (fast) version during loop for weight limit calculation
             suggestions = self.generate_sorted_suggestions_basic(&corrections);
         }
-        
+
         // After loop: generate full suggestions with verbose details if needed
         if self.config.verbose {
             suggestions = self.generate_sorted_suggestions(&corrections);
@@ -690,18 +689,18 @@ where
     ) -> Vec<Suggestion> {
         //tracing::trace!("Generating sorted suggestions");
         let mut c: Vec<Suggestion>;
-        
+
         if self.config.verbose {
             // When verbose, analyze each unique suggestion to get lexicon weight
             // Use a local cache to avoid cross-speller contamination
             let mut lexicon_weight_cache: HashMap<SmolStr, Weight> = HashMap::new();
-            
+
             // Analyze each word to get its lexicon weight
             for word in corrections.keys() {
                 let lexicon_weight = self.analyze_output_form(word.as_str());
                 lexicon_weight_cache.insert(word.clone(), lexicon_weight);
             }
-            
+
             // Now build suggestions using cached weights
             if let Some(s) = &self.config.completion_marker {
                 c = corrections
@@ -712,7 +711,7 @@ where
                             .copied()
                             .unwrap_or(Weight::ZERO);
                         let mutator_weight = *x.1 - lexicon_weight;
-                        
+
                         let weight_details = WeightDetails {
                             lexicon_weight,
                             mutator_weight,
@@ -720,7 +719,12 @@ where
                             reweight_mid: 0.0,
                             reweight_end: 0.0,
                         };
-                        Suggestion::new_with_details(x.0.clone(), *x.1, Some(x.0.ends_with(s)), weight_details)
+                        Suggestion::new_with_details(
+                            x.0.clone(),
+                            *x.1,
+                            Some(x.0.ends_with(s)),
+                            weight_details,
+                        )
                     })
                     .collect();
             } else {
@@ -732,7 +736,7 @@ where
                             .copied()
                             .unwrap_or(Weight::ZERO);
                         let mutator_weight = *x.1 - lexicon_weight;
-                        
+
                         let weight_details = WeightDetails {
                             lexicon_weight,
                             mutator_weight,
@@ -758,7 +762,7 @@ where
                     .collect();
             }
         }
-        
+
         c.sort();
 
         if let Some(n) = self.config.n_best {
@@ -766,15 +770,15 @@ where
         }
         c
     }
-    
+
     // Analyze an output form using only the lexicon to get its weight
     fn analyze_output_form(&self, form: &str) -> Weight {
         use unic_segment::Graphemes;
-        
+
         // Convert form to input symbols using MUTATOR alphabet
         let alphabet = self.speller.mutator().alphabet();
         let key_table = alphabet.key_table();
-        
+
         let temp_input: Vec<SymbolNumber> = Graphemes::new(form)
             .map(|ch| {
                 let s = ch.to_string();
@@ -785,35 +789,36 @@ where
                     .unwrap_or_else(|| alphabet.unknown().unwrap_or(SymbolNumber::ZERO))
             })
             .collect();
-        
+
         if temp_input.is_empty() {
             return Weight(0.0);
         }
-        
+
         // Manually traverse lexicon-only (like analyze() does)
         let pool = Pool::with_size_and_max(0, 0);
         let lexicon = self.speller.lexicon();
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
         let mut best_weight = Weight::MAX;
-        
+
         // Create a temporary config without verbose mode to avoid infinite recursion
         let temp_config = SpellerConfig {
             verbose: false,
             ..self.config.clone()
         };
-        
+
         let temp_worker = SpellerWorker {
             speller: self.speller.clone(),
             input: temp_input,
             config: temp_config,
             output_mode: OutputMode::WithoutTags,
         };
-        
+
         while let Some(next_node) = nodes.pop() {
             if next_node.input_state.0 as usize == temp_worker.input.len()
                 && lexicon.is_final(next_node.lexicon_state)
             {
-                let weight = next_node.weight() + lexicon.final_weight(next_node.lexicon_state).unwrap();
+                let weight =
+                    next_node.weight() + lexicon.final_weight(next_node.lexicon_state).unwrap();
                 if weight < best_weight {
                     best_weight = weight;
                 }
@@ -821,7 +826,7 @@ where
             temp_worker.lexicon_epsilons(&pool, Weight::INFINITE, &next_node, &mut nodes);
             temp_worker.lexicon_consume(&pool, Weight::INFINITE, &next_node, &mut nodes);
         }
-        
+
         if best_weight == Weight::MAX {
             Weight(0.0)
         } else {

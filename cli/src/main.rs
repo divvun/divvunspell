@@ -58,12 +58,14 @@ impl OutputWriter for StdoutWriter {
                         } else {
                             format!("{:.0}", details.reweight_mid)
                         };
-                        print!(" (lex: {:.5}, mut: {:.5}, rew: {:.0}/{}/{:.0})", 
+                        print!(
+                            " (lex: {:.5}, mut: {:.5}, rew: {:.0}/{}/{:.0})",
                             details.lexicon_weight.0,
                             details.mutator_weight.0,
                             details.reweight_start,
                             mid_str,
-                            details.reweight_end);
+                            details.reweight_end
+                        );
                     }
                 }
                 println!();
@@ -78,12 +80,14 @@ impl OutputWriter for StdoutWriter {
                         } else {
                             format!("{:.0}", details.reweight_mid)
                         };
-                        print!(" (lex: {:.5}, mut: {:.5}, rew: {:.0}/{}/{:.0})", 
+                        print!(
+                            " (lex: {:.5}, mut: {:.5}, rew: {:.0}/{}/{:.0})",
                             details.lexicon_weight.0,
                             details.mutator_weight.0,
                             details.reweight_start,
                             mid_str,
-                            details.reweight_end);
+                            details.reweight_end
+                        );
                     }
                 }
                 println!();
