@@ -14,7 +14,13 @@
 	// Theme management
 	onMount(() => {
 		// Load theme preference from localStorage with validation
-		const savedTheme = localStorage.getItem('theme');
+		let savedTheme;
+		try {
+			savedTheme = localStorage.getItem('theme');
+		} catch (e) {
+			// If storage access fails (e.g., blocked/disabled), fall back to default
+			savedTheme = null;
+		}
 		const allowedThemes = ['light', 'dark', 'auto'];
 		const initialTheme = allowedThemes.includes(savedTheme) ? savedTheme : 'auto';
 		theme = initialTheme;
@@ -28,12 +34,26 @@
 				applyTheme('auto');
 			}
 		};
-		mediaQuery.addEventListener('change', handleChange);
-
-		// Cleanup: remove event listener when component unmounts
-		return () => {
-			mediaQuery.removeEventListener('change', handleChange);
-		};
+		
+		// Use addEventListener where available, fall back to addListener for older browsers
+		if (typeof mediaQuery.addEventListener === 'function') {
+			mediaQuery.addEventListener('change', handleChange);
+			
+			// Cleanup: remove event listener when component unmounts
+			return () => {
+				mediaQuery.removeEventListener('change', handleChange);
+			};
+		} else if (typeof mediaQuery.addListener === 'function') {
+			mediaQuery.addListener(handleChange);
+			
+			// Cleanup for legacy browsers
+			return () => {
+				mediaQuery.removeListener(handleChange);
+			};
+		}
+		
+		// Fallback no-op cleanup if no supported listener API is available
+		return () => {};
 	});
 	
 	function cycleTheme() {
@@ -708,6 +728,23 @@ h2 {
 	padding: 0;
 }
 
+/* Theme-aware link colors */
+:global(a) {
+	color: rgb(0, 100, 200);
+}
+
+:global(a:visited) {
+	color: rgb(0, 80, 160);
+}
+
+:global([data-theme="dark"] a) {
+	color: #6eb9ff;
+}
+
+:global([data-theme="dark"] a:visited) {
+	color: #9dc8ff;
+}
+
 .table td, .table th {
 	border: 1px solid var(--border-color);
 }
@@ -756,7 +793,7 @@ h2 {
 
 </style>
 
-<button class="theme-toggle" on:click={cycleTheme} aria-label="Toggle theme" title="Switch between light, dark, and auto theme modes">
+<button class="theme-toggle" on:click={cycleTheme} aria-label={`Toggle theme, current mode: ${themeLabel}`} title="Switch between light, dark, and auto theme modes">
 	<span>{themeIcon}</span>
 	<span>{themeLabel}</span>
 </button>
