@@ -1,0 +1,9 @@
+prefix=@PREFIX@
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: divvunspell
+Description: Divvun FST spell checker C FFI
+Version: @VERSION@
+Libs: -L${libdir} -ldivvun_fst
+Cflags: -I${includedir}

@@ -1,0 +1,5 @@
+module CDivvunFST {
+    header "divvun_fst.h"
+    link "divvun_fst"
+    export *
+}
