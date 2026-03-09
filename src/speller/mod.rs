@@ -704,6 +704,45 @@ where
                             (start_d, mid_d, adjusted_end_d)
                         };
                         
+                        // Special case: when suggestion has duplicate chars at start/end that match input
+                        // Example: "Anar" → "Aanaar" - both start with 'a', the insertion of second 'a' 
+                        // should be counted as middle change, not start change
+                        let (start_dist, mid_dist, end_dist) = if !is_short && input_lower.len() > 0 && sugg_lower.len() > 1 {
+                            let adjusted_start = if start_dist > 0 && input_lower[0] == sugg_lower[0] && sugg_lower[0] == sugg_lower[1] {
+                                // First char matches, and suggestion has duplicate at position 1
+                                // Move the start change to middle
+                                0
+                            } else {
+                                start_dist
+                            };
+                            
+                            let adjusted_end = if end_dist > 0 && 
+                                                input_lower.len() > 0 && 
+                                                sugg_lower.len() > 0 &&
+                                                input_lower[input_lower.len()-1] == sugg_lower[sugg_lower.len()-1] && 
+                                                sugg_lower.len() > 1 &&
+                                                sugg_lower[sugg_lower.len()-1] == sugg_lower[sugg_lower.len()-2] {
+                                // Last char matches, and suggestion has duplicate at position len-2
+                                // Move the end change to middle
+                                0
+                            } else {
+                                end_dist
+                            };
+                            
+                            // Add any moved changes to mid_dist
+                            let added_to_mid = (start_dist - adjusted_start) + (end_dist - adjusted_end);
+                            let adjusted_mid = if mid_dist < 0 {
+                                // Was no middle section, now there is
+                                added_to_mid as i32
+                            } else {
+                                mid_dist + added_to_mid as i32
+                            };
+                            
+                            (adjusted_start, adjusted_mid, adjusted_end)
+                        } else {
+                            (start_dist, mid_dist, end_dist)
+                        };
+                        
                         let penalty_start = if start_dist > 0 { reweight.start_penalty } else { 0.0 };
                         let penalty_middle = if mid_dist < 0 { 
                             -1.0  // Signal for no middle section (will be displayed as "-")
