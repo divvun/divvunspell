@@ -704,14 +704,21 @@ where
                             (start_d, mid_d, adjusted_end_d)
                         };
                         
-                        // Special case: when suggestion has duplicate chars at start/end that match input
-                        // Example: "Anar" → "Aanaar" - both start with 'a', the insertion of second 'a' 
-                        // should be counted as middle change, not start change
-                        let (start_dist, mid_dist, end_dist) = if !is_short && input_lower.len() > 0 && sugg_lower.len() > 1 {
-                            let adjusted_start = if start_dist > 0 && input_lower[0] == sugg_lower[0] && sugg_lower[0] == sugg_lower[1] {
-                                // First char matches, and suggestion has duplicate at position 1
-                                // Move the start change to middle
-                                0
+                        // Special case: when input or suggestion has duplicate chars at start/end that match
+                        // Examples: 
+                        // - Insertion: "Anar" → "Aanaar" - both start with 'a', insertion of second 'a' should be middle
+                        // - Deletion: "Aarâhšoddâdem" → "Arâšoddâdem" - both start with 'A', deletion of second 'a' should be middle
+                        let (start_dist, mid_dist, end_dist) = if !is_short && input_lower.len() > 0 && sugg_lower.len() > 0 {
+                            let adjusted_start = if start_dist > 0 && input_lower[0] == sugg_lower[0] {
+                                // First char matches - check if either has duplicate at position 1
+                                let sugg_has_dup = sugg_lower.len() > 1 && sugg_lower[0] == sugg_lower[1];
+                                let input_has_dup = input_lower.len() > 1 && input_lower[0] == input_lower[1];
+                                if sugg_has_dup || input_has_dup {
+                                    // Move the start change to middle
+                                    0
+                                } else {
+                                    start_dist
+                                }
                             } else {
                                 start_dist
                             };
@@ -719,12 +726,16 @@ where
                             let adjusted_end = if end_dist > 0 && 
                                                 input_lower.len() > 0 && 
                                                 sugg_lower.len() > 0 &&
-                                                input_lower[input_lower.len()-1] == sugg_lower[sugg_lower.len()-1] && 
-                                                sugg_lower.len() > 1 &&
-                                                sugg_lower[sugg_lower.len()-1] == sugg_lower[sugg_lower.len()-2] {
-                                // Last char matches, and suggestion has duplicate at position len-2
-                                // Move the end change to middle
-                                0
+                                                input_lower[input_lower.len()-1] == sugg_lower[sugg_lower.len()-1] {
+                                // Last char matches - check if either has duplicate at position len-2
+                                let sugg_has_dup = sugg_lower.len() > 1 && sugg_lower[sugg_lower.len()-1] == sugg_lower[sugg_lower.len()-2];
+                                let input_has_dup = input_lower.len() > 1 && input_lower[input_lower.len()-1] == input_lower[input_lower.len()-2];
+                                if sugg_has_dup || input_has_dup {
+                                    // Move the end change to middle
+                                    0
+                                } else {
+                                    end_dist
+                                }
                             } else {
                                 end_dist
                             };
