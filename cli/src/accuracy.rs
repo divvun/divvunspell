@@ -1,5 +1,5 @@
-use chrono::prelude::*;
 use divvun_fst::types::Weight;
+use jiff::Zoned;
 use std::{
     io::Write,
     path::Path,
@@ -343,7 +343,8 @@ pub fn run(args: AccuracyArgs) -> anyhow::Result<()> {
     let pb = ProgressBar::new(words.len() as u64);
     pb.set_style(
         ProgressStyle::default_bar()
-            .template("{pos}/{len} [{percent}%] {wide_bar} {elapsed_precise}"),
+            .template("{pos}/{len} [{percent}%] {wide_bar} {elapsed_precise}")
+            .unwrap(),
     );
 
     let start_time = Instant::now();
@@ -447,7 +448,7 @@ pub fn run(args: AccuracyArgs) -> anyhow::Result<()> {
             .output()?;
         output.write_all(String::from_utf8(git_id.stdout).unwrap().trim().as_bytes())?;
         output.write_all(b"\t")?;
-        output.write_all(Local::now().to_rfc3339().as_bytes())?;
+        output.write_all(Zoned::now().to_string().as_bytes())?;
         output.write_all(b"\t")?;
         let git_descr = std::process::Command::new("git").arg("describe").output()?;
         output.write_all(
