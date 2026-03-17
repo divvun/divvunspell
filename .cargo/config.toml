@@ -1,2 +1,2 @@
 [alias]
-accuracy-test = "run --bin accuracy --release"
+accuracy-test = "run -p divvunspell-cli --features accuracy --release -- accuracy"

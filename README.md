@@ -130,26 +130,25 @@ thfst-tools thfsts-to-bhfst --errmodel errmodel.thfst --lexicon lexicon.thfst ou
 thfst-tools bhfst-info language.bhfst
 ```
 
-### accuracy
+### accuracy (feature-gated subcommand)
 
-Test spell checker accuracy against known typo/correction pairs.
+Test spell checker accuracy against known typo/correction pairs. This subcommand is available when `divvunspell` is built with the `accuracy` feature.
 
 ```sh
-# Install
-cd crates/accuracy
-cargo install --path .
+# Build with accuracy support
+cargo install divvunspell-cli --features accuracy
 
 # Run accuracy test
-accuracy typos.tsv language.zhfst
+divvunspell accuracy typos.tsv language.zhfst
 
 # Save detailed JSON report
-accuracy -o report.json typos.tsv language.zhfst
+divvunspell accuracy -o report.json typos.tsv language.zhfst
 
 # Limit test size and save TSV summary
-accuracy -w 1000 -t results.tsv typos.tsv language.zhfst
+divvunspell accuracy -w 1000 -t results.tsv typos.tsv language.zhfst
 
 # Use custom config
-accuracy -c config.json typos.tsv language.zhfst
+divvunspell accuracy -c config.json typos.tsv language.zhfst
 ```
 
 **Configuration format** (`config.json`): Fine-tune the spell checker algorithm with a JSON configuration file. All fields are optional and will use defaults if omitted:
@@ -194,7 +193,7 @@ teh      the
 **Accuracy viewer** (prototype web UI):
 
 ```sh
-accuracy -o support/accuracy-viewer/public/report.json typos.txt language.zhfst
+divvunspell accuracy -o support/accuracy-viewer/public/report.json typos.txt language.zhfst
 cd support/accuracy-viewer
 npm i && npm run dev
 # Open http://localhost:5000
@@ -203,7 +202,7 @@ npm i && npm run dev
 If you are using a config file, use this variant of the first command above:
 
 ```sh
-accuracy -c config.json -o support/accuracy-viewer/public/report.json typos.txt language.zhfst
+divvunspell accuracy -c config.json -o support/accuracy-viewer/public/report.json typos.txt language.zhfst
 ```
 
 The configuration used is always printed at the top of the web report, with default values printed if no configuration file is specified.
@@ -214,7 +213,7 @@ By adding `--verbose` to the command above, every suggestion will have all weigh
 The `accuracy` command will be something like this:
 
 ```sh
-accuracy --verbose -c config.json -o support/accuracy-viewer/public/report.json typos.txt language.zhfst
+divvunspell accuracy --verbose -c config.json -o support/accuracy-viewer/public/report.json typos.txt language.zhfst
 ```
 
 The result in the web report looks like this:
@@ -249,9 +248,9 @@ rustup default stable
 cargo build --release
 
 # Install specific tools
-cargo install --path ./cli          # divvunspell CLI
+cargo install --path ./cli                       # divvunspell CLI
+cargo install --path ./cli --features accuracy   # divvunspell CLI with accuracy subcommand
 cargo install --path ./crates/thfst-tools
-cargo install --path ./crates/accuracy
 ```
 
 ### Run Tests
@@ -274,4 +273,4 @@ The **divvunspell library** is dual-licensed under:
 
 You may choose either license for library use.
 
-The **command-line tools** (`divvunspell`, `thfst-tools`, `accuracy`) are licensed under **GPL-3.0** ([LICENSE-GPL](LICENSE-GPL)).
+The **command-line tools** (`divvunspell`, `thfst-tools`) are licensed under **GPL-3.0** ([LICENSE-GPL](LICENSE-GPL)).

@@ -3,22 +3,6 @@
 version = 4
 
 [[package]]
-name = "accuracy"
-version = "1.0.0-beta.8"
-dependencies = [
- "chrono",
- "clap",
- "csv",
- "distance",
- "divvun-fst",
- "indicatif",
- "rayon",
- "serde",
- "serde_json",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -472,14 +456,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "distance"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d9d8664cf849d7d0f3114a3a387d2f5e4303176d746d5a951aaddc66dfe9240"
-
-[[package]]
 name = "divvun-fst"
-version = "1.0.0-beta.8"
+version = "1.0.0-beta.9"
 dependencies = [
  "box-format",
  "byteorder",
@@ -513,7 +491,7 @@ dependencies = [
 
 [[package]]
 name = "divvun-fst-ffi"
-version = "1.0.0-beta.8"
+version = "1.0.0-beta.9"
 dependencies = [
  "cffi",
  "divvun-fst",
@@ -522,7 +500,7 @@ dependencies = [
 
 [[package]]
 name = "divvun-fst-jni"
-version = "1.0.0-beta.8"
+version = "1.0.0-beta.9"
 dependencies = [
  "divvun-fst",
  "jni",
@@ -530,15 +508,20 @@ dependencies = [
 
 [[package]]
 name = "divvunspell-cli"
-version = "1.0.0-beta.8"
+version = "1.0.0-beta.9"
 dependencies = [
  "anyhow",
  "box-format",
+ "chrono",
  "clap",
+ "csv",
  "divvun-fst",
+ "indicatif",
+ "rayon",
  "serde",
  "serde_json",
  "tracing-subscriber",
+ "unic-segment",
 ]
 
 [[package]]
@@ -1205,7 +1188,7 @@ checksum = "caf4aa5b0f434c91fe5c7f1ecb6a5ece2130b02ad2a590589dda5146df959001"
 
 [[package]]
 name = "regtest"
-version = "1.0.0-beta.8"
+version = "1.0.0-beta.9"
 dependencies = [
  "clap",
  "csv",
@@ -1397,7 +1380,7 @@ dependencies = [
 
 [[package]]
 name = "thfst-tools"
-version = "1.0.0-beta.8"
+version = "1.0.0-beta.9"
 dependencies = [
  "box-format",
  "clap",

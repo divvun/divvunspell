@@ -11,6 +11,9 @@ repository = "https://github.com/divvun/divvunspell"
 name = "divvunspell"
 path = "src/main.rs"
 
+[features]
+accuracy = ["dep:csv", "dep:rayon", "dep:indicatif", "dep:chrono", "dep:unic-segment"]
+
 [dependencies]
 divvun-fst = { features = ["compression"], path = ".." }
 tracing-subscriber = "0.3"
@@ -20,3 +23,9 @@ serde_json.workspace = true
 box-format.workspace = true
 clap.workspace = true
 anyhow.workspace = true
+
+csv = { version = "1.1", optional = true }
+rayon = { version = "1.4.0", optional = true }
+indicatif = { version = "0.15", features = ["with_rayon"], optional = true }
+chrono = { version = "0.4.19", optional = true }
+unic-segment = { version = "0.9", optional = true }

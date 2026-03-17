@@ -1,3 +1,6 @@
+#[cfg(feature = "accuracy")]
+mod accuracy;
+
 use std::io::{self, Read};
 use std::process;
 use std::{
@@ -232,6 +235,10 @@ enum Command {
 
     /// Print input in word-separated tokenized form
     Tokenize(TokenizeArgs),
+
+    /// Run accuracy tests against a word list
+    #[cfg(feature = "accuracy")]
+    Accuracy(accuracy::AccuracyArgs),
 }
 
 #[derive(Debug, Parser)]
@@ -474,5 +481,7 @@ fn main() -> anyhow::Result<()> {
         None => Ok(()),
         Some(Command::Suggest(args)) => suggest(args),
         Some(Command::Tokenize(args)) => tokenize(args),
+        #[cfg(feature = "accuracy")]
+        Some(Command::Accuracy(args)) => accuracy::run(args),
     }
 }

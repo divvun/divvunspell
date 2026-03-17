@@ -1,31 +1,5 @@
-/*! Accuracy testing for Finite-State Spell-Checkers
-
-A tool to help testing quality of finite-state spell-checkers. Shows precision
-and recall and F scores.
-
-# Usage examples
-
-It's a command-line tool:
-```console
-$ cargo run -- typos.txt se.zhfst
-```
-will produce statistics of spelling corrections.
-
-It is possible to fine-tune the options using a configuration file in json
-format. The format of json file follows from the [`SpellerConfig`] definition in
-the main library:
-```console
-$ cargo run -- --config config.json typos.txt se.zhfst
-```
-For automated testing in CI there is a --threshold parametre:
-```console
-$ cargo run -- --threshold 0.9 typos.txt se.zhfst
-```
-*/
-
 use chrono::prelude::*;
 use divvun_fst::types::Weight;
-use std::error::Error;
 use std::{
     io::Write,
     path::Path,
@@ -58,7 +32,6 @@ fn grapheme_damerau_levenshtein(s1: &str, s2: &str) -> usize {
         return len1;
     }
 
-    // Initialize distance matrix
     let mut matrix = vec![vec![0usize; len2 + 1]; len1 + 1];
 
     for i in 0..=len1 {
@@ -68,7 +41,6 @@ fn grapheme_damerau_levenshtein(s1: &str, s2: &str) -> usize {
         matrix[0][j] = j;
     }
 
-    // Calculate distances
     for i in 1..=len1 {
         for j in 1..=len2 {
             let cost = if s1_graphemes[i - 1] == s2_graphemes[j - 1] {
@@ -113,7 +85,7 @@ static CFG: SpellerConfig = SpellerConfig {
 fn load_words(
     path: &str,
     max_words: Option<usize>,
-) -> Result<Vec<(String, Option<String>)>, Box<dyn Error>> {
+) -> anyhow::Result<Vec<(String, Option<String>)>> {
     let mut rdr = csv::ReaderBuilder::new()
         .comment(Some(b'#'))
         .delimiter(b'\t')
@@ -134,7 +106,7 @@ fn load_words(
                 (x.to_string(), expected)
             })
         })
-        .take(max_words.unwrap_or(std::usize::MAX))
+        .take(max_words.unwrap_or(usize::MAX))
         .collect())
 }
 
@@ -159,7 +131,7 @@ struct AccuracyResult<'a> {
     suggestions: Vec<Suggestion>,
     position: Option<usize>,
     time: Time,
-    false_accept: bool, // True if word was misclassified (FP: correct word flagged as error, or FN: error word accepted as correct)
+    false_accept: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -180,11 +152,10 @@ struct Summary {
     any_position: u32,
     no_suggestions: u32,
     only_wrong: u32,
-    false_accept: u32, // False Positive: Correct words incorrectly flagged as errors
-    // Spell checker classification statistics
-    true_positive: u32,  // Error words correctly flagged as errors
-    false_negative: u32, // Error words incorrectly accepted as correct
-    true_negative: u32,  // Correct words correctly accepted as correct
+    false_accept: u32,
+    true_positive: u32,
+    false_negative: u32,
+    true_negative: u32,
     slowest_lookup: Time,
     fastest_lookup: Time,
     average_time: Time,
@@ -214,37 +185,29 @@ impl std::fmt::Display for Summary {
 }
 
 impl Summary {
-    fn new<'a>(results: &[AccuracyResult<'a>]) -> Summary {
+    fn new(results: &[AccuracyResult<'_>]) -> Summary {
         let mut summary = Summary::default();
 
         results.iter().for_each(|result| {
             summary.total_words += 1;
 
-            // Classify based on spell checker behavior
             match result.expected {
                 None => {
-                    // Correct word (no correction expected)
                     if result.false_accept {
-                        // Incorrectly flagged as error
                         summary.false_accept += 1;
                     } else {
-                        // Correctly accepted as correct
                         summary.true_negative += 1;
                     }
                 }
                 Some(_) => {
-                    // Error word (correction expected)
                     if result.false_accept {
-                        // Incorrectly accepted as correct
                         summary.false_negative += 1;
                     } else {
-                        // Correctly flagged as error
                         summary.true_positive += 1;
                     }
                 }
             }
 
-            // Count suggestion positions (only for words that should be rejected)
             if result.expected.is_some() && !result.false_accept {
                 if let Some(position) = result.position {
                     summary.any_position += 1;
@@ -275,7 +238,6 @@ impl Summary {
             .unwrap()
             .time;
 
-        // Calculate average time for all results
         let total_nanos: u128 = results
             .iter()
             .map(|r| (r.time.secs as u128 * 1_000_000_000) + r.time.subsec_nanos as u128)
@@ -286,7 +248,6 @@ impl Summary {
             subsec_nanos: (avg_nanos % 1_000_000_000) as u32,
         };
 
-        // Calculate average time for 95% fastest results (exclude slowest 5%)
         let mut sorted_times: Vec<_> = results.iter().map(|r| r.time).collect();
         sorted_times.sort();
         let percentile_95_count = (results.len() as f32 * 0.95).ceil() as usize;
@@ -301,14 +262,12 @@ impl Summary {
             subsec_nanos: (avg_nanos_95pc % 1_000_000_000) as u32,
         };
 
-        // Calculate average position and average suggestions for correct results only
         let correct_results: Vec<_> = results.iter().filter(|r| r.position.is_some()).collect();
 
         if !correct_results.is_empty() {
-            // Convert 0-indexed positions to 1-indexed (1st place, 2nd place, etc)
             let total_position: usize = correct_results
                 .iter()
-                .map(|r| r.position.unwrap() + 1) // +1 to convert from 0-indexed to 1-indexed
+                .map(|r| r.position.unwrap() + 1)
                 .sum();
             summary.average_position_of_correct =
                 total_position as f32 / correct_results.len() as f32;
@@ -324,12 +283,7 @@ impl Summary {
 }
 
 #[derive(Debug, Parser)]
-#[command(
-    name = "divvunspell-accuracy",
-    version,
-    about = "Accuracy testing for DivvunSpell."
-)]
-struct Args {
+pub struct AccuracyArgs {
     /// Provide JSON config file to override test defaults
     #[arg(short = 'c', long)]
     config: Option<PathBuf>,
@@ -337,8 +291,8 @@ struct Args {
     /// The 'input -> expected' list in tab-delimited value file (TSV)
     words: Option<String>,
 
-    /// Use the given ZHFST file
-    zhfst: Option<String>,
+    /// Use the given ZHFST/BHFST file
+    archive: Option<String>,
 
     /// The file path for the JSON report output
     #[arg(short = 'o', long = "json-output")]
@@ -361,11 +315,7 @@ struct Args {
     verbose: bool,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
-    tracing_subscriber::fmt::init();
-
-    let args = Args::parse();
-
+pub fn run(args: AccuracyArgs) -> anyhow::Result<()> {
     let mut cfg: SpellerConfig = match args.config {
         Some(path) => {
             let file = std::fs::File::open(path)?;
@@ -374,22 +324,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         None => CFG.clone(),
     };
 
-    // Set verbose mode if requested
     cfg.verbose = args.verbose;
 
-    let archive = match args.zhfst {
+    let archive = match args.archive {
         Some(path) => archive::open(Path::new(&path))?,
         None => {
-            eprintln!("No ZHFST found for given path; aborting.");
-            std::process::exit(1);
+            anyhow::bail!("No archive path provided; aborting.");
         }
     };
 
     let words = match args.words {
         Some(path) => load_words(&path, args.max_words)?,
         None => {
-            eprintln!("No word list for given path; aborting.");
-            std::process::exit(1);
+            anyhow::bail!("No word list path provided; aborting.");
         }
     };
 
@@ -406,28 +353,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         .map(|(input, expected)| {
             let now = Instant::now();
 
-            // Check if the input is accepted by the spell checker (using same config as suggestions)
             let is_accepted = archive.speller().is_correct_with_config(&input, &cfg);
 
             let (suggestions, position, false_accept) = match expected.as_ref() {
                 None => {
-                    // Word should be accepted (no correction expected)
                     if is_accepted {
-                        // Correctly accepted
                         (Vec::new(), None, false)
                     } else {
-                        // Incorrectly rejected (false positive) - generate suggestions anyway
                         let suggestions = archive.speller().suggest_with_config(&input, &cfg);
                         (suggestions, None, true)
                     }
                 }
                 Some(exp) => {
-                    // Word should be rejected (correction expected)
                     if is_accepted {
-                        // Incorrectly accepted misspelling - false negative (missed error)
                         (Vec::new(), None, true)
                     } else {
-                        // Correctly rejected - generate suggestions
                         let suggestions = archive.speller().suggest_with_config(&input, &cfg);
                         let position = suggestions.iter().position(|x| &x.value == exp);
                         (suggestions, position, false)
@@ -497,7 +437,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         }?;
         let md = output.metadata()?;
         if md.len() == 0 {
-            // new file, write headers:
             output
                 .write_all(b"id\tdate\ttag/branch\ttop1\ttop5\tworse\tno suggs\twrong suggs\n")?;
         }
@@ -536,7 +475,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             if threshold < (summary.top_five as f32 / summary.total_words as f32 * 100.0) {
                 Ok(())
             } else {
-                Err("accuracy @5 lower threshold")?
+                anyhow::bail!("accuracy @5 lower threshold")
             }
         }
         None => Ok(()),
