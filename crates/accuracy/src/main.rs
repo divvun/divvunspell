@@ -33,7 +33,6 @@ use std::{
 };
 
 use clap::Parser;
-use distance::damerau_levenshtein;
 use divvun_fst::archive;
 use divvun_fst::speller::suggestion::Suggestion;
 use divvun_fst::speller::{ReweightingConfig, SpellerConfig};
@@ -41,6 +40,64 @@ use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::Serialize;
 use std::path::PathBuf;
+use unic_segment::Graphemes;
+
+/// Calculate Damerau-Levenshtein distance based on grapheme clusters
+/// instead of Unicode code points, for proper handling of composed characters
+fn grapheme_damerau_levenshtein(s1: &str, s2: &str) -> usize {
+    let s1_graphemes: Vec<&str> = Graphemes::new(s1).collect();
+    let s2_graphemes: Vec<&str> = Graphemes::new(s2).collect();
+
+    let len1 = s1_graphemes.len();
+    let len2 = s2_graphemes.len();
+
+    if len1 == 0 {
+        return len2;
+    }
+    if len2 == 0 {
+        return len1;
+    }
+
+    // Initialize distance matrix
+    let mut matrix = vec![vec![0usize; len2 + 1]; len1 + 1];
+
+    for i in 0..=len1 {
+        matrix[i][0] = i;
+    }
+    for j in 0..=len2 {
+        matrix[0][j] = j;
+    }
+
+    // Calculate distances
+    for i in 1..=len1 {
+        for j in 1..=len2 {
+            let cost = if s1_graphemes[i - 1] == s2_graphemes[j - 1] {
+                0
+            } else {
+                1
+            };
+
+            matrix[i][j] = std::cmp::min(
+                std::cmp::min(
+                    matrix[i - 1][j] + 1, // deletion
+                    matrix[i][j - 1] + 1, // insertion
+                ),
+                matrix[i - 1][j - 1] + cost, // substitution
+            );
+
+            // Transposition
+            if i > 1
+                && j > 1
+                && s1_graphemes[i - 1] == s2_graphemes[j - 2]
+                && s1_graphemes[i - 2] == s2_graphemes[j - 1]
+            {
+                matrix[i][j] = std::cmp::min(matrix[i][j], matrix[i - 2][j - 2] + cost);
+            }
+        }
+    }
+
+    matrix[len1][len2]
+}
 
 static CFG: SpellerConfig = SpellerConfig {
     n_best: Some(10),
@@ -386,7 +443,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             };
 
             let distance = match expected.as_ref() {
-                Some(exp) => damerau_levenshtein(input, exp),
+                Some(exp) => grapheme_damerau_levenshtein(input, exp),
                 None => 0,
             };
 
