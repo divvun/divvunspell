@@ -800,6 +800,43 @@ h2 {
 	.accuracy-stats-container > * {
 		width: 100%;
 	}
+
+	/* Prevent horizontal scrolling on mobile */
+	body {
+		overflow-x: hidden;
+	}
+
+	.container {
+		padding: 0.5em;
+	}
+
+	.stats-table {
+		font-size: 0.8em;
+		display: block;
+		overflow-x: auto;
+		max-width: 100%;
+	}
+
+	.table {
+		font-size: 0.85em;
+	}
+
+	.table td, .table th {
+		padding: 0.2em 0.3em;
+		word-break: break-word;
+	}
+
+	.config-block {
+		font-size: 0.8em;
+	}
+
+	h1 {
+		font-size: 1.5em;
+	}
+
+	h2 {
+		font-size: 1.1em;
+	}
 }
 
 </style>
