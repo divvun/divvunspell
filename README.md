@@ -157,8 +157,8 @@ accuracy -c config.json typos.tsv language.zhfst
 ```json
 {
   "n-best": 10,
-  "max-weight": 10000.0,
-  "beam": 5000.0,
+  "max-weight": 10000,
+  "beam": 50,
   "reweight": {
     "start-penalty": 10.0,
     "end-penalty": 10.0,
