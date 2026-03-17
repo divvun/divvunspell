@@ -221,6 +221,7 @@ fn run(
 #[derive(Debug, Parser)]
 #[command(
     name = "divvunspell",
+    version,
     about = "Spell checking tool for ZHFST/BHFST spellers"
 )]
 struct Args {
