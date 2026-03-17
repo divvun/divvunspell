@@ -791,6 +791,17 @@ h2 {
 	background-color: #4a8fd2;
 }
 
+/* Mobile responsiveness */
+@media (max-width: 768px) {
+	.accuracy-stats-container {
+		flex-direction: column;
+	}
+
+	.accuracy-stats-container > * {
+		width: 100%;
+	}
+}
+
 </style>
 
 <button class="theme-toggle" on:click={cycleTheme} aria-label={`Toggle theme, current mode: ${themeLabel}`} title="Switch between light, dark, and auto theme modes">
