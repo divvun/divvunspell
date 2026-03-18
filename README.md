@@ -112,7 +112,7 @@ Input: wordd		[INCORRECT]
 word	word N Sg Nom	10.5	25.3 (lex: 10.5, mut: 15.0, rew: 0/5/0)
 word	word V Inf	12.0	27.0 (lex: 12.0, mut: 15.0, rew: 0/5/0)
 
-words	words N Pl Nom	8.2	45.8 (lex: 8.2, mut: 30.0, rew: 0/5/10)
+words	word N Pl Nom	8.2	45.8 (lex: 8.2, mut: 30.0, rew: 0/5/10)
 ```
 
 The format is tab-separated: `suggestion\tanalysis\tanalysis_weight\tsuggestion_weight (details)`
