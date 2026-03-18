@@ -86,24 +86,20 @@ divvunspell suggest --archive language.zhfst --json "wordd"
 # Tokenize text
 divvunspell tokenize --archive language.zhfst "This is some text."
 
-# Analyze word forms morphologically
-divvunspell analyze-input --archive language.zhfst "running"
-divvunspell analyze-output --archive language.zhfst "runing"
-
 # Get suggestions with morphological analysis
 divvunspell suggest --archive language.zhfst -A "wordd"
 ```
 
 **Options:**
 - `-a, --archive <FILE>` - BHFST or ZHFST archive to use
-- `-A` - Enable analyze mode: show suggestions with their morphological analyses
+- `-A, --analyze` - Enable analyze mode: show suggestions with their morphological analyses
 - `-S, --always-suggest` - Show suggestions even if word is correct
 - `-w, --weight <WEIGHT>` - Maximum weight limit for suggestions
 - `-n, --nbest <N>` - Maximum number of suggestions to return
 - `--no-reweighting` - Disable suggestion reweighting (closer to hfst-ospell behavior)
 - `--no-recase` - Disable case-aware suggestion handling
 - `--json` - Output results as JSON
-- `--verbose` - Show detailed weight information (lexicon, mutator, reweighting)
+- `-v, --verbose` - Show detailed weight information (lexicon, mutator, reweighting)
 
 **Analyze mode output format:**
 

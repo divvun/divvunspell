@@ -111,8 +111,8 @@ impl OutputWriter for StdoutWriter {
     ) {
         for (suggestion, analyses) in suggestions {
             if analyses.is_empty() {
-                // No analyses for this suggestion
-                print!("{}\t\t{:.5}", suggestion.value, suggestion.weight.0);
+                // No analyses for this suggestion - print placeholders for consistency
+                print!("{}\t-\t-\t{:.5}", suggestion.value, suggestion.weight.0);
                 if verbose {
                     if let Some(details) = &suggestion.weight_details {
                         let mid_str = if details.reweight_mid < 0.0 {
@@ -174,6 +174,7 @@ struct SuggestionRequest {
 
 #[derive(Serialize)]
 struct CombinedAnalysis {
+    word: String,
     suggestion: Suggestion,
     analyses: Vec<Suggestion>,
 }
@@ -209,12 +210,13 @@ impl OutputWriter for JsonWriter {
 
     fn write_combined_suggestions_analyses(
         &mut self,
-        _word: &str,
+        word: &str,
         suggestions: &[(Suggestion, Vec<Suggestion>)],
         _verbose: bool,
     ) {
         for (suggestion, analyses) in suggestions {
             self.combined_analysis.push(CombinedAnalysis {
+                word: word.to_string(),
                 suggestion: suggestion.clone(),
                 analyses: analyses.clone(),
             });
@@ -241,18 +243,22 @@ fn run(
         writer.write_correction(&word, is_correct);
 
         if is_analyzing {
-            // Get suggestions first
-            let suggestions = speller
-                .clone()
-                .analyze_suggest_with_config(&word, &suggest_cfg);
+            // Get suggestions using the regular suggest path (not analyze_suggest_with_config)
+            // to avoid double analysis
+            let suggestions = speller.clone().suggest_with_config(&word, &suggest_cfg);
 
-            // For each suggestion, get its morphological analyses
+            // For each suggestion, get its morphological analyses and filter based on +Spell/NoSugg
             let mut combined: Vec<(Suggestion, Vec<Suggestion>)> = vec![];
             for sugg in suggestions {
                 let analyses = speller
                     .clone()
                     .analyze_input_with_config(&sugg.value, &suggest_cfg);
-                combined.push((sugg, analyses));
+
+                // Only include suggestion if not all analyses have +Spell/NoSugg
+                let all_filtered = analyses.iter().all(|a| a.value.contains("+Spell/NoSugg"));
+                if !all_filtered {
+                    combined.push((sugg, analyses));
+                }
             }
 
             writer.write_combined_suggestions_analyses(&word, &combined, verbose);
