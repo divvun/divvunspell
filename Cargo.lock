@@ -396,7 +396,7 @@ dependencies = [
 
 [[package]]
 name = "divvun-fst"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "box-format",
  "byteorder",
@@ -430,7 +430,7 @@ dependencies = [
 
 [[package]]
 name = "divvun-fst-ffi"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "cffi",
  "divvun-fst",
@@ -439,7 +439,7 @@ dependencies = [
 
 [[package]]
 name = "divvun-fst-jni"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "divvun-fst",
  "jni",
@@ -447,7 +447,7 @@ dependencies = [
 
 [[package]]
 name = "divvunspell-cli"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "anyhow",
  "box-format",
@@ -1103,7 +1103,7 @@ checksum = "dc897dd8d9e8bd1ed8cdad82b5966c3e0ecae09fb1907d58efaa013543185d0a"
 
 [[package]]
 name = "regtest"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "clap",
  "csv",
@@ -1286,7 +1286,7 @@ dependencies = [
 
 [[package]]
 name = "thfst-tools"
-version = "1.0.0-beta.10"
+version = "1.0.0-beta.11"
 dependencies = [
  "box-format",
  "clap",
