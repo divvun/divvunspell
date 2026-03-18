@@ -132,28 +132,52 @@ impl OutputWriter for StdoutWriter {
                 }
                 println!();
             } else {
-                // Output each analysis on a separate line
+                // Get mutator weight and reweighting from the suggestion (same for all analyses)
+                let (mutator_weight, reweight_start, reweight_mid, reweight_end) =
+                    if let Some(details) = &suggestion.weight_details {
+                        (
+                            details.mutator_weight.0,
+                            details.reweight_start,
+                            details.reweight_mid,
+                            details.reweight_end,
+                        )
+                    } else {
+                        (0.0, 0.0, 0.0, 0.0)
+                    };
+
+                // Calculate reweighting total (handle -1 for no middle section)
+                let reweight_total = reweight_start
+                    + reweight_end
+                    + if reweight_mid < 0.0 {
+                        0.0
+                    } else {
+                        reweight_mid
+                    };
+
+                // Output each analysis on a separate line with correct weights
                 for analysis in analyses {
+                    // For this analysis: total = lexicon (from analysis) + mutator + reweighting
+                    let analysis_lexicon_weight = analysis.weight.0;
+                    let total_weight = analysis_lexicon_weight + mutator_weight + reweight_total;
+
                     print!(
                         "{}\t{}\t{:.5}\t{:.5}",
-                        suggestion.value, analysis.value, analysis.weight.0, suggestion.weight.0
+                        suggestion.value, analysis.value, analysis_lexicon_weight, total_weight
                     );
                     if verbose {
-                        if let Some(details) = &suggestion.weight_details {
-                            let mid_str = if details.reweight_mid < 0.0 {
-                                "-".to_string()
-                            } else {
-                                format!("{:.0}", details.reweight_mid)
-                            };
-                            print!(
-                                " (lex: {:.5}, mut: {:.5}, rew: {:.0}/{}/{:.0})",
-                                details.lexicon_weight.0,
-                                details.mutator_weight.0,
-                                details.reweight_start,
-                                mid_str,
-                                details.reweight_end
-                            );
-                        }
+                        let mid_str = if reweight_mid < 0.0 {
+                            "-".to_string()
+                        } else {
+                            format!("{:.0}", reweight_mid)
+                        };
+                        print!(
+                            " (lex: {:.5}, mut: {:.5}, rew: {:.0}/{}/{:.0})",
+                            analysis_lexicon_weight,
+                            mutator_weight,
+                            reweight_start,
+                            mid_str,
+                            reweight_end
+                        );
                     }
                     println!();
                 }

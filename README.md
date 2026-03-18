@@ -109,10 +109,10 @@ When using `-A` (analyze mode), the output shows each suggestion with its morpho
 
 ```
 Input: wordd		[INCORRECT]
-word	word N Sg Nom	10.5	25.3 (lex: 5.5, mut: 15.0, rew: 0/5/0)
-word	word V Inf	12.0	25.3 (lex: 5.5, mut: 15.0, rew: 0/5/0)
+word	word N Sg Nom	10.5	25.3 (lex: 10.5, mut: 15.0, rew: 0/5/0)
+word	word V Inf	12.0	27.0 (lex: 12.0, mut: 15.0, rew: 0/5/0)
 
-words	word N Pl Nom	15.2	45.8 (lex: 8.2, mut: 30.0, rew: 0/5/10)
+words	words N Pl Nom	8.2	45.8 (lex: 8.2, mut: 30.0, rew: 0/5/10)
 ```
 
 The format is tab-separated: `suggestion\tanalysis\tanalysis_weight\tsuggestion_weight (details)`
@@ -120,13 +120,15 @@ The format is tab-separated: `suggestion\tanalysis\tanalysis_weight\tsuggestion_
 - **suggestion**: The corrected word form
 - **analysis**: Morphological analysis with tags (e.g., `word N Sg Nom` = noun, singular, nominative)
 - **analysis_weight**: Weight from the lexicon for this specific analysis
-- **suggestion_weight**: Total weight for the suggestion (lower is better)
-- **details** (with `--verbose`): Breakdown of weights:
-  - **lex**: Lexicon weight
-  - **mut**: Mutator (error model) weight
-  - **rew**: Positional reweighting (start/middle/end)
+- **suggestion_weight**: Total weight for this specific analysis (analysis_weight + mutator + reweighting)
+- **details** (with `--verbose`): Breakdown of weights for this analysis:
+  - **lex**: Lexicon weight (same as analysis_weight)
+  - **mut**: Mutator (error model) weight (same for all analyses of this suggestion)
+  - **rew**: Positional reweighting (start/middle/end, same for all analyses of this suggestion)
 
-If a suggestion has multiple analyses, each appears on a separate line with the same suggestion and suggestion_weight. A blank line separates the analyses for each unique suggestion to improve readability.
+Each analysis is calculated as: `total = lexicon_weight + mutator_weight + reweighting`
+
+If a suggestion has multiple analyses, each appears on a separate line with its own weights. A blank line separates the analyses for each unique suggestion to improve readability.
 
 **Debugging:**
 
