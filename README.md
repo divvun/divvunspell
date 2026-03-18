@@ -86,19 +86,49 @@ divvunspell suggest --archive language.zhfst --json "wordd"
 # Tokenize text
 divvunspell tokenize --archive language.zhfst "This is some text."
 
-# Analyze word forms morphologically
-divvunspell analyze-input --archive language.zhfst "running"
-divvunspell analyze-output --archive language.zhfst "runing"
+# Get suggestions with morphological analysis
+divvunspell suggest --archive language.zhfst -A "wordd"
 ```
 
 **Options:**
 - `-a, --archive <FILE>` - BHFST or ZHFST archive to use
+- `-A, --analyze` - Enable analyze mode: show suggestions with their morphological analyses
 - `-S, --always-suggest` - Show suggestions even if word is correct
 - `-w, --weight <WEIGHT>` - Maximum weight limit for suggestions
 - `-n, --nbest <N>` - Maximum number of suggestions to return
 - `--no-reweighting` - Disable suggestion reweighting (closer to hfst-ospell behavior)
 - `--no-recase` - Disable case-aware suggestion handling
 - `--json` - Output results as JSON
+- `-v, --verbose` - Show detailed weight information (lexicon, mutator, reweighting)
+
+**Analyze mode output format:**
+
+**Note:** Analyze mode (`-A`) requires that the spell checker's acceptor (lexicon) is a full morphological analyzer, such as those used with grammar checkers. Standard spell checkers without morphological analysis will not produce meaningful output with this flag.
+
+When using `-A` (analyze mode), the output shows each suggestion with its morphological analyses:
+
+```
+Input: wordd		[INCORRECT]
+word	word N Sg Nom	10.5	25.3 (lex: 10.5, mut: 15.0, rew: 0/5/0)
+word	word V Inf	12.0	27.0 (lex: 12.0, mut: 15.0, rew: 0/5/0)
+
+words	word N Pl Nom	8.2	45.8 (lex: 8.2, mut: 30.0, rew: 0/5/10)
+```
+
+The format is tab-separated: `suggestion\tanalysis\tanalysis_weight\tsuggestion_weight (details)`
+
+- **suggestion**: The corrected word form
+- **analysis**: Morphological analysis with tags (e.g., `word N Sg Nom` = noun, singular, nominative)
+- **analysis_weight**: Weight from the lexicon for this specific analysis
+- **suggestion_weight**: Total weight for this specific analysis (analysis_weight + mutator + reweighting)
+- **details** (with `--verbose`): Breakdown of weights for this analysis:
+  - **lex**: Lexicon weight (same as analysis_weight)
+  - **mut**: Mutator (error model) weight (same for all analyses of this suggestion)
+  - **rew**: Positional reweighting (start/middle/end, same for all analyses of this suggestion)
+
+Each analysis is calculated as: `total = lexicon_weight + mutator_weight + reweighting`
+
+If a suggestion has multiple analyses, each appears on a separate line with its own weights. A blank line separates the analyses for each unique suggestion to improve readability.
 
 **Debugging:**
 

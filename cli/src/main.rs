@@ -28,8 +28,12 @@ use divvun_fst::{
 trait OutputWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool);
     fn write_suggestions(&mut self, word: &str, suggestions: &[Suggestion], verbose: bool);
-    fn write_input_analyses(&mut self, word: &str, analyses: &[Suggestion]);
-    fn write_output_analyses(&mut self, word: &str, analyses: &[Suggestion]);
+    fn write_combined_suggestions_analyses(
+        &mut self,
+        word: &str,
+        suggestions: &[(Suggestion, Vec<Suggestion>)],
+        verbose: bool,
+    );
     fn finish(&mut self);
 }
 
@@ -99,20 +103,88 @@ impl OutputWriter for StdoutWriter {
         println!();
     }
 
-    fn write_input_analyses(&mut self, _word: &str, suggestions: &[Suggestion]) {
-        println!("Input analyses: ");
-        for sugg in suggestions {
-            println!("{}\t\t{}", sugg.value, sugg.weight);
-        }
-        println!();
-    }
+    fn write_combined_suggestions_analyses(
+        &mut self,
+        _word: &str,
+        suggestions: &[(Suggestion, Vec<Suggestion>)],
+        verbose: bool,
+    ) {
+        for (suggestion, analyses) in suggestions {
+            if analyses.is_empty() {
+                // No analyses for this suggestion - print placeholders for consistency
+                print!("{}\t-\t-\t{:.5}", suggestion.value, suggestion.weight.0);
+                if verbose {
+                    if let Some(details) = &suggestion.weight_details {
+                        let mid_str = if details.reweight_mid < 0.0 {
+                            "-".to_string()
+                        } else {
+                            format!("{:.0}", details.reweight_mid)
+                        };
+                        print!(
+                            " (lex: {:.5}, mut: {:.5}, rew: {:.0}/{}/{:.0})",
+                            details.lexicon_weight.0,
+                            details.mutator_weight.0,
+                            details.reweight_start,
+                            mid_str,
+                            details.reweight_end
+                        );
+                    }
+                }
+                println!();
+            } else {
+                // Get mutator weight and reweighting from the suggestion (same for all analyses)
+                let (mutator_weight, reweight_start, reweight_mid, reweight_end) =
+                    if let Some(details) = &suggestion.weight_details {
+                        (
+                            details.mutator_weight.0,
+                            details.reweight_start,
+                            details.reweight_mid,
+                            details.reweight_end,
+                        )
+                    } else {
+                        (0.0, 0.0, 0.0, 0.0)
+                    };
 
-    fn write_output_analyses(&mut self, _word: &str, suggestions: &[Suggestion]) {
-        println!("Output analyses: ");
-        for sugg in suggestions {
-            println!("{}\t\t{}", sugg.value, sugg.weight);
+                // Calculate reweighting total (handle -1 for no middle section)
+                let reweight_total = reweight_start
+                    + reweight_end
+                    + if reweight_mid < 0.0 {
+                        0.0
+                    } else {
+                        reweight_mid
+                    };
+
+                // Output each analysis on a separate line with correct weights
+                for analysis in analyses {
+                    // For this analysis: total = lexicon (from analysis) + mutator + reweighting
+                    let analysis_lexicon_weight = analysis.weight.0;
+                    let total_weight = analysis_lexicon_weight + mutator_weight + reweight_total;
+
+                    print!(
+                        "{}\t{}\t{:.5}\t{:.5}",
+                        suggestion.value, analysis.value, analysis_lexicon_weight, total_weight
+                    );
+                    if verbose {
+                        let mid_str = if reweight_mid < 0.0 {
+                            "-".to_string()
+                        } else {
+                            format!("{:.0}", reweight_mid)
+                        };
+                        print!(
+                            " (lex: {:.5}, mut: {:.5}, rew: {:.0}/{}/{:.0})",
+                            analysis_lexicon_weight,
+                            mutator_weight,
+                            reweight_start,
+                            mid_str,
+                            reweight_end
+                        );
+                    }
+                    println!();
+                }
+            }
+            // Blank line between suggestions for readability
+            println!();
         }
-        println!();
     }
 
     fn finish(&mut self) {}
@@ -126,9 +198,10 @@ struct SuggestionRequest {
 }
 
 #[derive(Serialize)]
-struct AnalysisRequest {
+struct CombinedAnalysis {
     word: String,
-    suggestions: Vec<Suggestion>,
+    suggestion: Suggestion,
+    analyses: Vec<Suggestion>,
 }
 
 #[derive(Default, Serialize)]
@@ -137,9 +210,7 @@ struct JsonWriter {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     suggest: Vec<SuggestionRequest>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    input_analysis: Vec<AnalysisRequest>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    output_analysis: Vec<AnalysisRequest>,
+    combined_analysis: Vec<CombinedAnalysis>,
 }
 
 impl JsonWriter {
@@ -162,18 +233,19 @@ impl OutputWriter for JsonWriter {
         self.suggest[i].suggestions = suggestions.to_vec();
     }
 
-    fn write_input_analyses(&mut self, word: &str, suggestions: &[Suggestion]) {
-        self.input_analysis.push(AnalysisRequest {
-            word: word.to_string(),
-            suggestions: suggestions.to_vec(),
-        })
-    }
-
-    fn write_output_analyses(&mut self, word: &str, suggestions: &[Suggestion]) {
-        self.output_analysis.push(AnalysisRequest {
-            word: word.to_string(),
-            suggestions: suggestions.to_vec(),
-        })
+    fn write_combined_suggestions_analyses(
+        &mut self,
+        word: &str,
+        suggestions: &[(Suggestion, Vec<Suggestion>)],
+        _verbose: bool,
+    ) {
+        for (suggestion, analyses) in suggestions {
+            self.combined_analysis.push(CombinedAnalysis {
+                word: word.to_string(),
+                suggestion: suggestion.clone(),
+                analyses: analyses.clone(),
+            });
+        }
     }
 
     fn finish(&mut self) {
@@ -195,26 +267,29 @@ fn run(
         let is_correct = speller.clone().is_correct_with_config(&word, &suggest_cfg);
         writer.write_correction(&word, is_correct);
 
-        if is_suggesting && (is_always_suggesting || !is_correct) {
+        if is_analyzing {
+            // Get suggestions using the regular suggest path (not analyze_suggest_with_config)
+            // to avoid double analysis
+            let suggestions = speller.clone().suggest_with_config(&word, &suggest_cfg);
+
+            // For each suggestion, get its morphological analyses and filter based on +Spell/NoSugg
+            let mut combined: Vec<(Suggestion, Vec<Suggestion>)> = vec![];
+            for sugg in suggestions {
+                let analyses = speller
+                    .clone()
+                    .analyze_input_with_config(&sugg.value, &suggest_cfg);
+
+                // Only include suggestion if not all analyses have +Spell/NoSugg
+                let all_filtered = analyses.iter().all(|a| a.value.contains("+Spell/NoSugg"));
+                if !all_filtered {
+                    combined.push((sugg, analyses));
+                }
+            }
+
+            writer.write_combined_suggestions_analyses(&word, &combined, verbose);
+        } else if is_suggesting && (is_always_suggesting || !is_correct) {
             let suggestions = speller.clone().suggest_with_config(&word, &suggest_cfg);
             writer.write_suggestions(&word, &suggestions, verbose);
-        }
-
-        if is_analyzing {
-            let input_analyses = speller
-                .clone()
-                .analyze_input_with_config(&word, &suggest_cfg);
-            writer.write_input_analyses(&word, &input_analyses);
-
-            let output_analyses = speller
-                .clone()
-                .analyze_output_with_config(&word, &suggest_cfg);
-            writer.write_output_analyses(&word, &output_analyses);
-
-            let final_suggs = speller
-                .clone()
-                .analyze_suggest_with_config(&word, &suggest_cfg);
-            writer.write_suggestions(&word, &final_suggs, verbose);
         }
     }
 }
