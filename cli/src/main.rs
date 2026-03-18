@@ -158,8 +158,9 @@ impl OutputWriter for StdoutWriter {
                     println!();
                 }
             }
+            // Blank line between suggestions for readability
+            println!();
         }
-        println!();
     }
 
     fn finish(&mut self) {}

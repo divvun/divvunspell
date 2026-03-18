@@ -111,6 +111,7 @@ When using `-A` (analyze mode), the output shows each suggestion with its morpho
 Input: wordd		[INCORRECT]
 word	word N Sg Nom	10.5	25.3 (lex: 5.5, mut: 15.0, rew: 0/5/0)
 word	word V Inf	12.0	25.3 (lex: 5.5, mut: 15.0, rew: 0/5/0)
+
 words	word N Pl Nom	15.2	45.8 (lex: 8.2, mut: 30.0, rew: 0/5/10)
 ```
 
@@ -125,7 +126,7 @@ The format is tab-separated: `suggestion\tanalysis\tanalysis_weight\tsuggestion_
   - **mut**: Mutator (error model) weight
   - **rew**: Positional reweighting (start/middle/end)
 
-If a suggestion has multiple analyses, each appears on a separate line with the same suggestion and suggestion_weight.
+If a suggestion has multiple analyses, each appears on a separate line with the same suggestion and suggestion_weight. A blank line separates the analyses for each unique suggestion to improve readability.
 
 **Debugging:**
 
