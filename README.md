@@ -19,7 +19,7 @@ A fast, feature-rich spell checking library and toolset for HFST-based spell che
 
 ### As a Command-Line Tool
 
-Download [the latest release](releases/latest), or build from source:
+Download [the latest release](https://github.com/divvun/divvunspell/releases/latest), or build from source:
 
 ```sh
 # Install the CLI
