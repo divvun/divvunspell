@@ -1,7 +1,6 @@
 # divvunspell
 
 [![CI](https://builds.giellalt.org/api/badge/divvunspell)](https://builds.giellalt.org/pipelines/divvunspell)
-[![Crates.io](https://img.shields.io/crates/v/divvunspell.svg)](https://crates.io/crates/divvunspell)
 [![Documentation](https://docs.rs/divvunspell/badge.svg)](https://docs.rs/divvunspell)
 
 A fast, feature-rich spell checking library and toolset for HFST-based spell checkers. Written in Rust, divvunspell is a modern reimplementation and extension of [hfst-ospell](https://github.com/hfst/hfst-ospell) with additional features like parallel processing, comprehensive tokenization, case handling, and morphological analysis.
@@ -23,7 +22,7 @@ Download [the latest release](https://github.com/divvun/divvunspell/releases/lat
 
 ```sh
 # Install the CLI
-cargo install divvunspell-cli
+cargo install -p divvunspell-cli
 
 # Check spelling and get suggestions
 divvunspell suggest --archive speller.zhfst --json "sámi"
@@ -168,7 +167,7 @@ Test spell checker accuracy against known typo/correction pairs. This subcommand
 
 ```sh
 # Build with accuracy support
-cargo install divvunspell-cli --features accuracy
+cargo install -p divvunspell-cli --features accuracy
 
 # Run accuracy test
 divvunspell accuracy typos.tsv language.zhfst
