@@ -19,12 +19,22 @@ A fast, feature-rich spell checking library and toolset for HFST-based spell che
 
 ### As a Command-Line Tool
 
-Download [the latest release](https://github.com/divvun/divvunspell/releases/latest), or build from source:
+Download [the latest release](https://github.com/divvun/divvunspell/releases/latest), or install from crates.io:
 
 ```sh
 # Install the CLI
 cargo install divvunspell-cli
+```
 
+Or build from source (see further down if you need the `accuracy` functionality):
+
+```sh
+cargo install --path ./cli
+```
+
+Usage:
+
+```sh
 # Check spelling and get suggestions
 divvunspell suggest --archive speller.zhfst --json "sámi"
 ```
@@ -167,8 +177,11 @@ thfst-tools bhfst-info language.bhfst
 Test spell checker accuracy against known typo/correction pairs. This subcommand is available when `divvunspell` is built with the `accuracy` feature.
 
 ```sh
-# Build with accuracy support
+# Build with accuracy support, from crates.io
 cargo install divvunspell-cli --features accuracy
+
+# Or build from source:
+cargo install --path ./cli --features accuracy
 
 # Run accuracy test
 divvunspell accuracy typos.tsv language.zhfst
