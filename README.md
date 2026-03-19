@@ -22,14 +22,13 @@ A fast, feature-rich spell checking library and toolset for HFST-based spell che
 Download [the latest release](https://github.com/divvun/divvunspell/releases/latest), or install from crates.io:
 
 ```sh
-# Install the CLI from crates.io
+# Install the CLI
 cargo install divvunspell-cli
 ```
 
-Or build from source (see [further down](#accuracy-feature-gated-subcommand) if you need the `accuracy` functionality):
+Or build from source (see further down if you need the `accuracy` functionality):
 
 ```sh
-# Build from local source:
 cargo install --path ./cli
 ```
 
