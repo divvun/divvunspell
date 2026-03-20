@@ -1,10 +1,11 @@
 <script>
 	import { onMount } from 'svelte';
-	
+
 	let report = null
 	let results = null
 	let originalResults = null
 	let sortMode = null
+	let loadError = null
 	let theme = 'auto'; // 'light', 'dark', or 'auto'
 	
 	$: totalRuntime = calculateTotalRuntime(report)
@@ -422,11 +423,20 @@
 
 	function fetchReport() {
 		return fetch(`report.json`)
-				.then(r => r.json())
-				.then(data => { 
+				.then(r => {
+					if (!r.ok) {
+						throw new Error(`Failed to load report.json: ${r.status} ${r.statusText}`)
+					}
+					return r.json()
+				})
+				.then(data => {
 					report = data
 					originalResults = report.results.slice()
 					results = report.results.slice()
+				})
+				.catch(err => {
+					loadError = err.message
+					console.error('Error loading report:', err)
 				})
 	}
 
@@ -612,6 +622,32 @@ h2 {
 	color: var(--text-color);
 	text-align: center;
 	padding: 2em;
+}
+.error-message {
+	margin: 2em auto;
+	padding: 2em;
+	max-width: 600px;
+	background-color: #fee;
+	border: 2px solid #c33;
+	border-radius: 8px;
+	color: #800;
+}
+.error-message h2 {
+	margin-top: 0;
+	color: #c33;
+}
+.error-message pre {
+	background-color: #fff;
+	padding: 1em;
+	border-radius: 4px;
+	overflow-x: auto;
+	color: #333;
+}
+.error-message code {
+	background-color: #fff;
+	padding: 0.2em 0.4em;
+	border-radius: 3px;
+	color: #333;
 }
 .container {
 	padding: 1.5em;
@@ -1010,7 +1046,15 @@ h2 {
 
 {/if}
 
-{#if results == null}
+{#if loadError}
+<div class="error-message">
+	<h2>Error Loading Report</h2>
+	<p>{loadError}</p>
+	<p>Make sure you have generated a report file:</p>
+	<pre>divvunspell accuracy -o report.json typos.tsv language.zhfst</pre>
+	<p>Then copy the report.json file to the <code>public/</code> directory of the accuracy-viewer.</p>
+</div>
+{:else if results == null}
 <div class="loading">Loading...</div>
 {:else}
 <h2>Detailed Results</h2>
