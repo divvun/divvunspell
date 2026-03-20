@@ -1050,7 +1050,14 @@ h2 {
 <div class="error-message">
 	<h2>Error Loading Report</h2>
 	<p>{loadError}</p>
-	<p>Make sure you have generated a report file:</p>
+	<p><strong>For GitHub Pages usage:</strong></p>
+	<ul>
+		<li>Run <code>make check</code> in your language repository, with <strong>spellcheckers</strong> enabled</li>
+		<li>Verify that <code>docs/typosreport/report.json</code> was generated or updated</li>
+		<li>Commit and push the <code>report.json</code> file to your repository</li>
+	</ul>
+	<p><strong>For local testing:</strong></p>
+	<p>Generate a report file:</p>
 	<pre>divvunspell accuracy -o report.json typos.tsv language.zhfst</pre>
 	<p>Then copy the report.json file to the <code>public/</code> directory of the accuracy-viewer.</p>
 </div>
