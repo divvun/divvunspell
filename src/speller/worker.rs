@@ -772,17 +772,15 @@ where
 
     // Analyze an output form using only the lexicon to get its weight
     fn analyze_output_form(&self, form: &str) -> Weight {
-        use unic_segment::Graphemes;
-
         // Convert form to input symbols using MUTATOR alphabet only
         // (alphabet_translator requires mutator symbol indices)
         let mutator_alphabet = self.speller.mutator().alphabet();
         let mutator_key_table = mutator_alphabet.key_table();
 
-        let temp_input: Vec<SymbolNumber> = Graphemes::new(form)
+        let temp_input: Vec<SymbolNumber> = form
+            .chars()
             .map(|ch| {
                 let s = ch.to_string();
-                // Use only mutator alphabet - if character not found, use unknown symbol
                 mutator_key_table
                     .iter()
                     .position(|x| x == &s)
