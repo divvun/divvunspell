@@ -549,18 +549,14 @@ where
         let key_table = alphabet.key_table();
 
         tracing::trace!("to_input_vec: {}", word);
-        word.chars()
+        Graphemes::new(word)
             .map(|ch| {
                 let s = ch.to_string();
-                tracing::trace!("  char: {:?}", ch);
-
-                if let Some(pos) = key_table.iter().position(|x| x == &s) {
-                    tracing::trace!("    matched at position {}", pos);
-                    return SymbolNumber(pos as u16);
-                }
-
-                tracing::trace!("    no match, using unknown");
-                alphabet.unknown().unwrap_or(SymbolNumber::ZERO)
+                key_table
+                    .iter()
+                    .position(|x| x == &s)
+                    .map(|x| SymbolNumber(x as u16))
+                    .unwrap_or_else(|| alphabet.unknown().unwrap_or(SymbolNumber::ZERO))
             })
             .collect()
     }
