@@ -28,6 +28,65 @@ pub mod suggestion;
 
 mod worker;
 
+/// Calculate Damerau-Levenshtein distance between two strings using grapheme clusters.
+///
+/// This function properly handles combining characters by treating grapheme clusters
+/// (base character + combining marks) as single units, rather than counting them
+/// as separate characters. This is essential for languages that use combining
+/// diacritics (e.g., Kildin Sami with combining macron).
+fn grapheme_damerau_levenshtein(s1: &str, s2: &str) -> usize {
+    let s1_graphemes: Vec<&str> = Graphemes::new(s1).collect();
+    let s2_graphemes: Vec<&str> = Graphemes::new(s2).collect();
+
+    let len1 = s1_graphemes.len();
+    let len2 = s2_graphemes.len();
+
+    if len1 == 0 {
+        return len2;
+    }
+    if len2 == 0 {
+        return len1;
+    }
+
+    let mut matrix = vec![vec![0usize; len2 + 1]; len1 + 1];
+
+    for i in 0..=len1 {
+        matrix[i][0] = i;
+    }
+    for j in 0..=len2 {
+        matrix[0][j] = j;
+    }
+
+    for i in 1..=len1 {
+        for j in 1..=len2 {
+            let cost = if s1_graphemes[i - 1] == s2_graphemes[j - 1] {
+                0
+            } else {
+                1
+            };
+
+            matrix[i][j] = std::cmp::min(
+                std::cmp::min(
+                    matrix[i - 1][j] + 1, // deletion
+                    matrix[i][j - 1] + 1, // insertion
+                ),
+                matrix[i - 1][j - 1] + cost, // substitution
+            );
+
+            // Transposition
+            if i > 1
+                && j > 1
+                && s1_graphemes[i - 1] == s2_graphemes[j - 2]
+                && s1_graphemes[i - 2] == s2_graphemes[j - 1]
+            {
+                matrix[i][j] = std::cmp::min(matrix[i][j], matrix[i - 2][j - 2] + cost);
+            }
+        }
+    }
+
+    matrix[len1][len2]
+}
+
 /// Temporary struct to store weight details during suggestion generation
 #[derive(Clone, Debug)]
 struct SuggestionData {
@@ -568,11 +627,13 @@ where
 
                         // Calculate distances based on case-insensitive alignment
                         // by scanning from both ends and splicing in the middle
-                        let input_lower: Vec<char> =
-                            original_input.to_lowercase().chars().collect();
-                        let sugg_lower: Vec<char> = sugg.value().to_lowercase().chars().collect();
+                        // Use grapheme clusters to properly handle combining characters
+                        let input_lower_str = original_input.to_lowercase();
+                        let sugg_lower_str = sugg.value().to_lowercase();
+                        let input_lower: Vec<&str> = Graphemes::new(&input_lower_str).collect();
+                        let sugg_lower: Vec<&str> = Graphemes::new(&sugg_lower_str).collect();
 
-                        // Special case: both input and suggestion are 2 chars or less - no middle section
+                        // Special case: both input and suggestion are 2 graphemes or less - no middle section
                         let is_short = input_lower.len() <= 2 && sugg_lower.len() <= 2;
 
                         let (start_dist, mid_dist, end_dist): (usize, i32, usize) = if input_lower
@@ -676,10 +737,10 @@ where
                                         } else {
                                             // DL between skipped portions
                                             let inp_start_str: String =
-                                                input_lower[0..*start_in_off].iter().collect();
+                                                input_lower[0..*start_in_off].join("");
                                             let sug_start_str: String =
-                                                sugg_lower[0..*start_su_off].iter().collect();
-                                            strsim::damerau_levenshtein(
+                                                sugg_lower[0..*start_su_off].join("");
+                                            grapheme_damerau_levenshtein(
                                                 &inp_start_str,
                                                 &sug_start_str,
                                             )
@@ -692,13 +753,11 @@ where
                                             // DL between skipped portions
                                             let inp_end_str: String = input_lower
                                                 [input_lower.len().saturating_sub(*end_in_off)..]
-                                                .iter()
-                                                .collect();
+                                                .join("");
                                             let sug_end_str: String = sugg_lower
                                                 [sugg_lower.len().saturating_sub(*end_su_off)..]
-                                                .iter()
-                                                .collect();
-                                            strsim::damerau_levenshtein(&inp_end_str, &sug_end_str)
+                                                .join("");
+                                            grapheme_damerau_levenshtein(&inp_end_str, &sug_end_str)
                                         };
 
                                         best_score = score;
@@ -761,22 +820,46 @@ where
                             } else if inp_start_pos < inp_end_pos || sug_start_pos < sug_end_pos {
                                 let inp_mid: String = input_lower[inp_start_pos.min(inp_end_pos)
                                     ..inp_end_pos.max(inp_start_pos)]
-                                    .iter()
-                                    .collect();
+                                    .join("");
                                 let sug_mid: String = sugg_lower[sug_start_pos.min(sug_end_pos)
                                     ..sug_end_pos.max(sug_start_pos)]
-                                    .iter()
-                                    .collect();
-                                let d = strsim::damerau_levenshtein(&inp_mid, &sug_mid) as i32;
+                                    .join("");
+                                let d = grapheme_damerau_levenshtein(&inp_mid, &sug_mid) as i32;
                                 (d, end_d)
                             } else {
                                 (0, end_d)
                             };
 
-                            (start_d, mid_d, adjusted_end_d)
+                            // Reclassify mid changes based on actual position in the word
+                            // If there's no prefix match (prefix_len == 0), the first grapheme differs, so at least 1 change is at START
+                            // If there's no suffix match (actual_suffix == 0), the last grapheme differs, so at least 1 change is at END
+                            if mid_d > 0 {
+                                if prefix_len == 0 && actual_suffix > 0 {
+                                    // No prefix, but there's a suffix - first grapheme change is at START, rest is MID
+                                    let start_changes = 1; // First grapheme is different
+                                    let remaining_mid =
+                                        (mid_d as usize).saturating_sub(start_changes);
+                                    (
+                                        start_d + start_changes,
+                                        remaining_mid as i32,
+                                        adjusted_end_d,
+                                    )
+                                } else if actual_suffix == 0 && prefix_len > 0 {
+                                    // No suffix, but there's a prefix - last grapheme change is at END, rest is MID
+                                    let end_changes = 1; // Last grapheme is different
+                                    let remaining_mid =
+                                        (mid_d as usize).saturating_sub(end_changes);
+                                    (start_d, remaining_mid as i32, adjusted_end_d + end_changes)
+                                } else {
+                                    // Real middle section or changes span multiple sections
+                                    (start_d, mid_d, adjusted_end_d)
+                                }
+                            } else {
+                                (start_d, mid_d, adjusted_end_d)
+                            }
                         };
 
-                        // Special case: when input or suggestion has duplicate chars at start/end that match
+                        // Special case: when input or suggestion has duplicate graphemes at start/end that match
                         // Examples:
                         // - Insertion: "Anar" → "Aanaar" - both start with 'a', insertion of second 'a' should be middle
                         // - Deletion: "Aarâhšoddâdem" → "Arâšoddâdem" - both start with 'A', deletion of second 'a' should be middle
@@ -784,7 +867,7 @@ where
                             if !is_short && input_lower.len() > 0 && sugg_lower.len() > 0 {
                                 let adjusted_start =
                                     if start_dist > 0 && input_lower[0] == sugg_lower[0] {
-                                        // First char matches - check if either has duplicate at position 1
+                                        // First grapheme matches - check if either has duplicate at position 1
                                         let sugg_has_dup =
                                             sugg_lower.len() > 1 && sugg_lower[0] == sugg_lower[1];
                                         let input_has_dup = input_lower.len() > 1
@@ -805,7 +888,7 @@ where
                                     && input_lower[input_lower.len() - 1]
                                         == sugg_lower[sugg_lower.len() - 1]
                                 {
-                                    // Last char matches - check if either has duplicate at position len-2
+                                    // Last grapheme matches - check if either has duplicate at position len-2
                                     let sugg_has_dup = sugg_lower.len() > 1
                                         && sugg_lower[sugg_lower.len() - 1]
                                             == sugg_lower[sugg_lower.len() - 2];
