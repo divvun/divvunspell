@@ -17,20 +17,32 @@ pub fn upper_case(s: &str) -> SmolStr {
 
 #[inline(always)]
 pub fn upper_first(s: &str) -> SmolStr {
-    let mut c = s.chars();
-    match c.next() {
-        None => SmolStr::new(""),
-        Some(f) => SmolStr::from(f.to_uppercase().collect::<String>() + c.as_str()),
+    let mut result = String::with_capacity(s.len());
+    let mut done = false;
+    for c in s.chars() {
+        if !done && c.is_alphabetic() {
+            result.extend(c.to_uppercase());
+            done = true;
+        } else {
+            result.push(c);
+        }
     }
+    SmolStr::from(result)
 }
 
 #[inline(always)]
 pub fn lower_first(s: &str) -> SmolStr {
-    let mut c = s.chars();
-    match c.next() {
-        None => SmolStr::new(""),
-        Some(f) => SmolStr::from(f.to_lowercase().collect::<String>() + c.as_str()),
+    let mut result = String::with_capacity(s.len());
+    let mut done = false;
+    for c in s.chars() {
+        if !done && c.is_alphabetic() {
+            result.extend(c.to_lowercase());
+            done = true;
+        } else {
+            result.push(c);
+        }
     }
+    SmolStr::from(result)
 }
 
 #[derive(Debug, Clone, Copy)]

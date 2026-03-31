@@ -1017,6 +1017,23 @@ where
             }
         }
 
+        // Fallback for mixed case: if FirstResults found nothing, try lowercase
+        if mode == CaseMode::FirstResults {
+            let lower = lower_case(&original_input);
+            if lower.as_str() != original_input.as_str() {
+                let worker = SpellerWorker::new(
+                    self.clone(),
+                    self.to_input_vec(&lower),
+                    config.clone(),
+                    output_mode,
+                );
+                let suggestions = worker.suggest();
+                if !suggestions.is_empty() {
+                    return suggestions;
+                }
+            }
+        }
+
         if best.is_empty() {
             return vec![];
         }
