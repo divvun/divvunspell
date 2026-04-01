@@ -17,77 +17,85 @@ pub fn upper_case(s: &str) -> SmolStr {
 
 #[inline(always)]
 pub fn upper_first(s: &str) -> SmolStr {
-    let mut c = s.chars();
-    match c.next() {
-        None => SmolStr::new(""),
-        Some(f) => SmolStr::from(f.to_uppercase().collect::<String>() + c.as_str()),
+    let mut result = String::with_capacity(s.len());
+    let mut done = false;
+    for c in s.chars() {
+        if !done && c.is_alphabetic() {
+            result.extend(c.to_uppercase());
+            done = true;
+        } else {
+            result.push(c);
+        }
     }
+    SmolStr::from(result)
 }
 
 #[inline(always)]
 pub fn lower_first(s: &str) -> SmolStr {
-    let mut c = s.chars();
-    match c.next() {
-        None => SmolStr::new(""),
-        Some(f) => SmolStr::from(f.to_lowercase().collect::<String>() + c.as_str()),
-    }
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum Case {
-    Upper,
-    Lower,
-    Neither,
-}
-
-impl Case {
-    #[inline(always)]
-    fn new(ch: char) -> Case {
-        if ch.is_lowercase() {
-            Case::Lower
-        } else if ch.is_uppercase() {
-            Case::Upper
+    let mut result = String::with_capacity(s.len());
+    let mut done = false;
+    for c in s.chars() {
+        if !done && c.is_alphabetic() {
+            result.extend(c.to_lowercase());
+            done = true;
         } else {
-            Case::Neither
+            result.push(c);
+        }
+    }
+    SmolStr::from(result)
+}
+
+#[derive(Debug, Clone, Copy)]
+enum WordCase {
+    AllUpper,
+    AllLower,
+    Mixed,
+    FirstUpper,
+    None,
+}
+
+impl From<&str> for WordCase {
+    #[inline(always)]
+    fn from(value: &str) -> Self {
+        let mut chars = value.chars().filter(|c| c.is_alphabetic());
+
+        let Some(first_char) = chars.next() else {
+            return WordCase::None;
+        };
+
+        let upper_first_char = first_char.is_uppercase();
+
+        let mut has_upper = false;
+        let mut has_lower = !upper_first_char;
+
+        for c in chars {
+            if c.is_uppercase() {
+                has_upper = true;
+            } else if c.is_lowercase() {
+                has_lower = true;
+            }
+        }
+
+        match (upper_first_char, has_upper, has_lower) {
+            (true, true, false) => WordCase::AllUpper,
+            (false, false, true) => WordCase::AllLower,
+            (_, true, true) => WordCase::Mixed,
+            (true, false, true) => WordCase::FirstUpper,
+            _ => WordCase::None,
         }
     }
 }
 
 pub fn is_mixed_case(word: &str) -> bool {
-    let mut chars = word.chars();
-    let mut last_case = match chars.next() {
-        Some(ch) => Case::new(ch),
-        None => return false,
-    };
-
-    if last_case == Case::Neither {
-        return false;
-    }
-
-    let mut case_changes = 0;
-
-    for ch in chars {
-        let next_case = Case::new(ch);
-
-        match (last_case, next_case) {
-            (_, Case::Neither) => return false,
-            (_, Case::Upper) => case_changes += 2,
-            (Case::Upper, Case::Lower) => case_changes += 1,
-            _ => {}
-        }
-
-        last_case = next_case;
-    }
-
-    case_changes > 1
+    matches!(WordCase::from(word), WordCase::Mixed)
 }
 
 pub fn is_all_caps(word: &str) -> bool {
-    upper_case(word) == word
+    matches!(WordCase::from(word), WordCase::AllUpper)
 }
 
 pub fn is_first_caps(word: &str) -> bool {
-    upper_first(word) == word
+    matches!(WordCase::from(word), WordCase::FirstUpper)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -207,6 +215,28 @@ mod tests {
     }
 
     #[test]
+    fn digit_prefixed_case() {
+        // Leading digits should not trick is_first_caps
+        assert_eq!(is_first_caps("1heavvanit"), false);
+        assert_eq!(is_first_caps("1riikkačaohkkima"), false);
+        assert_eq!(is_first_caps("1Heavvanit"), true);
+        assert_eq!(is_first_caps("123"), false);
+
+        // Leading digits should not trick is_all_caps
+        assert_eq!(is_all_caps("123"), false);
+        assert_eq!(is_all_caps("1HELLO"), true);
+        assert_eq!(is_all_caps("1hello"), false);
+
+        // word_variants should produce CaseMutation::None for digit-prefixed lowercase
+        assert_eq!(word_variants("1heavvanit").mutation, CaseMutation::None);
+        assert_eq!(
+            word_variants("1Heavvanit").mutation,
+            CaseMutation::FirstCaps
+        );
+        assert_eq!(word_variants("1HEAVVANIT").mutation, CaseMutation::AllCaps);
+    }
+
+    #[test]
     fn mixed_case() {
         assert_eq!(is_mixed_case("McDonald"), true);
         assert_eq!(is_mixed_case("Mcdonald"), false);
@@ -222,16 +252,18 @@ mod tests {
 
         assert_eq!(is_mixed_case("A"), false);
         assert_eq!(is_mixed_case("a"), false);
-        assert_eq!(is_mixed_case("aS:"), false);
+        assert_eq!(is_mixed_case("aS:"), true);
         assert_eq!(is_mixed_case(":"), false);
 
         assert_eq!(is_mixed_case("DavveVássján"), true);
         assert_eq!(is_mixed_case("davveVássján"), true);
         assert_eq!(is_mixed_case("Davvevássján"), false);
 
-        assert_eq!(is_mixed_case("SGPai"), false);
+        assert_eq!(is_mixed_case("SGPai"), true);
         assert_eq!(is_mixed_case("SgPaI"), true);
         assert_eq!(is_mixed_case("SGPaiSGP"), true);
         assert_eq!(is_mixed_case("sgpAI"), true);
+        assert_eq!(is_mixed_case("SGPAI"), false);
+        assert_eq!(is_mixed_case("Sgpai"), false);
     }
 }
