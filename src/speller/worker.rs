@@ -1,3 +1,5 @@
+use std::collections::BinaryHeap;
+
 use hashbrown::HashMap;
 use smol_str::SmolStr;
 use std::sync::Arc;
@@ -475,7 +477,7 @@ where
     }
 
     #[inline(always)]
-    fn update_weight_limit(&self, best_weight: Weight, suggestions: &[Suggestion]) -> Weight {
+    fn update_weight_limit(&self, best_weight: Weight, nth_best_weight: Option<Weight>) -> Weight {
         use std::cmp::Ordering::{Equal, Less};
 
         let c = &self.config;
@@ -490,9 +492,9 @@ where
             };
         }
 
-        if c.n_best.is_some() && suggestions.len() >= c.n_best.unwrap() {
-            if let Some(sugg) = suggestions.last() {
-                return sugg.weight();
+        if let Some(w) = nth_best_weight {
+            if w < max_weight {
+                return w;
             }
         }
 
@@ -535,7 +537,6 @@ where
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
         tracing::trace!("beginning analyze {:?}", self.input);
         let mut lookups = HashMap::new();
-        let mut analyses: Vec<Suggestion> = vec![];
         while let Some(next_node) = nodes.pop() {
             if next_node.input_state.0 as usize == self.input.len()
                 && self.speller.lexicon().is_final(next_node.lexicon_state)
@@ -558,9 +559,8 @@ where
             }
             self.lexicon_epsilons(&pool, Weight::INFINITE, &next_node, &mut nodes);
             self.lexicon_consume(&pool, Weight::INFINITE, &next_node, &mut nodes);
-            analyses = self.generate_sorted_suggestions_basic(&lookups);
         }
-        analyses
+        self.generate_sorted_suggestions_basic(&lookups)
     }
 
     fn generate_sorted_suggestions_basic(
@@ -593,16 +593,24 @@ where
         let pool = Pool::with_size_and_max(self.config.node_pool_size, self.config.node_pool_size);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
         let mut corrections: HashMap<SmolStr, Weight> = HashMap::new();
-        let mut suggestions: Vec<Suggestion> = vec![];
         let mut best_weight = Weight::MAX;
         let key_table = self.speller.mutator().alphabet().key_table();
+        let n_best = self.config.n_best.unwrap_or(usize::MAX);
+
+        // Max-heap tracking the n-best weights. The peek (max) is the cutoff.
+        let mut weight_heap: BinaryHeap<Weight> = BinaryHeap::with_capacity(n_best.min(64));
 
         let mut iteration_count = 0usize;
 
         while let Some(next_node) = nodes.pop() {
             iteration_count += 1;
 
-            let max_weight = self.update_weight_limit(best_weight, &suggestions);
+            let nth_best = if weight_heap.len() >= n_best {
+                weight_heap.peek().copied()
+            } else {
+                None
+            };
+            let max_weight = self.update_weight_limit(best_weight, nth_best);
 
             if iteration_count >= 10_000_000 {
                 let name: SmolStr = self
@@ -657,7 +665,6 @@ where
                 .alphabet()
                 .string_from_symbols(&next_node.string);
 
-            // tracing::trace!("suggesting? {}::{}", string, weight);
             if weight < best_weight {
                 best_weight = weight;
             }
@@ -670,16 +677,23 @@ where
                 }
             }
 
-            // Use basic (fast) version during loop for weight limit calculation
-            suggestions = self.generate_sorted_suggestions_basic(&corrections);
+            // Update the n-best weight heap for pruning
+            if weight_heap.len() < n_best {
+                weight_heap.push(weight);
+            } else if let Some(&worst) = weight_heap.peek() {
+                if weight < worst {
+                    weight_heap.pop();
+                    weight_heap.push(weight);
+                }
+            }
         }
 
-        // After loop: generate full suggestions with verbose details if needed
+        // Build final suggestions once after the loop
         if self.config.verbose {
-            suggestions = self.generate_sorted_suggestions(&corrections);
+            self.generate_sorted_suggestions(&corrections)
+        } else {
+            self.generate_sorted_suggestions_basic(&corrections)
         }
-
-        suggestions
     }
 
     fn generate_sorted_suggestions(
@@ -774,19 +788,14 @@ where
     fn analyze_output_form(&self, form: &str) -> Weight {
         use unic_segment::Graphemes;
 
-        // Convert form to input symbols using MUTATOR alphabet only
-        // (alphabet_translator requires mutator symbol indices)
         let mutator_alphabet = self.speller.mutator().alphabet();
-        let mutator_key_table = mutator_alphabet.key_table();
+        let string_to_symbol = mutator_alphabet.string_to_symbol();
 
         let temp_input: Vec<SymbolNumber> = Graphemes::new(form)
             .map(|ch| {
-                let s = ch.to_string();
-                // Use only mutator alphabet - if character not found, use unknown symbol
-                mutator_key_table
-                    .iter()
-                    .position(|x| x == &s)
-                    .map(|x| SymbolNumber(x as u16))
+                string_to_symbol
+                    .get(ch)
+                    .copied()
                     .unwrap_or_else(|| mutator_alphabet.unknown().unwrap_or(SymbolNumber::ZERO))
             })
             .collect();
