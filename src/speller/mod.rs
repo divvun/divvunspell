@@ -353,7 +353,7 @@ where
             let worker = SpellerWorker::new(
                 self.clone(),
                 self.to_input_vec(&word),
-                config.clone(),
+                config,
                 OutputMode::WithoutTags,
             );
 
@@ -391,7 +391,7 @@ where
         let worker = SpellerWorker::new(
             self.clone(),
             self.to_input_vec(word),
-            config.clone(),
+            config,
             OutputMode::WithTags,
         );
 
@@ -415,13 +415,14 @@ where
 
         // Analyze output form using lexicon-only traversal (without error model)
         // This gives us the weight from the lexicon/acceptor alone
+        let non_verbose_config = SpellerConfig {
+            verbose: false,
+            ..config.clone()
+        };
         let worker = SpellerWorker::new(
             self.clone(),
             self.to_input_vec(word),
-            SpellerConfig {
-                verbose: false,
-                ..config.clone()
-            },
+            &non_verbose_config,
             OutputMode::WithoutTags,
         );
 
@@ -556,8 +557,7 @@ where
         config: &SpellerConfig,
         mode: OutputMode,
     ) -> Vec<Suggestion> {
-        let worker =
-            SpellerWorker::new(self.clone(), self.to_input_vec(word), config.clone(), mode);
+        let worker = SpellerWorker::new(self.clone(), self.to_input_vec(word), config, mode);
 
         tracing::trace!("suggesting single {}", word);
         worker.suggest()
@@ -592,12 +592,8 @@ where
 
         for word in std::iter::once(&original_input).chain(words.iter()) {
             tracing::trace!("suggesting for word {}", word);
-            let worker = SpellerWorker::new(
-                self.clone(),
-                self.to_input_vec(&word),
-                config.clone(),
-                output_mode,
-            );
+            let worker =
+                SpellerWorker::new(self.clone(), self.to_input_vec(&word), config, output_mode);
             let suggestions = worker.suggest();
 
             match mode {
@@ -660,28 +656,19 @@ where
                             (start_d, -1, end_d)
                         } else {
                             // Try all combinations of start and end offsets to find best overall match
-                            let max_offset = 1; // Try skipping up to 1 char at each end
-                            let mut start_offsets = vec![];
-                            let mut end_offsets = vec![];
-
-                            for i in 0..=max_offset {
-                                for j in 0..=max_offset {
-                                    start_offsets.push((i, j));
-                                    end_offsets.push((i, j));
-                                }
-                            }
+                            const OFFSETS: [(usize, usize); 4] = [(0, 0), (0, 1), (1, 0), (1, 1)];
 
                             let mut best_score = 0;
                             let mut best_alignment = (0, 0, 0, 0, 0, 0, 0, 0, 0); // (start_in, start_su, end_in, end_su, prefix, suffix, start_d, end_d, score)
 
-                            for (start_in_off, start_su_off) in &start_offsets {
+                            for (start_in_off, start_su_off) in &OFFSETS {
                                 if *start_in_off >= input_lower.len()
                                     || *start_su_off >= sugg_lower.len()
                                 {
                                     continue;
                                 }
 
-                                for (end_in_off, end_su_off) in &end_offsets {
+                                for (end_in_off, end_su_off) in &OFFSETS {
                                     if *end_in_off >= input_lower.len()
                                         || *end_su_off >= sugg_lower.len()
                                     {
@@ -1014,7 +1001,7 @@ where
                 let worker = SpellerWorker::new(
                     self.clone(),
                     self.to_input_vec(&lower),
-                    config.clone(),
+                    config,
                     output_mode,
                 );
                 let suggestions = worker.suggest();
