@@ -28,18 +28,13 @@ pub mod suggestion;
 
 mod worker;
 
-/// Calculate Damerau-Levenshtein distance between two strings using grapheme clusters.
+/// Calculate Damerau-Levenshtein distance between pre-split grapheme slices.
 ///
-/// This function properly handles combining characters by treating grapheme clusters
-/// (base character + combining marks) as single units, rather than counting them
-/// as separate characters. This is essential for languages that use combining
-/// diacritics (e.g., Kildin Sami with combining macron).
-fn grapheme_damerau_levenshtein(s1: &str, s2: &str) -> usize {
-    let s1_graphemes: Vec<&str> = Graphemes::new(s1).collect();
-    let s2_graphemes: Vec<&str> = Graphemes::new(s2).collect();
-
-    let len1 = s1_graphemes.len();
-    let len2 = s2_graphemes.len();
+/// Uses a flat reusable buffer to avoid per-call heap allocation.
+/// The buffer is resized as needed and reused across calls.
+fn grapheme_damerau_levenshtein(s1: &[&str], s2: &[&str], buf: &mut Vec<usize>) -> usize {
+    let len1 = s1.len();
+    let len2 = s2.len();
 
     if len1 == 0 {
         return len2;
@@ -48,43 +43,39 @@ fn grapheme_damerau_levenshtein(s1: &str, s2: &str) -> usize {
         return len1;
     }
 
-    let mut matrix = vec![vec![0usize; len2 + 1]; len1 + 1];
+    let cols = len2 + 1;
+    let needed = (len1 + 1) * cols;
+    buf.clear();
+    buf.resize(needed, 0);
 
     for i in 0..=len1 {
-        matrix[i][0] = i;
+        buf[i * cols] = i;
     }
     for j in 0..=len2 {
-        matrix[0][j] = j;
+        buf[j] = j;
     }
 
     for i in 1..=len1 {
         for j in 1..=len2 {
-            let cost = if s1_graphemes[i - 1] == s2_graphemes[j - 1] {
-                0
-            } else {
-                1
-            };
+            let cost = if s1[i - 1] == s2[j - 1] { 0 } else { 1 };
 
-            matrix[i][j] = std::cmp::min(
+            buf[i * cols + j] = std::cmp::min(
                 std::cmp::min(
-                    matrix[i - 1][j] + 1, // deletion
-                    matrix[i][j - 1] + 1, // insertion
+                    buf[(i - 1) * cols + j] + 1, // deletion
+                    buf[i * cols + (j - 1)] + 1, // insertion
                 ),
-                matrix[i - 1][j - 1] + cost, // substitution
+                buf[(i - 1) * cols + (j - 1)] + cost, // substitution
             );
 
             // Transposition
-            if i > 1
-                && j > 1
-                && s1_graphemes[i - 1] == s2_graphemes[j - 2]
-                && s1_graphemes[i - 2] == s2_graphemes[j - 1]
-            {
-                matrix[i][j] = std::cmp::min(matrix[i][j], matrix[i - 2][j - 2] + cost);
+            if i > 1 && j > 1 && s1[i - 1] == s2[j - 2] && s1[i - 2] == s2[j - 1] {
+                buf[i * cols + j] =
+                    std::cmp::min(buf[i * cols + j], buf[(i - 2) * cols + (j - 2)] + cost);
             }
         }
     }
 
-    matrix[len1][len2]
+    buf[len1 * cols + len2]
 }
 
 /// Temporary struct to store weight details during suggestion generation
@@ -546,16 +537,14 @@ where
 
     fn to_input_vec(&self, word: &str) -> Vec<SymbolNumber> {
         let alphabet = self.mutator().alphabet();
-        let key_table = alphabet.key_table();
+        let string_to_symbol = alphabet.string_to_symbol();
 
         tracing::trace!("to_input_vec: {}", word);
         Graphemes::new(word)
             .map(|ch| {
-                let s = ch.to_string();
-                key_table
-                    .iter()
-                    .position(|x| x == &s)
-                    .map(|x| SymbolNumber(x as u16))
+                string_to_symbol
+                    .get(ch)
+                    .copied()
                     .unwrap_or_else(|| alphabet.unknown().unwrap_or(SymbolNumber::ZERO))
             })
             .collect()
@@ -597,6 +586,10 @@ where
             None
         };
 
+        let input_lower_str = original_input.to_lowercase();
+        let input_lower: Vec<&str> = Graphemes::new(&input_lower_str).collect();
+        let mut dl_buf: Vec<usize> = Vec::new();
+
         for word in std::iter::once(&original_input).chain(words.iter()) {
             tracing::trace!("suggesting for word {}", word);
             let worker = SpellerWorker::new(
@@ -628,9 +621,7 @@ where
                         // Calculate distances based on case-insensitive alignment
                         // by scanning from both ends and splicing in the middle
                         // Use grapheme clusters to properly handle combining characters
-                        let input_lower_str = original_input.to_lowercase();
                         let sugg_lower_str = sugg.value().to_lowercase();
-                        let input_lower: Vec<&str> = Graphemes::new(&input_lower_str).collect();
                         let sugg_lower: Vec<&str> = Graphemes::new(&sugg_lower_str).collect();
 
                         // Special case: both input and suggestion are 2 graphemes or less - no middle section
@@ -736,13 +727,10 @@ where
                                             0 // No offset, will be handled by prefix matching
                                         } else {
                                             // DL between skipped portions
-                                            let inp_start_str: String =
-                                                input_lower[0..*start_in_off].join("");
-                                            let sug_start_str: String =
-                                                sugg_lower[0..*start_su_off].join("");
                                             grapheme_damerau_levenshtein(
-                                                &inp_start_str,
-                                                &sug_start_str,
+                                                &input_lower[0..*start_in_off],
+                                                &sugg_lower[0..*start_su_off],
+                                                &mut dl_buf,
                                             )
                                         };
 
@@ -751,13 +739,15 @@ where
                                             0 // No offset, will be handled by suffix matching
                                         } else {
                                             // DL between skipped portions
-                                            let inp_end_str: String = input_lower
-                                                [input_lower.len().saturating_sub(*end_in_off)..]
-                                                .join("");
-                                            let sug_end_str: String = sugg_lower
-                                                [sugg_lower.len().saturating_sub(*end_su_off)..]
-                                                .join("");
-                                            grapheme_damerau_levenshtein(&inp_end_str, &sug_end_str)
+                                            grapheme_damerau_levenshtein(
+                                                &input_lower[input_lower
+                                                    .len()
+                                                    .saturating_sub(*end_in_off)..],
+                                                &sugg_lower[sugg_lower
+                                                    .len()
+                                                    .saturating_sub(*end_su_off)..],
+                                                &mut dl_buf,
+                                            )
                                         };
 
                                         best_score = score;
@@ -818,13 +808,13 @@ where
                                 let end_change = inp_remaining.max(sug_remaining) > 0;
                                 (0, if end_change { 1 } else { end_d })
                             } else if inp_start_pos < inp_end_pos || sug_start_pos < sug_end_pos {
-                                let inp_mid: String = input_lower[inp_start_pos.min(inp_end_pos)
-                                    ..inp_end_pos.max(inp_start_pos)]
-                                    .join("");
-                                let sug_mid: String = sugg_lower[sug_start_pos.min(sug_end_pos)
-                                    ..sug_end_pos.max(sug_start_pos)]
-                                    .join("");
-                                let d = grapheme_damerau_levenshtein(&inp_mid, &sug_mid) as i32;
+                                let d = grapheme_damerau_levenshtein(
+                                    &input_lower[inp_start_pos.min(inp_end_pos)
+                                        ..inp_end_pos.max(inp_start_pos)],
+                                    &sugg_lower[sug_start_pos.min(sug_end_pos)
+                                        ..sug_end_pos.max(sug_start_pos)],
+                                    &mut dl_buf,
+                                ) as i32;
                                 (d, end_d)
                             } else {
                                 (0, end_d)

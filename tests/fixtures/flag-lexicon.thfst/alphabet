@@ -1,0 +1,1 @@
+{"key_table":["@_EPSILON_SYMBOL_@","c","a","t","r","@P.f.1@","@R.f.1@"],"initial_symbol_count":7,"flag_state_size":1,"length":7,"string_to_symbol":{"c":1,"t":3,"a":2,"r":4},"operations":{"5":{"operation":"PositiveSet","feature":0,"value":1},"6":{"operation":"Require","feature":0,"value":1}},"identity_symbol":null,"unknown_symbol":null}

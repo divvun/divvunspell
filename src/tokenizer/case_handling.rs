@@ -3,16 +3,24 @@ use smol_str::SmolStr;
 
 #[inline(always)]
 pub fn lower_case(s: &str) -> SmolStr {
-    s.chars()
-        .map(|c| c.to_lowercase().collect::<String>())
-        .collect::<SmolStr>()
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        for lc in c.to_lowercase() {
+            result.push(lc);
+        }
+    }
+    SmolStr::from(result)
 }
 
 #[inline(always)]
 pub fn upper_case(s: &str) -> SmolStr {
-    s.chars()
-        .map(|c| c.to_uppercase().collect::<String>())
-        .collect::<SmolStr>()
+    let mut result = String::with_capacity(s.len());
+    for c in s.chars() {
+        for uc in c.to_uppercase() {
+            result.push(uc);
+        }
+    }
+    SmolStr::from(result)
 }
 
 #[inline(always)]

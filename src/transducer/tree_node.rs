@@ -78,21 +78,11 @@ impl lifeguard::Recycleable for TreeNode {
 
 impl lifeguard::InitializeWith<&TreeNode> for TreeNode {
     fn initialize_with(&mut self, source: &TreeNode) {
-        if self.string != source.string {
-            self.string.truncate(0);
-            self.string.extend(&source.string);
-        }
-
+        self.string.clone_from(&source.string);
         self.input_state = source.input_state;
         self.mutator_state = source.mutator_state;
         self.lexicon_state = source.lexicon_state;
-
-        if self.flag_state != source.flag_state {
-            self.flag_state.truncate(0);
-            self.flag_state
-                .extend_from_slice(&source.flag_state.as_slice());
-        }
-
+        self.flag_state.clone_from(&source.flag_state);
         self.weight = source.weight;
     }
 }
@@ -126,10 +116,7 @@ impl TreeNode {
     ) -> Recycled<'a, TreeNode> {
         let mut node = pool.new();
 
-        if node.string != self.string {
-            node.string.truncate(0);
-            node.string.extend(&self.string);
-        }
+        node.string.clone_from(&self.string);
 
         if let Some(value) = transition.symbol() {
             if value.0 != 0 {
@@ -140,13 +127,7 @@ impl TreeNode {
         node.input_state = self.input_state;
         node.mutator_state = self.mutator_state;
         node.lexicon_state = transition.target().unwrap();
-
-        if node.flag_state != self.flag_state {
-            node.flag_state.truncate(0);
-            node.flag_state
-                .extend_from_slice(&self.flag_state.as_slice());
-        }
-
+        node.flag_state.clone_from(&self.flag_state);
         node.weight = self.weight + transition.weight().unwrap();
 
         node
@@ -159,20 +140,11 @@ impl TreeNode {
         transition: SymbolTransition,
     ) -> Recycled<'a, TreeNode> {
         let mut node = pool.new();
-        if node.string != self.string {
-            node.string.truncate(0);
-            node.string.extend(&self.string);
-        }
+        node.string.clone_from(&self.string);
         node.input_state = self.input_state;
         node.mutator_state = transition.target().unwrap();
         node.lexicon_state = self.lexicon_state;
-
-        if node.flag_state != self.flag_state {
-            node.flag_state.truncate(0);
-            node.flag_state
-                .extend_from_slice(&self.flag_state.as_slice());
-        }
-
+        node.flag_state.clone_from(&self.flag_state);
         node.weight = self.weight + transition.weight().unwrap();
         node
     }
@@ -189,10 +161,7 @@ impl TreeNode {
     ) -> Recycled<'a, TreeNode> {
         let mut node = pool.new();
 
-        if node.string != self.string {
-            node.string.truncate(0);
-            node.string.extend(&self.string);
-        }
+        node.string.clone_from(&self.string);
 
         if output_symbol.0 != 0 {
             node.string.push(output_symbol);
@@ -200,13 +169,7 @@ impl TreeNode {
 
         node.mutator_state = next_mutator;
         node.lexicon_state = next_lexicon;
-
-        if node.flag_state != self.flag_state {
-            node.flag_state.truncate(0);
-            node.flag_state
-                .extend_from_slice(&self.flag_state.as_slice());
-        }
-
+        node.flag_state.clone_from(&self.flag_state);
         node.weight = self.weight + weight;
 
         if let Some(input) = next_input {
@@ -239,21 +202,11 @@ impl TreeNode {
     ) -> Recycled<'a, TreeNode> {
         let mut node = pool.new();
 
-        if node.string != self.string {
-            node.string.truncate(0);
-            node.string.extend(&self.string);
-        }
-
+        node.string.clone_from(&self.string);
         node.input_state = self.input_state;
         node.mutator_state = self.mutator_state;
         node.lexicon_state = transition.target().unwrap();
-
-        if node.flag_state != self.flag_state {
-            node.flag_state.truncate(0);
-            node.flag_state
-                .extend_from_slice(&self.flag_state.as_slice());
-        }
-
+        node.flag_state.clone_from(&self.flag_state);
         node.weight = self.weight + transition.weight().unwrap();
         node
     }
