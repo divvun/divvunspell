@@ -20,15 +20,15 @@ fn speller_start_node(pool: &Pool<TreeNode>, size: usize) -> Vec<Recycled<'_, Tr
     nodes
 }
 
-pub struct SpellerWorker<T: Transducer, U: Transducer> {
+pub struct SpellerWorker<'c, T: Transducer, U: Transducer> {
     speller: Arc<HfstSpeller<T, U>>,
     input: Vec<SymbolNumber>,
-    config: SpellerConfig,
+    config: &'c SpellerConfig,
     output_mode: OutputMode,
 }
 
 #[allow(clippy::too_many_arguments)]
-impl<'t, T: Transducer + 't, U: Transducer + 't> SpellerWorker<T, U>
+impl<'c, T: Transducer, U: Transducer> SpellerWorker<'c, T, U>
 where
     T: Transducer,
     U: Transducer,
@@ -37,9 +37,9 @@ where
     pub(crate) fn new(
         speller: Arc<HfstSpeller<T, U>>,
         input: Vec<SymbolNumber>,
-        config: SpellerConfig,
+        config: &'c SpellerConfig,
         output_mode: OutputMode,
-    ) -> SpellerWorker<T, U> {
+    ) -> SpellerWorker<'c, T, U> {
         SpellerWorker {
             speller,
             input,
@@ -592,7 +592,9 @@ where
 
         let pool = Pool::with_size_and_max(self.config.node_pool_size, self.config.node_pool_size);
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
-        let mut corrections: HashMap<SmolStr, Weight> = HashMap::new();
+        // Key on symbol sequences to avoid string_from_symbols in the hot loop.
+        // Converted to SmolStr once after the loop.
+        let mut corrections: HashMap<Vec<SymbolNumber>, Weight> = HashMap::new();
         let mut best_weight = Weight::MAX;
         let key_table = self.speller.mutator().alphabet().key_table();
         let n_best = self.config.n_best.unwrap_or(usize::MAX);
@@ -659,22 +661,18 @@ where
                 continue;
             }
 
-            let string = self
-                .speller
-                .lexicon()
-                .alphabet()
-                .string_from_symbols(&next_node.string);
-
             if weight < best_weight {
                 best_weight = weight;
             }
 
-            {
-                let entry = corrections.entry(string).or_insert(weight);
-
+            // Dedup by symbol sequence — avoid string conversion in the hot loop.
+            // On hit: just compare/update weight. On miss: clone the symbol vec.
+            if let Some(entry) = corrections.get_mut(next_node.string.as_slice()) {
                 if *entry > weight {
                     *entry = weight;
                 }
+            } else {
+                corrections.insert(next_node.string.clone(), weight);
             }
 
             // Update the n-best weight heap for pruning
@@ -688,11 +686,17 @@ where
             }
         }
 
-        // Build final suggestions once after the loop
+        // Convert symbol sequences to strings and build final suggestions
+        let alphabet = self.speller.lexicon().alphabet();
+        let string_corrections: HashMap<SmolStr, Weight> = corrections
+            .into_iter()
+            .map(|(syms, w)| (alphabet.string_from_symbols(&syms), w))
+            .collect();
+
         if self.config.verbose {
-            self.generate_sorted_suggestions(&corrections)
+            self.generate_sorted_suggestions(&string_corrections)
         } else {
-            self.generate_sorted_suggestions_basic(&corrections)
+            self.generate_sorted_suggestions_basic(&string_corrections)
         }
     }
 
@@ -819,7 +823,7 @@ where
         let temp_worker = SpellerWorker {
             speller: self.speller.clone(),
             input: temp_input,
-            config: temp_config,
+            config: &temp_config,
             output_mode: OutputMode::WithoutTags,
         };
 
