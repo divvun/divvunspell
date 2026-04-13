@@ -21,8 +21,8 @@ A fast, feature-rich spell checking library and toolset for HFST-based spell che
 Download [the latest release](https://github.com/divvun/divvunspell/releases/latest), or build from source:
 
 ```sh
-# Install the CLI
-cargo install -p divvunspell-cli
+# Install the CLI (stand in divvunspell)
+cargo install --path cli
 
 # Check spelling and get suggestions
 divvunspell suggest --archive speller.zhfst --json "sámi"
