@@ -7,6 +7,8 @@
 	let sortMode = null
 	let loadError = null
 	let theme = 'auto'; // 'light', 'dark', or 'auto'
+	let availableVariants = []
+	let currentVariant = null
 	
 	$: totalRuntime = calculateTotalRuntime(report)
 	$: themeIcon = theme === 'light' ? '☀️' : theme === 'dark' ? '🌙' : '💻'
@@ -421,23 +423,61 @@
 		return "indicator-default";
 	}
 
-	function fetchReport() {
-		return fetch(`report.json`)
-				.then(r => {
-					if (!r.ok) {
-						throw new Error(`Failed to load report.json: ${r.status} ${r.statusText}`)
-					}
-					return r.json()
-				})
-				.then(data => {
-					report = data
-					originalResults = report.results.slice()
-					results = report.results.slice()
-				})
-				.catch(err => {
-					loadError = err.message
-					console.error('Error loading report:', err)
-				})
+	async function discoverVariants() {
+		// Try to discover available report variants
+		const variants = [{ tag: null, file: 'report.json', label: 'Default' }]
+		
+		// Common variant patterns to try
+		const commonVariants = ['NO', 'SE', 'Cans', 'Cyrl', 'Latn', 'FI', 'SV', 'EN']
+		
+		for (const tag of commonVariants) {
+			try {
+				const response = await fetch(`report-${tag}.json`, { method: 'HEAD' })
+				if (response.ok) {
+					variants.push({ tag, file: `report-${tag}.json`, label: tag })
+				}
+			} catch (e) {
+				// Variant doesn't exist, skip
+			}
+		}
+		
+		return variants
+	}
+
+	async function fetchReport(variant = null) {
+		const filename = variant ? `report-${variant}.json` : 'report.json'
+		
+		try {
+			const r = await fetch(filename)
+			if (!r.ok) {
+				throw new Error(`Failed to load ${filename}: ${r.status} ${r.statusText}`)
+			}
+			const data = await r.json()
+			report = data
+			originalResults = report.results.slice()
+			results = report.results.slice()
+			currentVariant = variant
+			loadError = null
+			
+			// Update URL if variant is specified
+			if (variant) {
+				const url = new URL(window.location)
+				url.searchParams.set('variant', variant)
+				window.history.pushState({}, '', url)
+			} else {
+				const url = new URL(window.location)
+				url.searchParams.delete('variant')
+				window.history.pushState({}, '', url)
+			}
+		} catch (err) {
+			loadError = err.message
+			console.error('Error loading report:', err)
+		}
+	}
+
+	function changeVariant(event) {
+		const variant = event.target.value || null
+		fetchReport(variant)
 	}
 
 	function getSpellerTitle(report) {
@@ -451,7 +491,22 @@
 		return `${title} (${locale})`
 	}
 
-	fetchReport()
+	// Initialize on mount
+	onMount(async () => {
+		// Discover available variants
+		availableVariants = await discoverVariants()
+		
+		// Check for variant in URL parameter
+		const urlParams = new URLSearchParams(window.location.search)
+		const variantParam = urlParams.get('variant')
+		
+		// Load the appropriate report
+		if (variantParam && availableVariants.some(v => v.tag === variantParam)) {
+			await fetchReport(variantParam)
+		} else {
+			await fetchReport()
+		}
+	})
 </script>
 
 <style>
@@ -723,6 +778,48 @@ h2 {
 	background-color: #357abd;
 }
 
+/* Variant selector */
+.variant-selector {
+	position: fixed;
+	top: 4.5em;
+	right: 1em;
+	z-index: 999;
+	background-color: var(--bg-subtle);
+	border: 1px solid var(--border-light);
+	border-radius: 4px;
+	padding: 0.6em 0.8em;
+	display: flex;
+	align-items: center;
+	gap: 0.6em;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.variant-selector label {
+	font-weight: 600;
+	color: var(--text-color);
+	font-size: 0.9em;
+}
+
+.variant-selector select {
+	padding: 0.3em 0.6em;
+	border: 1px solid var(--border-color);
+	border-radius: 4px;
+	background-color: var(--bg-color);
+	color: var(--text-color);
+	font-size: 0.9em;
+	cursor: pointer;
+}
+
+.variant-selector select:hover {
+	border-color: #4a90e2;
+}
+
+.variant-selector select:focus {
+	outline: none;
+	border-color: #4a90e2;
+	box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+}
+
 /* Dark mode styles */
 :global(:root) {
 	--bg-color: white;
@@ -873,6 +970,30 @@ h2 {
 	h2 {
 		font-size: 1.1em;
 	}
+	
+	/* Stack theme toggle and variant selector vertically on mobile */
+	.theme-toggle {
+		top: 0.5em;
+		right: 0.5em;
+		padding: 0.5em 0.8em;
+		font-size: 0.8em;
+	}
+	
+	.variant-selector {
+		top: 3.5em;
+		right: 0.5em;
+		padding: 0.5em 0.6em;
+		font-size: 0.8em;
+	}
+	
+	.variant-selector label {
+		font-size: 0.85em;
+	}
+	
+	.variant-selector select {
+		font-size: 0.85em;
+		padding: 0.3em 0.5em;
+	}
 }
 
 </style>
@@ -881,6 +1002,17 @@ h2 {
 	<span>{themeIcon}</span>
 	<span>{themeLabel}</span>
 </button>
+
+{#if availableVariants.length > 1}
+<div class="variant-selector">
+	<label for="variant-select">Variant:</label>
+	<select id="variant-select" on:change={changeVariant} value={currentVariant || ''}>
+		{#each availableVariants as variant}
+			<option value={variant.tag || ''}>{variant.label}</option>
+		{/each}
+	</select>
+</div>
+{/if}
 
 <div class="container">
 {#if report != null}
