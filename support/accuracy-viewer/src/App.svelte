@@ -424,21 +424,46 @@
 	}
 
 	async function discoverVariants() {
-		// Try to discover available report variants
+		// Try to discover available report variants from fst-variants.json
 		const variants = [{ tag: null, file: 'report.json', label: 'Default' }]
 		
-		// Common variant patterns to try
-		const commonVariants = ['NO', 'SE', 'Cans', 'Cyrl', 'Latn', 'FI', 'SV', 'EN']
-		
-		for (const tag of commonVariants) {
-			try {
-				const response = await fetch(`report-${tag}.json`, { method: 'HEAD' })
-				if (response.ok) {
-					variants.push({ tag, file: `report-${tag}.json`, label: tag })
-				}
-			} catch (e) {
-				// Variant doesn't exist, skip
+		try {
+			// Load variant information from badgedata
+			const response = await fetch('../badgedata/fst-variants.json')
+			if (!response.ok) {
+				return variants // Just return default if no variants file
 			}
+			
+			const variantData = await response.json()
+			const variantCodes = []
+			
+			// Collect all variant codes from different categories
+			if (variantData.areas) {
+				variantCodes.push(...variantData.areas.map(a => a.code))
+			}
+			if (variantData.dialects) {
+				variantCodes.push(...variantData.dialects.map(d => d.code))
+			}
+			if (variantData.orthographies) {
+				variantCodes.push(...variantData.orthographies.map(o => o.code))
+			}
+			if (variantData.writing_systems) {
+				variantCodes.push(...variantData.writing_systems.map(w => w.code))
+			}
+			
+			// Check which report files actually exist
+			for (const code of variantCodes) {
+				try {
+					const checkResponse = await fetch(`report-${code}.json`, { method: 'HEAD' })
+					if (checkResponse.ok) {
+						variants.push({ tag: code, file: `report-${code}.json`, label: code })
+					}
+				} catch (e) {
+					// Report doesn't exist, skip
+				}
+			}
+		} catch (e) {
+			console.warn('Could not load fst-variants.json, using default only:', e)
 		}
 		
 		return variants
