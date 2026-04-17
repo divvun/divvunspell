@@ -435,32 +435,28 @@
 			}
 			
 			const variantData = await response.json()
-			const variantCodes = []
 			
 			// Collect all variant codes from different categories
+			// We trust that if a variant is listed, the report file exists
 			if (variantData.areas) {
-				variantCodes.push(...variantData.areas.map(a => a.code))
+				variantData.areas.forEach(a => {
+					variants.push({ tag: a.code, file: `report-${a.code}.json`, label: a.code })
+				})
 			}
 			if (variantData.dialects) {
-				variantCodes.push(...variantData.dialects.map(d => d.code))
+				variantData.dialects.forEach(d => {
+					variants.push({ tag: d.code, file: `report-${d.code}.json`, label: d.code })
+				})
 			}
 			if (variantData.orthographies) {
-				variantCodes.push(...variantData.orthographies.map(o => o.code))
+				variantData.orthographies.forEach(o => {
+					variants.push({ tag: o.code, file: `report-${o.code}.json`, label: o.code })
+				})
 			}
 			if (variantData.writing_systems) {
-				variantCodes.push(...variantData.writing_systems.map(w => w.code))
-			}
-			
-			// Check which report files actually exist
-			for (const code of variantCodes) {
-				try {
-					const checkResponse = await fetch(`report-${code}.json`, { method: 'HEAD' })
-					if (checkResponse.ok) {
-						variants.push({ tag: code, file: `report-${code}.json`, label: code })
-					}
-				} catch (e) {
-					// Report doesn't exist, skip
-				}
+				variantData.writing_systems.forEach(w => {
+					variants.push({ tag: w.code, file: `report-${w.code}.json`, label: w.code })
+				})
 			}
 		} catch (e) {
 			console.warn('Could not load fst-variants.json, using default only:', e)
@@ -472,17 +468,24 @@
 	async function fetchReport(variant = null) {
 		const filename = variant ? `report-${variant}.json` : 'report.json'
 		
+		// Clear current report to show loading state immediately
+		report = null
+		results = null
+		loadError = null
+		
+		// Give the UI a chance to update before processing large report
+		await new Promise(resolve => setTimeout(resolve, 0))
+		
 		try {
 			const r = await fetch(filename)
 			if (!r.ok) {
 				throw new Error(`Failed to load ${filename}: ${r.status} ${r.statusText}`)
 			}
 			const data = await r.json()
-			report = data
-			originalResults = report.results.slice()
-			results = report.results.slice()
+			
+			// Process the data
+			originalResults = data.results.slice()
 			currentVariant = variant
-			loadError = null
 			
 			// Update URL if variant is specified
 			if (variant) {
@@ -494,6 +497,13 @@
 				url.searchParams.delete('variant')
 				window.history.pushState({}, '', url)
 			}
+			
+			// Let UI update again before rendering the large report
+			await new Promise(resolve => setTimeout(resolve, 0))
+			
+			// Now set the report data (triggers re-render)
+			report = data
+			results = data.results.slice()
 		} catch (err) {
 			loadError = err.message
 			console.error('Error loading report:', err)
@@ -525,11 +535,12 @@
 		const urlParams = new URLSearchParams(window.location.search)
 		const variantParam = urlParams.get('variant')
 		
-		// Load the appropriate report
+		// Load the appropriate report (don't await - let it load in background)
+		// This makes the variant selector appear immediately
 		if (variantParam && availableVariants.some(v => v.tag === variantParam)) {
-			await fetchReport(variantParam)
+			fetchReport(variantParam)
 		} else {
-			await fetchReport()
+			fetchReport()
 		}
 	})
 </script>
