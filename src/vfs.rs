@@ -87,8 +87,8 @@ impl Filesystem for Fs {
 
 /// Box file.
 pub mod boxf {
-    use box_format::{BoxFileReader, BoxPath};
-    use std::io::{Read, Result};
+    use box_format::{BoxPath, sync::BoxReader as BoxFileReader};
+    use std::io::{Read, Result, Write};
     use std::path::Path;
     use tempfile::TempDir;
 
@@ -97,12 +97,16 @@ pub mod boxf {
         offset: u64,
         len: usize,
         file: std::fs::File,
-        reader: std::io::Take<std::fs::File>,
+        segment: mmap_io::segment::Segment,
     }
 
     impl Read for File {
-        fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-            self.reader.read(buf)
+        fn read(&mut self, mut buf: &mut [u8]) -> Result<usize> {
+            buf.write(
+                self.segment
+                    .as_slice()
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
+            )
         }
     }
 
@@ -162,18 +166,18 @@ pub mod boxf {
             let boxpath = BoxPath::new(path).map_err(|e| e.as_io_error())?;
             let meta = self.0.metadata();
             let record = meta
-                .inode(&boxpath)
+                .index(&boxpath)
                 .and_then(|x| meta.record(x))
                 .and_then(|r| r.as_file());
 
             let file = std::fs::File::open(self.0.path())?;
 
             match record {
-                Some(v) => self.0.read_bytes(v).map(|reader| File {
+                Some(v) => self.0.memory_map(&v).map(|segment| File {
                     offset: v.data.get(),
                     len: v.length as usize,
                     file,
-                    reader,
+                    segment,
                 }),
                 None => Err(std::io::Error::new(
                     std::io::ErrorKind::NotFound,

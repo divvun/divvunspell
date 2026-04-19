@@ -1,7 +1,7 @@
 //! Box-based archive stuff.
 use std::sync::Arc;
 
-use box_format::BoxFileReader;
+use box_format::sync::BoxReader as BoxFileReader;
 
 use super::error::SpellerArchiveError;
 use super::{SpellerArchive, meta::SpellerMetadata};
