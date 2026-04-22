@@ -350,9 +350,9 @@ where
             config
         );
         for word in std::iter::once(word.into()).chain(words.into_iter()) {
-            let worker = SpellerWorker::new(
+            let worker = SpellerWorker::new_lexicon_input(
                 self.clone(),
-                self.to_input_vec(&word),
+                self.to_input_vec_lexicon(&word),
                 config,
                 OutputMode::WithoutTags,
             );
@@ -388,9 +388,9 @@ where
             return vec![];
         }
 
-        let worker = SpellerWorker::new(
+        let worker = SpellerWorker::new_lexicon_input(
             self.clone(),
-            self.to_input_vec(word),
+            self.to_input_vec_lexicon(word),
             config,
             OutputMode::WithTags,
         );
@@ -419,9 +419,9 @@ where
             verbose: false,
             ..config.clone()
         };
-        let worker = SpellerWorker::new(
+        let worker = SpellerWorker::new_lexicon_input(
             self.clone(),
-            self.to_input_vec(word),
+            self.to_input_vec_lexicon(word),
             &non_verbose_config,
             OutputMode::WithoutTags,
         );
@@ -541,6 +541,27 @@ where
         let string_to_symbol = alphabet.string_to_symbol();
 
         tracing::trace!("to_input_vec: {}", word);
+        Graphemes::new(word)
+            .map(|ch| {
+                string_to_symbol
+                    .get(ch)
+                    .copied()
+                    .unwrap_or_else(|| alphabet.unknown().unwrap_or(SymbolNumber::ZERO))
+            })
+            .collect()
+    }
+
+    /// Convert input word to symbol vector using lexicon alphabet.
+    ///
+    /// This is used for lexicon-only operations (is_correct, analyze_input, etc.)
+    /// where we need to match against the lexicon's alphabet, not the error model's.
+    /// Using the mutator alphabet would cause words with letters outside the error
+    /// model alphabet to be incorrectly marked as unknown/incorrect.
+    fn to_input_vec_lexicon(&self, word: &str) -> Vec<SymbolNumber> {
+        let alphabet = self.lexicon().alphabet();
+        let string_to_symbol = alphabet.string_to_symbol();
+
+        tracing::trace!("to_input_vec_lexicon: {}", word);
         Graphemes::new(word)
             .map(|ch| {
                 string_to_symbol
