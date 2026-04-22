@@ -290,6 +290,17 @@ cargo install --path ./crates/thfst-tools
 cargo test
 ```
 
+### Git hooks
+
+This repo ships a pre-commit hook in `.githooks/` that refuses to commit any
+staged `.rs` file that isn't `cargo fmt`-clean. Opt in once per clone:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+If the hook rejects a commit, run `cargo fmt`, re-stage, and commit again.
+
 ## Documentation
 
 - **API Documentation**: [docs.rs/divvunspell](https://docs.rs/divvunspell)

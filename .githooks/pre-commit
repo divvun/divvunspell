@@ -1,0 +1,22 @@
+#!/bin/sh
+# Refuse the commit if the staged tree isn't `cargo fmt`-clean.
+#
+# Checks only staged Rust files so the hook doesn't complain about unrelated
+# work-in-progress in other files.
+
+set -eu
+
+# Collect staged .rs files (added, copied, modified, renamed), newline-separated.
+staged=$(git diff --cached --name-only --diff-filter=ACMR -- '*.rs')
+
+if [ -z "$staged" ]; then
+    exit 0
+fi
+
+# rustfmt per file: reports each unformatted file but doesn't modify anything.
+# shellcheck disable=SC2086 # we rely on word-splitting over $staged
+if ! echo "$staged" | tr '\n' '\0' | xargs -0 rustfmt --edition 2024 --check --files-with-diff >/dev/null 2>&1; then
+    echo "pre-commit: some staged Rust files are not formatted." >&2
+    echo "            run \`cargo fmt\` (or \`rustfmt --edition 2024 <files>\`) and re-stage." >&2
+    exit 1
+fi
