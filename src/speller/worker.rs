@@ -25,6 +25,9 @@ pub struct SpellerWorker<'c, T: Transducer, U: Transducer> {
     input: Vec<SymbolNumber>,
     config: &'c SpellerConfig,
     output_mode: OutputMode,
+    /// When true, `input` already holds lexicon-alphabet symbols, so
+    /// `lexicon_consume` skips the mutator-to-lexicon translator step.
+    input_is_lexicon_alphabet: bool,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -33,8 +36,14 @@ where
     T: Transducer,
     U: Transducer,
 {
+    /// Construct a worker whose `input` is in the **mutator** alphabet.
+    ///
+    /// Use this for the suggest path, where `consume_input` and
+    /// `queue_mutator_arcs` walk the mutator transducer directly.
+    /// `lexicon_consume` translates via `alphabet_translator` when it needs
+    /// to query the lexicon.
     #[inline(always)]
-    pub(crate) fn new(
+    pub(crate) fn new_mutator_input(
         speller: Arc<HfstSpeller<T, U>>,
         input: Vec<SymbolNumber>,
         config: &'c SpellerConfig,
@@ -45,6 +54,28 @@ where
             input,
             config,
             output_mode,
+            input_is_lexicon_alphabet: false,
+        }
+    }
+
+    /// Construct a worker whose `input` is already in the **lexicon** alphabet.
+    ///
+    /// Use this for lexicon-only traversals (`is_correct`, `analyze`) where
+    /// `input` came from `HfstSpeller::to_input_vec_lexicon`. `lexicon_consume`
+    /// skips translator indirection for these workers.
+    #[inline(always)]
+    pub(crate) fn new_lexicon_input(
+        speller: Arc<HfstSpeller<T, U>>,
+        input: Vec<SymbolNumber>,
+        config: &'c SpellerConfig,
+        output_mode: OutputMode,
+    ) -> SpellerWorker<'c, T, U> {
+        SpellerWorker {
+            speller,
+            input,
+            config,
+            output_mode,
+            input_is_lexicon_alphabet: true,
         }
     }
 
@@ -411,14 +442,18 @@ where
     ) {
         let mutator = self.speller.mutator();
         let lexicon = self.speller.lexicon();
-        let alphabet_translator = self.speller.alphabet_translator();
         let input_state = next_node.input_state.0 as usize;
 
         if input_state >= self.input.len() {
             return;
         }
 
-        let input_sym = alphabet_translator[self.input[input_state as usize].0 as usize];
+        let input_sym = if self.input_is_lexicon_alphabet {
+            self.input[input_state]
+        } else {
+            let alphabet_translator = self.speller.alphabet_translator();
+            alphabet_translator[self.input[input_state].0 as usize]
+        };
         let next_lexicon_state = next_node.lexicon_state.incr();
         //        tracing::trace!(
         //            "lexicon consuming {}: {}",
@@ -820,12 +855,12 @@ where
             ..self.config.clone()
         };
 
-        let temp_worker = SpellerWorker {
-            speller: self.speller.clone(),
-            input: temp_input,
-            config: &temp_config,
-            output_mode: OutputMode::WithoutTags,
-        };
+        let temp_worker = SpellerWorker::new_mutator_input(
+            self.speller.clone(),
+            temp_input,
+            &temp_config,
+            OutputMode::WithoutTags,
+        );
 
         while let Some(next_node) = nodes.pop() {
             if next_node.input_state.0 as usize == temp_worker.input.len()

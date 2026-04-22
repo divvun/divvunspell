@@ -350,9 +350,9 @@ where
             config
         );
         for word in std::iter::once(word.into()).chain(words.into_iter()) {
-            let worker = SpellerWorker::new(
+            let worker = SpellerWorker::new_lexicon_input(
                 self.clone(),
-                self.to_input_vec(&word),
+                self.to_input_vec_lexicon(&word),
                 config,
                 OutputMode::WithoutTags,
             );
@@ -388,9 +388,9 @@ where
             return vec![];
         }
 
-        let worker = SpellerWorker::new(
+        let worker = SpellerWorker::new_lexicon_input(
             self.clone(),
-            self.to_input_vec(word),
+            self.to_input_vec_lexicon(word),
             config,
             OutputMode::WithTags,
         );
@@ -419,9 +419,9 @@ where
             verbose: false,
             ..config.clone()
         };
-        let worker = SpellerWorker::new(
+        let worker = SpellerWorker::new_lexicon_input(
             self.clone(),
-            self.to_input_vec(word),
+            self.to_input_vec_lexicon(word),
             &non_verbose_config,
             OutputMode::WithoutTags,
         );
@@ -551,13 +551,35 @@ where
             .collect()
     }
 
+    /// Convert input word to a symbol vector keyed by the **lexicon** alphabet.
+    ///
+    /// Used for lexicon-only operations (`is_correct`, `analyze_input`,
+    /// `get_lexicon_weight`). Using the mutator alphabet here would collapse any
+    /// character that is in the lexicon but not in the error model to UNKNOWN,
+    /// causing valid words to be rejected when the two alphabets diverge.
+    fn to_input_vec_lexicon(&self, word: &str) -> Vec<SymbolNumber> {
+        let alphabet = self.lexicon().alphabet();
+        let string_to_symbol = alphabet.string_to_symbol();
+
+        tracing::trace!("to_input_vec_lexicon: {}", word);
+        Graphemes::new(word)
+            .map(|ch| {
+                string_to_symbol
+                    .get(ch)
+                    .copied()
+                    .unwrap_or_else(|| alphabet.unknown().unwrap_or(SymbolNumber::ZERO))
+            })
+            .collect()
+    }
+
     fn suggest_single(
         self: Arc<Self>,
         word: &str,
         config: &SpellerConfig,
         mode: OutputMode,
     ) -> Vec<Suggestion> {
-        let worker = SpellerWorker::new(self.clone(), self.to_input_vec(word), config, mode);
+        let worker =
+            SpellerWorker::new_mutator_input(self.clone(), self.to_input_vec(word), config, mode);
 
         tracing::trace!("suggesting single {}", word);
         worker.suggest()
@@ -592,8 +614,12 @@ where
 
         for word in std::iter::once(&original_input).chain(words.iter()) {
             tracing::trace!("suggesting for word {}", word);
-            let worker =
-                SpellerWorker::new(self.clone(), self.to_input_vec(&word), config, output_mode);
+            let worker = SpellerWorker::new_mutator_input(
+                self.clone(),
+                self.to_input_vec(&word),
+                config,
+                output_mode,
+            );
             let suggestions = worker.suggest();
 
             match mode {
@@ -998,7 +1024,7 @@ where
         if mode == CaseMode::FirstResults {
             let lower = lower_case(&original_input);
             if lower.as_str() != original_input.as_str() {
-                let worker = SpellerWorker::new(
+                let worker = SpellerWorker::new_mutator_input(
                     self.clone(),
                     self.to_input_vec(&lower),
                     config,
