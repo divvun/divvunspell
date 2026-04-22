@@ -78,6 +78,26 @@ fn grapheme_damerau_levenshtein(s1: &[&str], s2: &[&str], buf: &mut Vec<usize>) 
     buf[len1 * cols + len2]
 }
 
+/// Drop suggestions whose weight exceeds `best.weight + beam`.
+///
+/// The in-search beam cutoff in `SpellerWorker::suggest` is optimistic: it
+/// tracks the running `best_weight`, which can be much higher early in the
+/// search than the final best. So suggestions added at that time may end up
+/// outside the true beam once a better best is found. Callers that return
+/// suggestions to the user must apply this post-filter to respect the beam.
+///
+/// Matches FFI behaviour: beam is only honoured when strictly greater than
+/// `Weight::ZERO`.
+fn apply_beam_filter(out: &mut Vec<Suggestion>, beam: Option<Weight>) {
+    let Some(beam) = beam else { return };
+    if beam <= Weight::ZERO {
+        return;
+    }
+    let Some(best) = out.first() else { return };
+    let threshold = best.weight() + beam;
+    out.retain(|s| s.weight() <= threshold);
+}
+
 /// Temporary struct to store weight details during suggestion generation
 #[derive(Clone, Debug)]
 struct SuggestionData {
@@ -582,7 +602,9 @@ where
             SpellerWorker::new_mutator_input(self.clone(), self.to_input_vec(word), config, mode);
 
         tracing::trace!("suggesting single {}", word);
-        worker.suggest()
+        let mut suggestions = worker.suggest();
+        apply_beam_filter(&mut suggestions, config.beam);
+        suggestions
     }
 
     fn suggest_case(
@@ -1014,6 +1036,8 @@ where
                 }
                 CaseMode::FirstResults => {
                     if !suggestions.is_empty() {
+                        let mut suggestions = suggestions;
+                        apply_beam_filter(&mut suggestions, config.beam);
                         return suggestions;
                     }
                 }
@@ -1030,8 +1054,9 @@ where
                     config,
                     output_mode,
                 );
-                let suggestions = worker.suggest();
+                let mut suggestions = worker.suggest();
                 if !suggestions.is_empty() {
+                    apply_beam_filter(&mut suggestions, config.beam);
                     return suggestions;
                 }
             }
@@ -1110,17 +1135,7 @@ where
         if let Some(n_best) = config.n_best {
             out.truncate(n_best);
         }
-
-        // Apply beam filtering: remove suggestions that are more than beam away from best.
-        // Only enable beam when it is strictly greater than Weight::ZERO, to match FFI behavior.
-        if let Some(beam) = config.beam {
-            if beam > Weight::ZERO {
-                if let Some(best) = out.first() {
-                    let beam_threshold = best.weight() + beam;
-                    out.retain(|s| s.weight() <= beam_threshold);
-                }
-            }
-        }
+        apply_beam_filter(&mut out, config.beam);
 
         out
     }
