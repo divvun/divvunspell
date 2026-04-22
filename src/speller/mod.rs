@@ -78,6 +78,313 @@ fn grapheme_damerau_levenshtein(s1: &[&str], s2: &[&str], buf: &mut Vec<usize>) 
     buf[len1 * cols + len2]
 }
 
+/// Position-bucketed reweight penalties and the resulting additional weight.
+#[derive(Clone, Copy, Debug)]
+struct ReweightPenalties {
+    start: f32,
+    /// `-1.0` signals "no middle section" (rendered as "-" in verbose output);
+    /// otherwise non-negative.
+    mid: f32,
+    end: f32,
+    additional_weight: Weight,
+}
+
+/// Compute reweight penalties for a single suggestion against the case-folded
+/// input. Mirrors the alignment/duplicate-grapheme logic previously inlined in
+/// `suggest_case`'s `MergeAll` branch — extracted so `FirstResults` can use it
+/// too (fixes #65 where mixed-case inputs silently skipped the reweight step).
+fn compute_reweight_penalties(
+    input_lower: &[&str],
+    sugg_value: &str,
+    reweight: &ReweightingConfig,
+    dl_buf: &mut Vec<usize>,
+) -> ReweightPenalties {
+    let sugg_lower_str = sugg_value.to_lowercase();
+    let sugg_lower: Vec<&str> = Graphemes::new(&sugg_lower_str).collect();
+
+    let is_short = input_lower.len() <= 2 && sugg_lower.len() <= 2;
+
+    let (start_dist, mid_dist, end_dist): (usize, i32, usize) = if input_lower.is_empty()
+        && sugg_lower.is_empty()
+    {
+        (0, 0, 0)
+    } else if is_short {
+        let start_d = if !input_lower.is_empty() && !sugg_lower.is_empty() {
+            if input_lower[0] != sugg_lower[0] {
+                1
+            } else {
+                0
+            }
+        } else {
+            input_lower.len().max(sugg_lower.len()).min(1)
+        };
+
+        let end_d = if input_lower.len() > 1 && sugg_lower.len() > 1 {
+            if input_lower[input_lower.len() - 1] != sugg_lower[sugg_lower.len() - 1] {
+                1
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+
+        (start_d, -1, end_d)
+    } else {
+        const OFFSETS: [(usize, usize); 4] = [(0, 0), (0, 1), (1, 0), (1, 1)];
+
+        let mut best_score = 0;
+        let mut best_alignment = (0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+        for (start_in_off, start_su_off) in &OFFSETS {
+            if *start_in_off >= input_lower.len() || *start_su_off >= sugg_lower.len() {
+                continue;
+            }
+
+            for (end_in_off, end_su_off) in &OFFSETS {
+                if *end_in_off >= input_lower.len() || *end_su_off >= sugg_lower.len() {
+                    continue;
+                }
+
+                let inp = &input_lower[*start_in_off..];
+                let sug = &sugg_lower[*start_su_off..];
+
+                let prefix_len = inp
+                    .iter()
+                    .zip(sug.iter())
+                    .take_while(|(a, b)| a == b)
+                    .count();
+
+                let inp_len = input_lower.len() - start_in_off - end_in_off;
+                let sug_len = sugg_lower.len() - start_su_off - end_su_off;
+
+                if inp_len == 0 || sug_len == 0 {
+                    continue;
+                }
+
+                let inp_for_suffix = &input_lower[*start_in_off..input_lower.len() - end_in_off];
+                let sug_for_suffix = &sugg_lower[*start_su_off..sugg_lower.len() - end_su_off];
+
+                let suffix_len = inp_for_suffix
+                    .iter()
+                    .rev()
+                    .zip(sug_for_suffix.iter().rev())
+                    .take_while(|(a, b)| a == b)
+                    .count();
+
+                let score = prefix_len + suffix_len;
+
+                if score > best_score {
+                    let start_d = if *start_in_off == 0 && *start_su_off == 0 {
+                        0
+                    } else {
+                        grapheme_damerau_levenshtein(
+                            &input_lower[0..*start_in_off],
+                            &sugg_lower[0..*start_su_off],
+                            dl_buf,
+                        )
+                    };
+
+                    let end_d = if *end_in_off == 0 && *end_su_off == 0 {
+                        0
+                    } else {
+                        grapheme_damerau_levenshtein(
+                            &input_lower[input_lower.len().saturating_sub(*end_in_off)..],
+                            &sugg_lower[sugg_lower.len().saturating_sub(*end_su_off)..],
+                            dl_buf,
+                        )
+                    };
+
+                    best_score = score;
+                    best_alignment = (
+                        *start_in_off,
+                        *start_su_off,
+                        *end_in_off,
+                        *end_su_off,
+                        prefix_len,
+                        suffix_len,
+                        start_d,
+                        end_d,
+                        score,
+                    );
+                }
+            }
+        }
+
+        let (
+            start_in_off,
+            start_su_off,
+            end_in_off,
+            end_su_off,
+            prefix_len,
+            suffix_len,
+            start_d,
+            end_d,
+            _,
+        ) = best_alignment;
+
+        let min_total_len = (input_lower.len() - start_in_off - end_in_off)
+            .min(sugg_lower.len() - start_su_off - end_su_off);
+
+        let actual_suffix = if prefix_len + suffix_len > min_total_len {
+            min_total_len.saturating_sub(prefix_len)
+        } else {
+            suffix_len
+        };
+
+        let inp_start_pos = start_in_off + prefix_len;
+        let sug_start_pos = start_su_off + prefix_len;
+        let inp_end_pos = input_lower.len() - end_in_off - actual_suffix;
+        let sug_end_pos = sugg_lower.len() - end_su_off - actual_suffix;
+
+        let inp_remaining = inp_end_pos.saturating_sub(inp_start_pos);
+        let sug_remaining = sug_end_pos.saturating_sub(sug_start_pos);
+
+        let (mid_d, adjusted_end_d) = if inp_remaining == 0 && sug_remaining == 0 {
+            (0, end_d)
+        } else if (inp_remaining <= 1 && sug_remaining <= 1) && actual_suffix == 0 {
+            let end_change = inp_remaining.max(sug_remaining) > 0;
+            (0, if end_change { 1 } else { end_d })
+        } else if inp_start_pos < inp_end_pos || sug_start_pos < sug_end_pos {
+            let d = grapheme_damerau_levenshtein(
+                &input_lower[inp_start_pos.min(inp_end_pos)..inp_end_pos.max(inp_start_pos)],
+                &sugg_lower[sug_start_pos.min(sug_end_pos)..sug_end_pos.max(sug_start_pos)],
+                dl_buf,
+            ) as i32;
+            (d, end_d)
+        } else {
+            (0, end_d)
+        };
+
+        if mid_d > 0 {
+            if prefix_len == 0 && actual_suffix > 0 {
+                let start_changes = 1;
+                let remaining_mid = (mid_d as usize).saturating_sub(start_changes);
+                (
+                    start_d + start_changes,
+                    remaining_mid as i32,
+                    adjusted_end_d,
+                )
+            } else if actual_suffix == 0 && prefix_len > 0 {
+                let end_changes = 1;
+                let remaining_mid = (mid_d as usize).saturating_sub(end_changes);
+                (start_d, remaining_mid as i32, adjusted_end_d + end_changes)
+            } else {
+                (start_d, mid_d, adjusted_end_d)
+            }
+        } else {
+            (start_d, mid_d, adjusted_end_d)
+        }
+    };
+
+    // Special case: when input or suggestion has duplicate graphemes at start/end that match
+    let (start_dist, mid_dist, end_dist) =
+        if !is_short && !input_lower.is_empty() && !sugg_lower.is_empty() {
+            let adjusted_start = if start_dist > 0 && input_lower[0] == sugg_lower[0] {
+                let sugg_has_dup = sugg_lower.len() > 1 && sugg_lower[0] == sugg_lower[1];
+                let input_has_dup = input_lower.len() > 1 && input_lower[0] == input_lower[1];
+                if sugg_has_dup || input_has_dup {
+                    0
+                } else {
+                    start_dist
+                }
+            } else {
+                start_dist
+            };
+
+            let adjusted_end = if end_dist > 0
+                && !input_lower.is_empty()
+                && !sugg_lower.is_empty()
+                && input_lower[input_lower.len() - 1] == sugg_lower[sugg_lower.len() - 1]
+            {
+                let sugg_has_dup = sugg_lower.len() > 1
+                    && sugg_lower[sugg_lower.len() - 1] == sugg_lower[sugg_lower.len() - 2];
+                let input_has_dup = input_lower.len() > 1
+                    && input_lower[input_lower.len() - 1] == input_lower[input_lower.len() - 2];
+                if sugg_has_dup || input_has_dup {
+                    0
+                } else {
+                    end_dist
+                }
+            } else {
+                end_dist
+            };
+
+            let added_to_mid = (start_dist - adjusted_start) + (end_dist - adjusted_end);
+            let adjusted_mid = if mid_dist < 0 {
+                added_to_mid as i32
+            } else {
+                mid_dist + added_to_mid as i32
+            };
+
+            (adjusted_start, adjusted_mid, adjusted_end)
+        } else {
+            (start_dist, mid_dist, end_dist)
+        };
+
+    let penalty_start = if start_dist > 0 {
+        reweight.start_penalty
+    } else {
+        0.0
+    };
+    let penalty_mid = if mid_dist < 0 {
+        -1.0
+    } else {
+        reweight.mid_penalty * mid_dist as f32
+    };
+    let penalty_end = if end_dist > 0 {
+        reweight.end_penalty
+    } else {
+        0.0
+    };
+
+    let additional_weight = Weight(if sugg_value.chars().all(is_emoji) {
+        0.0
+    } else {
+        penalty_start + penalty_end + penalty_mid.max(0.0)
+    });
+
+    ReweightPenalties {
+        start: penalty_start,
+        mid: penalty_mid,
+        end: penalty_end,
+        additional_weight,
+    }
+}
+
+/// Apply case mutation and reweight penalties to each suggestion in-place.
+///
+/// Used by the `CaseMode::FirstResults` path, which returns suggestions
+/// directly rather than folding them into a dedup map. Before this helper
+/// existed the path skipped reweight entirely, producing zeroed reweight
+/// values and unpenalised totals for hyphen/colon-containing inputs (#65).
+fn apply_first_results_reweight(
+    suggestions: &mut [Suggestion],
+    mutation: crate::tokenizer::case_handling::CaseMutation,
+    input_lower: &[&str],
+    reweight: &ReweightingConfig,
+    dl_buf: &mut Vec<usize>,
+) {
+    use crate::tokenizer::case_handling::{CaseMutation, upper_case, upper_first};
+
+    for sugg in suggestions.iter_mut() {
+        match mutation {
+            CaseMutation::FirstCaps => sugg.value = upper_first(sugg.value()),
+            CaseMutation::AllCaps => sugg.value = upper_case(sugg.value()),
+            CaseMutation::None => {}
+        }
+
+        let penalties = compute_reweight_penalties(input_lower, sugg.value(), reweight, dl_buf);
+        sugg.weight = sugg.weight + penalties.additional_weight;
+
+        if let Some(ref mut details) = sugg.weight_details {
+            details.reweight_start = penalties.start;
+            details.reweight_mid = penalties.mid;
+            details.reweight_end = penalties.end;
+        }
+    }
+}
+
 /// Drop suggestions whose weight exceeds `best.weight + beam`.
 ///
 /// The in-search beam cutoff in `SpellerWorker::suggest` is optimistic: it
@@ -662,317 +969,23 @@ where
                             _ => {}
                         }
 
-                        // Calculate distances based on case-insensitive alignment
-                        // by scanning from both ends and splicing in the middle
-                        // Use grapheme clusters to properly handle combining characters
-                        let sugg_lower_str = sugg.value().to_lowercase();
-                        let sugg_lower: Vec<&str> = Graphemes::new(&sugg_lower_str).collect();
-
-                        // Special case: both input and suggestion are 2 graphemes or less - no middle section
-                        let is_short = input_lower.len() <= 2 && sugg_lower.len() <= 2;
-
-                        let (start_dist, mid_dist, end_dist): (usize, i32, usize) = if input_lower
-                            .is_empty()
-                            && sugg_lower.is_empty()
-                        {
-                            (0, 0, 0)
-                        } else if is_short {
-                            // For very short words, compare first and last only (no middle)
-                            let start_d = if !input_lower.is_empty() && !sugg_lower.is_empty() {
-                                if input_lower[0] != sugg_lower[0] {
-                                    1
-                                } else {
-                                    0
-                                }
-                            } else {
-                                input_lower.len().max(sugg_lower.len()).min(1)
-                            };
-
-                            let end_d = if input_lower.len() > 1 && sugg_lower.len() > 1 {
-                                if input_lower[input_lower.len() - 1]
-                                    != sugg_lower[sugg_lower.len() - 1]
-                                {
-                                    1
-                                } else {
-                                    0
-                                }
-                            } else {
-                                0
-                            };
-
-                            // Use -1 to signal no middle section (will be displayed as "-")
-                            (start_d, -1, end_d)
-                        } else {
-                            // Try all combinations of start and end offsets to find best overall match
-                            const OFFSETS: [(usize, usize); 4] = [(0, 0), (0, 1), (1, 0), (1, 1)];
-
-                            let mut best_score = 0;
-                            let mut best_alignment = (0, 0, 0, 0, 0, 0, 0, 0, 0); // (start_in, start_su, end_in, end_su, prefix, suffix, start_d, end_d, score)
-
-                            for (start_in_off, start_su_off) in &OFFSETS {
-                                if *start_in_off >= input_lower.len()
-                                    || *start_su_off >= sugg_lower.len()
-                                {
-                                    continue;
-                                }
-
-                                for (end_in_off, end_su_off) in &OFFSETS {
-                                    if *end_in_off >= input_lower.len()
-                                        || *end_su_off >= sugg_lower.len()
-                                    {
-                                        continue;
-                                    }
-
-                                    let inp = &input_lower[*start_in_off..];
-                                    let sug = &sugg_lower[*start_su_off..];
-
-                                    // Find prefix length
-                                    let prefix_len = inp
-                                        .iter()
-                                        .zip(sug.iter())
-                                        .take_while(|(a, b)| a == b)
-                                        .count();
-
-                                    // Find suffix length (from the available lengths after offsets)
-                                    let inp_len = input_lower.len() - start_in_off - end_in_off;
-                                    let sug_len = sugg_lower.len() - start_su_off - end_su_off;
-
-                                    if inp_len == 0 || sug_len == 0 {
-                                        continue;
-                                    }
-
-                                    let inp_for_suffix =
-                                        &input_lower[*start_in_off..input_lower.len() - end_in_off];
-                                    let sug_for_suffix =
-                                        &sugg_lower[*start_su_off..sugg_lower.len() - end_su_off];
-
-                                    let suffix_len = inp_for_suffix
-                                        .iter()
-                                        .rev()
-                                        .zip(sug_for_suffix.iter().rev())
-                                        .take_while(|(a, b)| a == b)
-                                        .count();
-
-                                    // Calculate total match score
-                                    let score = prefix_len + suffix_len;
-
-                                    if score > best_score {
-                                        // Calculate start distance based on what's skipped
-                                        let start_d = if *start_in_off == 0 && *start_su_off == 0 {
-                                            0 // No offset, will be handled by prefix matching
-                                        } else {
-                                            // DL between skipped portions
-                                            grapheme_damerau_levenshtein(
-                                                &input_lower[0..*start_in_off],
-                                                &sugg_lower[0..*start_su_off],
-                                                &mut dl_buf,
-                                            )
-                                        };
-
-                                        // Calculate end distance based on what's skipped
-                                        let end_d = if *end_in_off == 0 && *end_su_off == 0 {
-                                            0 // No offset, will be handled by suffix matching
-                                        } else {
-                                            // DL between skipped portions
-                                            grapheme_damerau_levenshtein(
-                                                &input_lower[input_lower
-                                                    .len()
-                                                    .saturating_sub(*end_in_off)..],
-                                                &sugg_lower[sugg_lower
-                                                    .len()
-                                                    .saturating_sub(*end_su_off)..],
-                                                &mut dl_buf,
-                                            )
-                                        };
-
-                                        best_score = score;
-                                        best_alignment = (
-                                            *start_in_off,
-                                            *start_su_off,
-                                            *end_in_off,
-                                            *end_su_off,
-                                            prefix_len,
-                                            suffix_len,
-                                            start_d,
-                                            end_d,
-                                            score,
-                                        );
-                                    }
-                                }
-                            }
-
-                            let (
-                                start_in_off,
-                                start_su_off,
-                                end_in_off,
-                                end_su_off,
-                                prefix_len,
-                                suffix_len,
-                                start_d,
-                                end_d,
-                                _,
-                            ) = best_alignment;
-
-                            // Calculate what's between prefix and suffix, avoiding overlap
-                            let min_total_len = (input_lower.len() - start_in_off - end_in_off)
-                                .min(sugg_lower.len() - start_su_off - end_su_off);
-
-                            let actual_suffix = if prefix_len + suffix_len > min_total_len {
-                                min_total_len.saturating_sub(prefix_len)
-                            } else {
-                                suffix_len
-                            };
-
-                            // Calculate what's between prefix and suffix
-                            let inp_start_pos = start_in_off + prefix_len;
-                            let sug_start_pos = start_su_off + prefix_len;
-                            let inp_end_pos = input_lower.len() - end_in_off - actual_suffix;
-                            let sug_end_pos = sugg_lower.len() - end_su_off - actual_suffix;
-
-                            // Check if there's a real middle section
-                            let inp_remaining = inp_end_pos.saturating_sub(inp_start_pos);
-                            let sug_remaining = sug_end_pos.saturating_sub(sug_start_pos);
-
-                            let (mid_d, adjusted_end_d) = if inp_remaining == 0
-                                && sug_remaining == 0
-                            {
-                                (0, end_d)
-                            } else if (inp_remaining <= 1 && sug_remaining <= 1)
-                                && actual_suffix == 0
-                            {
-                                let end_change = inp_remaining.max(sug_remaining) > 0;
-                                (0, if end_change { 1 } else { end_d })
-                            } else if inp_start_pos < inp_end_pos || sug_start_pos < sug_end_pos {
-                                let d = grapheme_damerau_levenshtein(
-                                    &input_lower[inp_start_pos.min(inp_end_pos)
-                                        ..inp_end_pos.max(inp_start_pos)],
-                                    &sugg_lower[sug_start_pos.min(sug_end_pos)
-                                        ..sug_end_pos.max(sug_start_pos)],
-                                    &mut dl_buf,
-                                ) as i32;
-                                (d, end_d)
-                            } else {
-                                (0, end_d)
-                            };
-
-                            // Reclassify mid changes based on actual position in the word
-                            // If there's no prefix match (prefix_len == 0), the first grapheme differs, so at least 1 change is at START
-                            // If there's no suffix match (actual_suffix == 0), the last grapheme differs, so at least 1 change is at END
-                            if mid_d > 0 {
-                                if prefix_len == 0 && actual_suffix > 0 {
-                                    // No prefix, but there's a suffix - first grapheme change is at START, rest is MID
-                                    let start_changes = 1; // First grapheme is different
-                                    let remaining_mid =
-                                        (mid_d as usize).saturating_sub(start_changes);
-                                    (
-                                        start_d + start_changes,
-                                        remaining_mid as i32,
-                                        adjusted_end_d,
-                                    )
-                                } else if actual_suffix == 0 && prefix_len > 0 {
-                                    // No suffix, but there's a prefix - last grapheme change is at END, rest is MID
-                                    let end_changes = 1; // Last grapheme is different
-                                    let remaining_mid =
-                                        (mid_d as usize).saturating_sub(end_changes);
-                                    (start_d, remaining_mid as i32, adjusted_end_d + end_changes)
-                                } else {
-                                    // Real middle section or changes span multiple sections
-                                    (start_d, mid_d, adjusted_end_d)
-                                }
-                            } else {
-                                (start_d, mid_d, adjusted_end_d)
-                            }
-                        };
-
-                        // Special case: when input or suggestion has duplicate graphemes at start/end that match
-                        // Examples:
-                        // - Insertion: "Anar" → "Aanaar" - both start with 'a', insertion of second 'a' should be middle
-                        // - Deletion: "Aarâhšoddâdem" → "Arâšoddâdem" - both start with 'A', deletion of second 'a' should be middle
-                        let (start_dist, mid_dist, end_dist) =
-                            if !is_short && input_lower.len() > 0 && sugg_lower.len() > 0 {
-                                let adjusted_start =
-                                    if start_dist > 0 && input_lower[0] == sugg_lower[0] {
-                                        // First grapheme matches - check if either has duplicate at position 1
-                                        let sugg_has_dup =
-                                            sugg_lower.len() > 1 && sugg_lower[0] == sugg_lower[1];
-                                        let input_has_dup = input_lower.len() > 1
-                                            && input_lower[0] == input_lower[1];
-                                        if sugg_has_dup || input_has_dup {
-                                            // Move the start change to middle
-                                            0
-                                        } else {
-                                            start_dist
-                                        }
-                                    } else {
-                                        start_dist
-                                    };
-
-                                let adjusted_end = if end_dist > 0
-                                    && input_lower.len() > 0
-                                    && sugg_lower.len() > 0
-                                    && input_lower[input_lower.len() - 1]
-                                        == sugg_lower[sugg_lower.len() - 1]
-                                {
-                                    // Last grapheme matches - check if either has duplicate at position len-2
-                                    let sugg_has_dup = sugg_lower.len() > 1
-                                        && sugg_lower[sugg_lower.len() - 1]
-                                            == sugg_lower[sugg_lower.len() - 2];
-                                    let input_has_dup = input_lower.len() > 1
-                                        && input_lower[input_lower.len() - 1]
-                                            == input_lower[input_lower.len() - 2];
-                                    if sugg_has_dup || input_has_dup {
-                                        // Move the end change to middle
-                                        0
-                                    } else {
-                                        end_dist
-                                    }
-                                } else {
-                                    end_dist
-                                };
-
-                                // Add any moved changes to mid_dist
-                                let added_to_mid =
-                                    (start_dist - adjusted_start) + (end_dist - adjusted_end);
-                                let adjusted_mid = if mid_dist < 0 {
-                                    // Was no middle section, now there is
-                                    added_to_mid as i32
-                                } else {
-                                    mid_dist + added_to_mid as i32
-                                };
-
-                                (adjusted_start, adjusted_mid, adjusted_end)
-                            } else {
-                                (start_dist, mid_dist, end_dist)
-                            };
-
-                        let penalty_start = if start_dist > 0 {
-                            reweight.start_penalty
-                        } else {
-                            0.0
-                        };
-                        let penalty_middle = if mid_dist < 0 {
-                            -1.0 // Signal for no middle section (will be displayed as "-")
-                        } else {
-                            reweight.mid_penalty * mid_dist as f32
-                        };
-                        let penalty_end = if end_dist > 0 {
-                            reweight.end_penalty
-                        } else {
-                            0.0
-                        };
-                        let additional_weight =
-                            Weight(if sugg.value.chars().all(|c| is_emoji(c)) {
-                                0.0
-                            } else {
-                                penalty_start + penalty_end + penalty_middle.max(0.0) // Don't add -1 to weight
-                            });
+                        let ReweightPenalties {
+                            start: penalty_start,
+                            mid: penalty_middle,
+                            end: penalty_end,
+                            additional_weight,
+                        } = compute_reweight_penalties(
+                            &input_lower,
+                            sugg.value(),
+                            reweight,
+                            &mut dl_buf,
+                        );
 
                         tracing::trace!(
-                            "Penalty: +{} = {} + {} * {} + {}",
+                            "Penalty: +{} = {} + {} + {}",
                             additional_weight,
                             penalty_start,
-                            mid_dist,
-                            reweight.mid_penalty,
+                            penalty_middle,
                             penalty_end
                         );
 
@@ -1037,6 +1050,17 @@ where
                 CaseMode::FirstResults => {
                     if !suggestions.is_empty() {
                         let mut suggestions = suggestions;
+                        apply_first_results_reweight(
+                            &mut suggestions,
+                            mutation,
+                            &input_lower,
+                            reweight,
+                            &mut dl_buf,
+                        );
+                        suggestions.sort();
+                        if let Some(n_best) = config.n_best {
+                            suggestions.truncate(n_best);
+                        }
                         apply_beam_filter(&mut suggestions, config.beam);
                         return suggestions;
                     }
@@ -1056,6 +1080,17 @@ where
                 );
                 let mut suggestions = worker.suggest();
                 if !suggestions.is_empty() {
+                    apply_first_results_reweight(
+                        &mut suggestions,
+                        mutation,
+                        &input_lower,
+                        reweight,
+                        &mut dl_buf,
+                    );
+                    suggestions.sort();
+                    if let Some(n_best) = config.n_best {
+                        suggestions.truncate(n_best);
+                    }
                     apply_beam_filter(&mut suggestions, config.beam);
                     return suggestions;
                 }

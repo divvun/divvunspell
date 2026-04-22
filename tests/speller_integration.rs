@@ -666,6 +666,46 @@ fn test_reweight_zero_for_correct() {
     assert_suggests_at_weight(&test_speller(), "cat", "cat", 0.0, &reweight_config());
 }
 
+// Regression for #65: mixed-case inputs took the CaseMode::FirstResults path
+// (plus the lowercase fallback) which previously skipped reweight entirely,
+// returning an unpenalised weight and zero reweight_* fields. A mixed-case
+// input whose best suggestion is a different word should carry the same
+// per-suggestion reweight *increment* as the lowercase path would.
+//
+// The absolute weights differ because the mutator cost of handling uppercase
+// letters gets baked into every suggestion via worker.suggest() — so we
+// compare the DELTA between the identity suggestion (case-only change, no
+// char edits) and the insertion suggestion ("care"). That delta is purely
+// the reweight penalty.
+#[test]
+fn test_reweight_applied_in_mixed_case_fallback() {
+    let s = test_speller();
+
+    let lower_suggs = suggestion_values(&s, "car", &reweight_config());
+    let lower_car = lower_suggs.iter().find(|(v, _)| v == "car").unwrap().1;
+    let lower_care = lower_suggs.iter().find(|(v, _)| v == "care").unwrap().1;
+    let lower_delta = lower_care - lower_car;
+
+    // "cAr" is mixed case — hits FirstResults then the lowercase fallback.
+    let mixed_suggs = suggestion_values(&s, "cAr", &reweight_config());
+    let mixed_car = mixed_suggs.iter().find(|(v, _)| v == "car").unwrap().1;
+    let mixed_care = mixed_suggs.iter().find(|(v, _)| v == "care").unwrap().1;
+    let mixed_delta = mixed_care - mixed_car;
+
+    assert!(
+        lower_delta > 0.0,
+        "sanity: lowercase reweight must already penalise the insertion: {}",
+        lower_delta,
+    );
+    assert!(
+        (mixed_delta - lower_delta).abs() < 1e-4,
+        "mixed-case path must apply the same reweight increment as lowercase: \
+         lower_delta={}, mixed_delta={}",
+        lower_delta,
+        mixed_delta,
+    );
+}
+
 // ===========================================================================
 // Beam
 // ===========================================================================
