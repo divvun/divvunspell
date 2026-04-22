@@ -12,36 +12,92 @@ mod alphabet;
 mod symbol_transition;
 pub(crate) mod tree_node;
 
+use std::borrow::Cow;
+use std::path::PathBuf;
+
 use crate::transducer::alphabet::TransducerAlphabet;
 use crate::transducer::symbol_transition::SymbolTransition;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use crate::vfs::{self, Filesystem};
 
 /// Error with transducer reading or processing.
+///
+/// Every variant names the file or path involved and preserves its underlying
+/// cause via `#[source]`, so the full chain is walkable with
+/// [`std::error::Error::source`] (or via `anyhow::Error`'s `Debug` renderer).
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum TransducerError {
-    /// Error with mmapping
-    #[error("Failed to memory map transducer file")]
-    Memmap(#[source] std::io::Error),
-    /// Error with input/output.
-    #[error("I/O error while reading transducer")]
-    Io(#[source] std::io::Error),
-    /// Error with FSA alphabets.
-    #[error("Failed to process transducer alphabet")]
-    Alphabet(#[source] Box<dyn std::error::Error + Send + Sync>),
-}
+    /// Opening the transducer file failed.
+    #[error("failed to open transducer file '{}'", path.display())]
+    Io {
+        /// file that failed to open
+        path: PathBuf,
+        /// underlying I/O error
+        #[source]
+        source: std::io::Error,
+    },
 
-impl TransducerError {
-    /// Wrap into i/o error.
-    pub fn into_io_error(self) -> std::io::Error {
-        match self {
-            TransducerError::Memmap(v) => v,
-            TransducerError::Io(v) => v,
-            TransducerError::Alphabet(v) => {
-                std::io::Error::new(std::io::ErrorKind::Other, format!("{}", v))
-            }
-        }
-    }
+    /// Memory-mapping the transducer file failed.
+    #[error("failed to memory-map transducer file '{}'", path.display())]
+    Memmap {
+        /// file that failed to memory-map
+        path: PathBuf,
+        /// underlying I/O error
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// A required component (alphabet, index, transition) was not present
+    /// inside the transducer's directory.
+    #[error("required transducer component '{component}' missing in '{}'", path.display())]
+    MissingComponent {
+        /// directory or archive path being loaded
+        path: PathBuf,
+        /// the component that could not be located
+        component: &'static str,
+        /// underlying I/O error
+        #[source]
+        source: std::io::Error,
+    },
+
+    /// The alphabet file could not be parsed as JSON.
+    #[error("failed to parse alphabet file '{}' as JSON", path.display())]
+    AlphabetJson {
+        /// file being parsed
+        path: PathBuf,
+        /// JSON parse error with a source-snippet at the failure location
+        #[source]
+        source: crate::util::JsonParseError,
+    },
+
+    /// The alphabet is syntactically parseable but semantically invalid.
+    #[error("alphabet in '{}' is malformed: {detail}", path.display())]
+    AlphabetMalformed {
+        /// file containing the malformed alphabet
+        path: PathBuf,
+        /// human-readable explanation
+        detail: Cow<'static, str>,
+    },
+
+    /// The transducer header is truncated or contains invalid field values.
+    #[error("transducer header in '{}' is truncated or corrupt at offset {offset}", path.display())]
+    CorruptHeader {
+        /// file containing the corrupt header
+        path: PathBuf,
+        /// byte offset at which parsing failed
+        offset: usize,
+    },
+
+    /// The transducer's index or transition tables are truncated or do not
+    /// match the sizes declared by the header.
+    #[error("transducer tables in '{}' are truncated or corrupt ({detail})", path.display())]
+    CorruptTables {
+        /// file containing the corrupt tables
+        path: PathBuf,
+        /// human-readable explanation
+        detail: Cow<'static, str>,
+    },
 }
 
 /// A finite-state transducer.

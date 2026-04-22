@@ -343,6 +343,8 @@ pub extern "C" fn DFST_SpellerArchive_locale(
 ) -> Result<String, Box<dyn std::error::Error>> {
     match handle.metadata() {
         Some(v) => Ok(v.info().locale().to_string()),
-        None => Err(Box::new(SpellerArchiveError::NoMetadata) as _),
+        None => Err(Box::new(SpellerArchiveError::NoMetadata {
+            path: std::path::PathBuf::new(),
+        }) as _),
     }
 }

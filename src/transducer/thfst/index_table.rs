@@ -102,8 +102,18 @@ impl IndexTable<memmap2::Mmap> {
         FS: Filesystem<File = F>,
         F: vfs::File,
     {
-        let file = fs.open_file(path).map_err(TransducerError::Io)?;
-        let mmap = unsafe { file.memory_map().map_err(TransducerError::Memmap)? };
+        let path = path.as_ref();
+        let file = fs.open_file(path).map_err(|source| TransducerError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let mmap = unsafe {
+            file.memory_map()
+                .map_err(|source| TransducerError::Memmap {
+                    path: path.to_path_buf(),
+                    source,
+                })?
+        };
         let size = mmap.len();
         Ok(IndexTable::new(mmap, size))
     }
@@ -119,11 +129,21 @@ impl IndexTable<memmap2::Mmap> {
         FS: Filesystem<File = F>,
         F: vfs::File,
     {
-        let file = fs.open_file(path).map_err(TransducerError::Io)?;
-        let len = file.len().map_err(TransducerError::Io)? / total;
+        let path = path.as_ref();
+        let file = fs.open_file(path).map_err(|source| TransducerError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let len = file.len().map_err(|source| TransducerError::Io {
+            path: path.to_path_buf(),
+            source,
+        })? / total;
         let mmap = unsafe {
             file.partial_memory_map(chunk * len, len as usize)
-                .map_err(TransducerError::Memmap)?
+                .map_err(|source| TransducerError::Memmap {
+                    path: path.to_path_buf(),
+                    source,
+                })?
         };
         let size = mmap.len();
         Ok(IndexTable::new(mmap, size))
@@ -144,8 +164,15 @@ where
         P: AsRef<std::path::Path>,
         FS: Filesystem<File = F>,
     {
-        let file = fs.open_file(path).map_err(TransducerError::Io)?;
-        let byte_size = file.len().map_err(TransducerError::Io)? as usize;
+        let path = path.as_ref();
+        let file = fs.open_file(path).map_err(|source| TransducerError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let byte_size = file.len().map_err(|source| TransducerError::Io {
+            path: path.to_path_buf(),
+            source,
+        })? as usize;
         Ok(IndexTable::new(file, byte_size))
     }
 }

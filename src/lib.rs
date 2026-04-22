@@ -38,3 +38,6 @@ pub(crate) mod constants;
 ///
 /// This module contains type aliases and enums used throughout the transducer API.
 pub mod types;
+
+#[doc(hidden)]
+pub mod util;

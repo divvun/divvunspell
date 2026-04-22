@@ -88,7 +88,7 @@ impl Filesystem for Fs {
 /// Box file.
 pub mod boxf {
     use box_format::{BoxPath, sync::BoxReader as BoxFileReader};
-    use std::io::{Read, Result, Write};
+    use std::io::{Read, Result};
     use std::path::Path;
     use tempfile::TempDir;
 
@@ -98,15 +98,21 @@ pub mod boxf {
         len: usize,
         file: std::fs::File,
         segment: mmap_io::segment::Segment,
+        /// Read cursor used by the `Read` impl. Not used by the
+        /// position-indexed accessors (`read_at`, `memory_map`, etc.).
+        read_pos: usize,
     }
 
     impl Read for File {
-        fn read(&mut self, mut buf: &mut [u8]) -> Result<usize> {
-            buf.write(
-                self.segment
-                    .as_slice()
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?,
-            )
+        fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+            let slice = self.segment.as_slice().map_err(std::io::Error::other)?;
+            if self.read_pos >= slice.len() {
+                return Ok(0);
+            }
+            let n = (slice.len() - self.read_pos).min(buf.len());
+            buf[..n].copy_from_slice(&slice[self.read_pos..self.read_pos + n]);
+            self.read_pos += n;
+            Ok(n)
         }
     }
 
@@ -178,6 +184,7 @@ pub mod boxf {
                     len: v.length as usize,
                     file,
                     segment,
+                    read_pos: 0,
                 }),
                 None => Err(std::io::Error::new(
                     std::io::ErrorKind::NotFound,

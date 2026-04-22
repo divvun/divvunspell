@@ -2,12 +2,12 @@
 mod accuracy;
 
 use std::io::{self, Read};
-use std::process;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
 
+use anyhow::Context as _;
 use clap::{Parser, Subcommand};
 use divvun_fst::speller::HfstSpeller;
 use divvun_fst::transducer::TransducerLoader;
@@ -34,7 +34,7 @@ trait OutputWriter {
         suggestions: &[(Suggestion, Vec<Suggestion>)],
         verbose: bool,
     );
-    fn finish(&mut self);
+    fn finish(&mut self) -> anyhow::Result<()>;
 }
 
 struct StdoutWriter {
@@ -187,7 +187,9 @@ impl OutputWriter for StdoutWriter {
         }
     }
 
-    fn finish(&mut self) {}
+    fn finish(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
 }
 
 #[derive(Serialize)]
@@ -248,8 +250,9 @@ impl OutputWriter for JsonWriter {
         }
     }
 
-    fn finish(&mut self) {
-        println!("{}", serde_json::to_string_pretty(self).unwrap());
+    fn finish(&mut self) -> anyhow::Result<()> {
+        println!("{}", serde_json::to_string_pretty(self)?);
+        Ok(())
     }
 }
 
@@ -411,47 +414,16 @@ fn tokenize(args: TokenizeArgs) -> anyhow::Result<()> {
 }
 
 fn load_archive(path: &Path) -> Result<Box<dyn SpellerArchive>, SpellerArchiveError> {
-    let ext = match path.extension() {
-        Some(v) => v,
-        None => {
-            return Err(SpellerArchiveError::Io(
-                path.to_string_lossy().to_string(),
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "Unsupported archive (missing .zhfst or .bhfst)",
-                )
-                .into(),
-            ));
+    match path.extension() {
+        Some(ext) if ext == "bhfst" => {
+            let archive: ThfstBoxSpellerArchive = BoxSpellerArchive::open(path)?;
+            Ok(Box::new(archive))
         }
-    };
-
-    if ext == "bhfst" {
-        let archive: ThfstBoxSpellerArchive = match BoxSpellerArchive::open(path) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("{:?}", e);
-                std::process::exit(1);
-            }
-        };
-        Ok(Box::new(archive))
-    } else if ext == "zhfst" {
-        let archive = match ZipSpellerArchive::open(path) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("{:?}", e);
-                std::process::exit(1);
-            }
-        };
-        Ok(Box::new(archive))
-    } else {
-        Err(SpellerArchiveError::Io(
-            path.to_string_lossy().to_string(),
-            std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "Unsupported archive (missing .zhfst or .bhfst)",
-            )
-            .into(),
-        ))
+        Some(ext) if ext == "zhfst" => Ok(Box::new(ZipSpellerArchive::open(path)?)),
+        ext => Err(SpellerArchiveError::UnsupportedExt {
+            path: path.to_path_buf(),
+            ext: ext.map(|x| x.to_owned()).unwrap_or_default(),
+        }),
     }
 }
 
@@ -460,23 +432,34 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
     let mut suggest_cfg = SpellerConfig::default();
 
     let speller = if let Some(archive_path) = args.archive_path {
-        let archive = load_archive(&archive_path)?;
+        let archive = load_archive(&archive_path)
+            .with_context(|| format!("failed to load archive '{}'", archive_path.display()))?;
         // 2. config from metadata
         if let Some(metadata) = archive.metadata() {
             if let Some(continuation) = metadata.acceptor().continuation() {
                 suggest_cfg.completion_marker = Some(continuation.to_string());
             }
         }
-        let speller = archive.speller();
-        speller
+        archive.speller()
     } else if let (Some(lexicon_path), Some(mutator_path)) = (args.lexicon_path, args.mutator_path)
     {
-        let acceptor = HfstTransducer::from_path(&Fs, lexicon_path)?;
-        let errmodel = HfstTransducer::from_path(&Fs, mutator_path)?;
+        let acceptor = HfstTransducer::from_path(&Fs, &lexicon_path).with_context(|| {
+            format!(
+                "failed to load lexicon transducer '{}'",
+                lexicon_path.display()
+            )
+        })?;
+        let errmodel = HfstTransducer::from_path(&Fs, &mutator_path).with_context(|| {
+            format!(
+                "failed to load mutator transducer '{}'",
+                mutator_path.display()
+            )
+        })?;
         HfstSpeller::new(errmodel, acceptor) as _
     } else {
-        eprintln!("Either a BHFST or ZHFST archive must be provided, or a mutator and lexicon.");
-        process::exit(1);
+        anyhow::bail!(
+            "either a BHFST or ZHFST archive must be provided via --archive, or both --lexicon and --mutator"
+        );
     };
     // 3. config from explicit config file
     if let Some(config_path) = args.config {
@@ -522,7 +505,7 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
         let mut buffer = String::new();
         io::stdin()
             .read_to_string(&mut buffer)
-            .expect("reading stdin");
+            .context("failed to read from stdin")?;
         buffer
             .trim()
             .split('\n')
@@ -543,12 +526,38 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
         args.verbose,
     );
 
-    writer.finish();
+    writer.finish()?;
 
     Ok(())
 }
 
-fn main() -> anyhow::Result<()> {
+/// Returns true when the error chain contains a variant that indicates the
+/// archive itself is malformed. Used to append a report-a-bug hint on exit.
+fn looks_like_corrupt_archive(err: &anyhow::Error) -> bool {
+    use divvun_fst::transducer::TransducerError;
+    err.chain().any(|cause| {
+        if let Some(te) = cause.downcast_ref::<TransducerError>() {
+            return matches!(
+                te,
+                TransducerError::AlphabetJson { .. }
+                    | TransducerError::AlphabetMalformed { .. }
+                    | TransducerError::CorruptHeader { .. }
+                    | TransducerError::CorruptTables { .. }
+            );
+        }
+        if let Some(ae) = cause.downcast_ref::<SpellerArchiveError>() {
+            return matches!(
+                ae,
+                SpellerArchiveError::MetadataJson { .. }
+                    | SpellerArchiveError::MetadataXml { .. }
+                    | SpellerArchiveError::UnsupportedCompression { .. }
+            );
+        }
+        false
+    })
+}
+
+fn run_cli() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let args = Args::parse();
@@ -559,5 +568,22 @@ fn main() -> anyhow::Result<()> {
         Some(Command::Tokenize(args)) => tokenize(args),
         #[cfg(feature = "accuracy")]
         Some(Command::Accuracy(args)) => accuracy::run(args),
+    }
+}
+
+fn main() -> std::process::ExitCode {
+    match run_cli() {
+        Ok(()) => std::process::ExitCode::SUCCESS,
+        Err(err) => {
+            // Render the error and its full source chain on stderr. This is
+            // anyhow's default `Debug` format — one top line plus an indented
+            // `Caused by` list.
+            eprintln!("Error: {err:?}");
+            if looks_like_corrupt_archive(&err) {
+                eprintln!();
+                eprintln!("{}", divvun_fst::archive::REPORT_BUG_HINT);
+            }
+            std::process::ExitCode::FAILURE
+        }
     }
 }

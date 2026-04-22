@@ -64,20 +64,53 @@ where
         + 'static,
 {
     fn open(file_path: &std::path::Path) -> Result<BoxSpellerArchive<T, U>, SpellerArchiveError> {
-        let archive = BoxFileReader::open(file_path).map_err(|e| {
-            SpellerArchiveError::File(std::io::Error::new(std::io::ErrorKind::Other, e))
+        let archive = BoxFileReader::open(file_path).map_err(|e| SpellerArchiveError::Open {
+            path: file_path.to_path_buf(),
+            source: std::io::Error::other(e),
         })?;
 
         let fs = BoxFilesystem::new(&archive);
 
-        let metadata = fs
-            .open_file("meta.json")
-            .ok()
-            .and_then(|x| serde_json::from_reader(x).ok());
-        let errmodel =
-            T::from_path(&fs, "errmodel.default.thfst").map_err(SpellerArchiveError::Transducer)?;
-        let acceptor =
-            U::from_path(&fs, "acceptor.default.thfst").map_err(SpellerArchiveError::Transducer)?;
+        let metadata = match fs.open_file("meta.json") {
+            Ok(mut f) => {
+                use std::io::Read as _;
+                let mut buf = Vec::new();
+                f.read_to_end(&mut buf)
+                    .map_err(|source| SpellerArchiveError::Io {
+                        archive: file_path.to_path_buf(),
+                        member: "meta.json".into(),
+                        source,
+                    })?;
+                Some(serde_json::from_slice(&buf).map_err(|e| {
+                    SpellerArchiveError::MetadataJson {
+                        archive: file_path.to_path_buf(),
+                        source: crate::util::JsonParseError::new(e, &buf),
+                    }
+                })?)
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(source) => {
+                return Err(SpellerArchiveError::Io {
+                    archive: file_path.to_path_buf(),
+                    member: "meta.json".into(),
+                    source,
+                });
+            }
+        };
+        let errmodel = T::from_path(&fs, "errmodel.default.thfst").map_err(|source| {
+            SpellerArchiveError::Transducer {
+                archive: file_path.to_path_buf(),
+                member: "errmodel.default.thfst".into(),
+                source,
+            }
+        })?;
+        let acceptor = U::from_path(&fs, "acceptor.default.thfst").map_err(|source| {
+            SpellerArchiveError::Transducer {
+                archive: file_path.to_path_buf(),
+                member: "acceptor.default.thfst".into(),
+                source,
+            }
+        })?;
 
         let speller = HfstSpeller::new(errmodel, acceptor);
         Ok(BoxSpellerArchive { speller, metadata })

@@ -42,19 +42,6 @@ macro_rules! index_rel_index {
     }};
 }
 
-macro_rules! error {
-    ($path:path, $name:expr_2021) => {
-        TransducerError::Io(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!(
-                "`{}` not found in transducer path, looked for {}",
-                $name,
-                $path.join($name).display()
-            ),
-        ))
-    };
-}
-
 impl Transducer for ThfstChunkedTransducer {
     const FILE_EXT: &'static str = "thfst";
 
@@ -212,12 +199,27 @@ impl<F: vfs::File> TransducerLoader<F> for ThfstChunkedTransducer {
         FS: Filesystem<File = F>,
     {
         let path = path.as_ref();
-        let alphabet_file = fs
-            .open_file(&path.join("alphabet"))
-            .map_err(|_| error!(path, "alphabet"))?;
+        let alphabet_path = path.join("alphabet");
+        let mut alphabet_file =
+            fs.open_file(&alphabet_path)
+                .map_err(|source| TransducerError::MissingComponent {
+                    path: path.to_path_buf(),
+                    component: "alphabet",
+                    source,
+                })?;
 
-        let alphabet: TransducerAlphabet = serde_json::from_reader(alphabet_file)
-            .map_err(|e| TransducerError::Alphabet(Box::new(e)))?;
+        let mut alphabet_bytes = Vec::new();
+        alphabet_file
+            .read_to_end(&mut alphabet_bytes)
+            .map_err(|source| TransducerError::Io {
+                path: alphabet_path.clone(),
+                source,
+            })?;
+        let alphabet: TransducerAlphabet =
+            serde_json::from_slice(&alphabet_bytes).map_err(|e| TransducerError::AlphabetJson {
+                path: alphabet_path,
+                source: crate::util::JsonParseError::new(e, &alphabet_bytes),
+            })?;
 
         let mut index_chunk_count = 1;
         let index_tables;
@@ -233,14 +235,14 @@ impl<F: vfs::File> TransducerLoader<F> for ThfstChunkedTransducer {
                     index_tables = v;
                     break;
                 }
-                Err(TransducerError::Memmap(_)) => {
+                Err(TransducerError::Memmap { .. }) => {
                     index_chunk_count *= 2;
 
                     if index_chunk_count > 16 {
-                        return Err(TransducerError::Memmap(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            "Could not memory map index table in 16 chunks",
-                        )));
+                        return Err(TransducerError::CorruptTables {
+                            path: path.join("index"),
+                            detail: "could not memory-map index table in 16 chunks".into(),
+                        });
                     }
                 }
                 Err(e) => return Err(e),
@@ -261,14 +263,14 @@ impl<F: vfs::File> TransducerLoader<F> for ThfstChunkedTransducer {
                     transition_tables = v;
                     break;
                 }
-                Err(TransducerError::Memmap(_)) => {
+                Err(TransducerError::Memmap { .. }) => {
                     trans_chunk_count *= 2;
 
                     if trans_chunk_count > 16 {
-                        return Err(TransducerError::Memmap(std::io::Error::new(
-                            std::io::ErrorKind::Other,
-                            "Could not memory map transition table in 16 chunks",
-                        )));
+                        return Err(TransducerError::CorruptTables {
+                            path: path.join("transition"),
+                            detail: "could not memory-map transition table in 16 chunks".into(),
+                        });
                     }
                 }
                 Err(e) => return Err(e),

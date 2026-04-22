@@ -78,29 +78,72 @@ impl ZipSpellerArchive {
 
 impl SpellerArchive for ZipSpellerArchive {
     fn open(file_path: &std::path::Path) -> Result<ZipSpellerArchive, SpellerArchiveError> {
-        let file = File::open(&file_path).map_err(SpellerArchiveError::File)?;
+        let file = File::open(file_path).map_err(|source| SpellerArchiveError::Open {
+            path: file_path.to_path_buf(),
+            source,
+        })?;
         let reader = std::io::BufReader::new(&file);
-        let mut archive = ZipArchive::new(reader)?;
+        let mut archive = ZipArchive::new(reader).map_err(|source| SpellerArchiveError::Zip {
+            path: file_path.to_path_buf(),
+            source,
+        })?;
 
         // // Open file a second time to get around borrow checker
-        let mut file = File::open(file_path).map_err(SpellerArchiveError::File)?;
+        let mut file = File::open(file_path).map_err(|source| SpellerArchiveError::Open {
+            path: file_path.to_path_buf(),
+            source,
+        })?;
 
-        let metadata_mmap = mmap_by_name(&mut file, &mut archive, "index.xml")
-            .map_err(|e| SpellerArchiveError::Io("index.xml".into(), e.into()))?;
-        let metadata = SpellerMetadata::from_bytes(&*metadata_mmap.map())
-            .map_err(|e| SpellerArchiveError::MetadataParseError(Box::new(e)))?;
+        let metadata_mmap =
+            mmap_by_name(&mut file, &mut archive, "index.xml").map_err(|source| {
+                SpellerArchiveError::Io {
+                    archive: file_path.to_path_buf(),
+                    member: "index.xml".into(),
+                    source,
+                }
+            })?;
+        let metadata = SpellerMetadata::from_bytes(&metadata_mmap.map()).map_err(|source| {
+            SpellerArchiveError::MetadataXml {
+                archive: file_path.to_path_buf(),
+                source: Box::new(source),
+            }
+        })?;
 
-        let acceptor_id = metadata.acceptor().id();
-        let errmodel_id = metadata.errmodel().id();
+        let acceptor_id = metadata.acceptor().id().to_string();
+        let errmodel_id = metadata.errmodel().id().to_string();
 
-        let acceptor_mmap = mmap_by_name(&mut file, &mut archive, &acceptor_id)
-            .map_err(|e| SpellerArchiveError::Io(acceptor_id.into(), e.into()))?;
-        let errmodel_mmap = mmap_by_name(&mut file, &mut archive, &errmodel_id)
-            .map_err(|e| SpellerArchiveError::Io(errmodel_id.into(), e.into()))?;
+        let acceptor_mmap =
+            mmap_by_name(&mut file, &mut archive, &acceptor_id).map_err(|source| {
+                SpellerArchiveError::Io {
+                    archive: file_path.to_path_buf(),
+                    member: acceptor_id.clone(),
+                    source,
+                }
+            })?;
+        let errmodel_mmap =
+            mmap_by_name(&mut file, &mut archive, &errmodel_id).map_err(|source| {
+                SpellerArchiveError::Io {
+                    archive: file_path.to_path_buf(),
+                    member: errmodel_id.clone(),
+                    source,
+                }
+            })?;
         drop(archive);
 
-        let acceptor = HfstTransducer::from_mapped_memory(acceptor_mmap.map());
-        let errmodel = HfstTransducer::from_mapped_memory(errmodel_mmap.map());
+        let acceptor =
+            HfstTransducer::from_mapped_memory(acceptor_mmap.map(), file_path.join(&acceptor_id))
+                .map_err(|source| SpellerArchiveError::Transducer {
+                archive: file_path.to_path_buf(),
+                member: acceptor_id.clone(),
+                source,
+            })?;
+        let errmodel =
+            HfstTransducer::from_mapped_memory(errmodel_mmap.map(), file_path.join(&errmodel_id))
+                .map_err(|source| SpellerArchiveError::Transducer {
+                archive: file_path.to_path_buf(),
+                member: errmodel_id.clone(),
+                source,
+            })?;
 
         let speller = HfstSpeller::new(errmodel, acceptor);
 

@@ -73,19 +73,6 @@ where
     alphabet: TransducerAlphabet,
 }
 
-macro_rules! error {
-    ($path:path, $name:expr_2021) => {
-        TransducerError::Io(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!(
-                "`{}` not found in transducer path, looked for {}",
-                $name,
-                $path.join($name).display()
-            ),
-        ))
-    };
-}
-
 impl<I, T> Transducer for ThfstTransducer<I, T>
 where
     I: crate::transducer::IndexTableTrait,
@@ -229,17 +216,30 @@ where
         FS: Filesystem<File = F>,
     {
         let path = path.as_ref();
-        let alphabet_file = fs
-            .open_file(&path.join("alphabet"))
-            .map_err(|_| error!(path, "alphabet"))?;
+        let alphabet_path = path.join("alphabet");
+        let mut alphabet_file =
+            fs.open_file(&alphabet_path)
+                .map_err(|source| TransducerError::MissingComponent {
+                    path: path.to_path_buf(),
+                    component: "alphabet",
+                    source,
+                })?;
 
-        let alphabet: TransducerAlphabet = serde_json::from_reader(alphabet_file)
-            .map_err(|e| TransducerError::Alphabet(Box::new(e)))?;
+        let mut alphabet_bytes = Vec::new();
+        alphabet_file
+            .read_to_end(&mut alphabet_bytes)
+            .map_err(|source| TransducerError::Io {
+                path: alphabet_path.clone(),
+                source,
+            })?;
+        let alphabet: TransducerAlphabet =
+            serde_json::from_slice(&alphabet_bytes).map_err(|e| TransducerError::AlphabetJson {
+                path: alphabet_path,
+                source: crate::util::JsonParseError::new(e, &alphabet_bytes),
+            })?;
 
-        let index_table =
-            I::from_path(fs, path.join("index")).map_err(|_| error!(path, "index"))?;
-        let transition_table =
-            T::from_path(fs, path.join("transition")).map_err(|_| error!(path, "transition"))?;
+        let index_table = I::from_path(fs, path.join("index"))?;
+        let transition_table = T::from_path(fs, path.join("transition"))?;
 
         Ok(ThfstTransducer {
             index_table,

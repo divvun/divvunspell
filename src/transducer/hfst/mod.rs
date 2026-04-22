@@ -8,8 +8,9 @@ pub mod header;
 pub mod index_table;
 pub mod transition_table;
 
+use std::borrow::Cow;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use memmap2::Mmap;
@@ -19,7 +20,7 @@ use self::header::TransducerHeader;
 use super::alphabet::TransducerAlphabet;
 use super::symbol_transition::SymbolTransition;
 use super::{Transducer, TransducerError, TransducerLoader};
-use crate::constants::{INDEX_TABLE_SIZE, TARGET_TABLE};
+use crate::constants::{INDEX_TABLE_SIZE, TARGET_TABLE, TRANS_TABLE_SIZE};
 use crate::transducer::hfst::index_table::MappedIndexTable;
 use crate::transducer::hfst::transition_table::MappedTransitionTable;
 use crate::types::{HeaderFlag, SymbolNumber, TransitionTableIndex, Weight};
@@ -44,19 +45,78 @@ impl fmt::Debug for HfstTransducer {
 }
 
 impl HfstTransducer {
-    #[inline(always)]
-    pub fn from_mapped_memory(buf: Arc<Mmap>) -> HfstTransducer {
-        let header = TransducerHeader::new(&buf);
+    /// Parse a HFST transducer out of a memory-mapped buffer.
+    ///
+    /// `path` is used only for error reporting — it should identify the file
+    /// or archive member the buffer came from.
+    ///
+    /// Returns a [`TransducerError`] if the header is truncated, the alphabet
+    /// is malformed, or the header-declared index/transition table sizes would
+    /// read past the end of the buffer. Once this function succeeds, all
+    /// subsequent per-state lookups are guaranteed to stay in bounds.
+    pub fn from_mapped_memory(
+        buf: Arc<Mmap>,
+        path: impl Into<PathBuf>,
+    ) -> Result<HfstTransducer, TransducerError> {
+        let path = path.into();
+        let header = TransducerHeader::parse(&buf, &path)?;
         let alphabet_offset = header.len();
-        let alphabet = TransducerAlphabetParser::parse(
-            &buf[alphabet_offset..buf.len()],
-            header.symbol_count(),
-        );
+
+        let alphabet_slice =
+            buf.get(alphabet_offset..)
+                .ok_or_else(|| TransducerError::CorruptHeader {
+                    path: path.clone(),
+                    offset: alphabet_offset,
+                })?;
+
+        let alphabet =
+            TransducerAlphabetParser::parse(alphabet_slice, header.symbol_count(), &path)?;
 
         let index_table_offset = alphabet_offset + alphabet.len();
+        let index_bytes = INDEX_TABLE_SIZE
+            .checked_mul(header.index_table_size().0 as usize)
+            .ok_or_else(|| TransducerError::CorruptTables {
+                path: path.clone(),
+                detail: Cow::Borrowed("index table size overflows usize"),
+            })?;
+        let index_table_end = index_table_offset.checked_add(index_bytes).ok_or_else(|| {
+            TransducerError::CorruptTables {
+                path: path.clone(),
+                detail: Cow::Borrowed("index table extent overflows usize"),
+            }
+        })?;
+        if index_table_end > buf.len() {
+            return Err(TransducerError::CorruptTables {
+                path,
+                detail: Cow::Owned(format!(
+                    "index table extends to offset {index_table_end}, but mapped buffer is only {} bytes",
+                    buf.len()
+                )),
+            });
+        }
 
-        let index_table_end =
-            index_table_offset + INDEX_TABLE_SIZE * header.index_table_size().0 as usize;
+        let trans_bytes = TRANS_TABLE_SIZE
+            .checked_mul(header.target_table_size().0 as usize)
+            .ok_or_else(|| TransducerError::CorruptTables {
+                path: path.clone(),
+                detail: Cow::Borrowed("transition table size overflows usize"),
+            })?;
+        let trans_table_end = index_table_end.checked_add(trans_bytes).ok_or_else(|| {
+            TransducerError::CorruptTables {
+                path: path.clone(),
+                detail: Cow::Borrowed("transition table extent overflows usize"),
+            }
+        })?;
+        if trans_table_end > buf.len() {
+            return Err(TransducerError::CorruptTables {
+                path,
+                detail: Cow::Owned(format!(
+                    "transition table extends to offset {trans_table_end}, but mapped buffer is only {} bytes",
+                    buf.len()
+                )),
+            });
+        }
+
         let index_table = MappedIndexTable::new(
             buf.clone(),
             index_table_offset,
@@ -67,13 +127,13 @@ impl HfstTransducer {
         let trans_table =
             MappedTransitionTable::new(buf.clone(), index_table_end, header.target_table_size());
 
-        HfstTransducer {
+        Ok(HfstTransducer {
             buf,
             header,
             alphabet,
             index_table,
             transition_table: trans_table,
-        }
+        })
     }
 
     #[inline(always)]
@@ -225,8 +285,15 @@ impl<F: vfs::File> TransducerLoader<F> for HfstTransducer {
         P: AsRef<Path>,
         FS: Filesystem<File = F>,
     {
-        let file = fs.open_file(path).map_err(TransducerError::Io)?;
-        let mmap = unsafe { file.memory_map() }.map_err(TransducerError::Memmap)?;
-        Ok(HfstTransducer::from_mapped_memory(Arc::new(mmap)))
+        let path = path.as_ref();
+        let file = fs.open_file(path).map_err(|source| TransducerError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let mmap = unsafe { file.memory_map() }.map_err(|source| TransducerError::Memmap {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        HfstTransducer::from_mapped_memory(Arc::new(mmap), path.to_path_buf())
     }
 }

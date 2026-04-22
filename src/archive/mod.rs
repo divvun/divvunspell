@@ -13,6 +13,11 @@ use crate::{
     speller::Speller,
 };
 
+/// Top-level, one-line hint printed by CLIs when an error chain indicates the
+/// archive itself is corrupt or built in an incompatible way. Stable text so
+/// scripts/tests can grep for it.
+pub const REPORT_BUG_HINT: &str = "hint: this looks like a corrupt or incompatible archive. Please file an issue at https://github.com/divvun/divvunspell/issues and attach the archive if possible.";
+
 pub(crate) struct TempMmap {
     mmap: Arc<Mmap>,
 
@@ -56,15 +61,15 @@ pub fn open<P>(path: P) -> Result<Arc<dyn SpellerArchive + Send + Sync>, Speller
 where
     P: AsRef<Path>,
 {
-    match path.as_ref().extension() {
+    let path = path.as_ref();
+    match path.extension() {
         Some(x) if x == "bhfst" => {
-            ThfstChunkedBoxSpellerArchive::open(path.as_ref()).map(|x| Arc::new(x) as _)
+            ThfstChunkedBoxSpellerArchive::open(path).map(|x| Arc::new(x) as _)
         }
-        Some(x) if x == "zhfst" => ZipSpellerArchive::open(path.as_ref()).map(|x| Arc::new(x) as _),
-        unknown => Err(SpellerArchiveError::UnsupportedExt(
-            unknown
-                .map(|x| x.to_owned())
-                .unwrap_or_else(|| OsString::new()),
-        )),
+        Some(x) if x == "zhfst" => ZipSpellerArchive::open(path).map(|x| Arc::new(x) as _),
+        unknown => Err(SpellerArchiveError::UnsupportedExt {
+            path: path.to_path_buf(),
+            ext: unknown.map(|x| x.to_owned()).unwrap_or_else(OsString::new),
+        }),
     }
 }

@@ -8,6 +8,7 @@ license = "GPL-3.0"
 repository = "https://github.com/divvun/divvunspell"
 
 [dependencies]
+anyhow.workspace = true
 serde_json.workspace = true
 divvun-fst = { features = ["compression"], path = "../.." }
 box-format = { workspace = true, features = ["writer"] }
