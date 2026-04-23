@@ -905,8 +905,13 @@ where
         config: &SpellerConfig,
         mode: OutputMode,
     ) -> Vec<Suggestion> {
-        let worker =
-            SpellerWorker::new_mutator_input(self.clone(), self.to_input_vec(word), config, mode);
+        let worker = SpellerWorker::new_mutator_input(
+            self.clone(),
+            self.to_input_vec(word),
+            self.to_input_vec_lexicon(word),
+            config,
+            mode,
+        );
 
         tracing::trace!("suggesting single {}", word);
         let mut suggestions = worker.suggest();
@@ -946,6 +951,7 @@ where
             let worker = SpellerWorker::new_mutator_input(
                 self.clone(),
                 self.to_input_vec(&word),
+                self.to_input_vec_lexicon(&word),
                 config,
                 output_mode,
             );
@@ -1075,6 +1081,7 @@ where
                 let worker = SpellerWorker::new_mutator_input(
                     self.clone(),
                     self.to_input_vec(&lower),
+                    self.to_input_vec_lexicon(&lower),
                     config,
                     output_mode,
                 );

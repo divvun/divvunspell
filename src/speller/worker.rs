@@ -23,6 +23,18 @@ fn speller_start_node(pool: &Pool<TreeNode>, size: usize) -> Vec<Recycled<'_, Tr
 pub struct SpellerWorker<'c, T: Transducer, U: Transducer> {
     speller: Arc<HfstSpeller<T, U>>,
     input: Vec<SymbolNumber>,
+    /// Lexicon-alphabet copy of the input, one symbol per grapheme.
+    ///
+    /// For the suggest path (`input` is mutator-alphabet), this lets
+    /// `queue_mutator_arcs` substitute the real lexicon symbol when the
+    /// mutator passes an input through via identity/unknown. Without it,
+    /// a character like "Z" that is outside the mutator's alphabet would
+    /// map to the mutator's UNKNOWN marker, translate into a synthetic
+    /// lexicon symbol, and fail to match the lexicon's explicit `Z` arcs
+    /// (lang-sma#160).
+    ///
+    /// For `is_correct`/`analyze` workers this is just a copy of `input`.
+    lexicon_input: Vec<SymbolNumber>,
     config: &'c SpellerConfig,
     output_mode: OutputMode,
     /// When true, `input` already holds lexicon-alphabet symbols, so
@@ -42,16 +54,24 @@ where
     /// `queue_mutator_arcs` walk the mutator transducer directly.
     /// `lexicon_consume` translates via `alphabet_translator` when it needs
     /// to query the lexicon.
+    ///
+    /// `lexicon_input` must be the same word tokenised through the **lexicon**
+    /// alphabet (via `HfstSpeller::to_input_vec_lexicon`); the lexicon walk
+    /// falls back to it when the mutator passes a grapheme through via
+    /// identity/unknown.
     #[inline(always)]
     pub(crate) fn new_mutator_input(
         speller: Arc<HfstSpeller<T, U>>,
         input: Vec<SymbolNumber>,
+        lexicon_input: Vec<SymbolNumber>,
         config: &'c SpellerConfig,
         output_mode: OutputMode,
     ) -> SpellerWorker<'c, T, U> {
+        debug_assert_eq!(input.len(), lexicon_input.len());
         SpellerWorker {
             speller,
             input,
+            lexicon_input,
             config,
             output_mode,
             input_is_lexicon_alphabet: false,
@@ -72,6 +92,7 @@ where
     ) -> SpellerWorker<'c, T, U> {
         SpellerWorker {
             speller,
+            lexicon_input: input.clone(),
             input,
             config,
             output_mode,
@@ -326,7 +347,23 @@ where
             }
 
             if let Some(sym) = symbol {
-                let trans_sym = alphabet_translator[sym.0 as usize];
+                // If the mutator's output is a pass-through marker (identity or
+                // unknown) then the real character emerging from the mutator is
+                // the input character itself. Encode it in the lexicon alphabet
+                // (via `lexicon_input`) so the lexicon walk can match explicit
+                // arcs for it — without this, out-of-mutator-alphabet characters
+                // like "Z" in the festschrift model silently dead-end when the
+                // lexicon has no identity arcs but does have an explicit "Z"
+                // arc (lang-sma#160).
+                let mut_alpha = mutator.alphabet();
+                let is_pass_through = mut_alpha.identity().map_or(false, |id| sym == id)
+                    || mut_alpha.unknown().map_or(false, |u| sym == u);
+                let input_state_idx = next_node.input_state.0 as usize;
+                let trans_sym = if is_pass_through && input_state_idx < self.lexicon_input.len() {
+                    self.lexicon_input[input_state_idx]
+                } else {
+                    alphabet_translator[sym.0 as usize]
+                };
 
                 if !lexicon.has_transitions(next_node.lexicon_state.incr(), Some(trans_sym)) {
                     if trans_sym >= lexicon.alphabet().initial_symbol_count() {
@@ -398,37 +435,45 @@ where
 
         let input_sym = self.input[input_state];
 
-        if !mutator.has_transitions(next_node.mutator_state.incr(), Some(input_sym)) {
-            // we have no regular transitions for this
-            if input_sym >= mutator.alphabet().initial_symbol_count() {
-                if mutator.has_transitions(
-                    next_node.mutator_state.incr(),
-                    mutator.alphabet().identity(),
-                ) {
-                    self.queue_mutator_arcs(
-                        pool,
-                        max_weight,
-                        &next_node,
-                        mutator.alphabet().identity().unwrap(),
-                        output_nodes,
-                    );
-                }
+        if mutator.has_transitions(next_node.mutator_state.incr(), Some(input_sym)) {
+            self.queue_mutator_arcs(pool, max_weight, &next_node, input_sym, output_nodes);
+            return;
+        }
 
-                // Check for unknown transition
-                if mutator
-                    .has_transitions(next_node.mutator_state.incr(), mutator.alphabet().unknown())
-                {
-                    self.queue_mutator_arcs(
-                        pool,
-                        max_weight,
-                        &next_node,
-                        mutator.alphabet().unknown().unwrap(),
-                        output_nodes,
-                    );
-                }
-            }
-        } else {
-            self.queue_mutator_arcs(pool, max_weight, &next_node, input_sym, output_nodes)
+        // No direct transition. If the input character was missing from the
+        // mutator's alphabet (to_input_vec fell back to the UNKNOWN marker),
+        // try the alphabet-level wildcards — identity first, then unknown.
+        // Previously this was gated on `input_sym >= initial_symbol_count`,
+        // which never fires because to_input_vec hands back the mutator's
+        // own UNKNOWN symbol (an in-range value). That left the wildcard
+        // fallback dead for the exact case it was meant to handle (lang-sma#160).
+        let alphabet = mutator.alphabet();
+        let input_was_missing = match alphabet.unknown() {
+            Some(u) => input_sym == u,
+            None => input_sym == SymbolNumber::ZERO,
+        };
+        if !input_was_missing {
+            return;
+        }
+
+        if mutator.has_transitions(next_node.mutator_state.incr(), alphabet.identity()) {
+            self.queue_mutator_arcs(
+                pool,
+                max_weight,
+                &next_node,
+                alphabet.identity().unwrap(),
+                output_nodes,
+            );
+        }
+
+        if mutator.has_transitions(next_node.mutator_state.incr(), alphabet.unknown()) {
+            self.queue_mutator_arcs(
+                pool,
+                max_weight,
+                &next_node,
+                alphabet.unknown().unwrap(),
+                output_nodes,
+            );
         }
     }
 
@@ -827,15 +872,15 @@ where
     fn analyze_output_form(&self, form: &str) -> Weight {
         use unic_segment::Graphemes;
 
-        let mutator_alphabet = self.speller.mutator().alphabet();
-        let string_to_symbol = mutator_alphabet.string_to_symbol();
+        let lexicon_alphabet = self.speller.lexicon().alphabet();
+        let string_to_symbol = lexicon_alphabet.string_to_symbol();
 
         let temp_input: Vec<SymbolNumber> = Graphemes::new(form)
             .map(|ch| {
                 string_to_symbol
                     .get(ch)
                     .copied()
-                    .unwrap_or_else(|| mutator_alphabet.unknown().unwrap_or(SymbolNumber::ZERO))
+                    .unwrap_or_else(|| lexicon_alphabet.unknown().unwrap_or(SymbolNumber::ZERO))
             })
             .collect();
 
@@ -855,7 +900,7 @@ where
             ..self.config.clone()
         };
 
-        let temp_worker = SpellerWorker::new_mutator_input(
+        let temp_worker = SpellerWorker::new_lexicon_input(
             self.speller.clone(),
             temp_input,
             &temp_config,
