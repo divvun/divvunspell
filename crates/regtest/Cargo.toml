@@ -6,5 +6,5 @@ edition = "2024"
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
-csv = "1.3.1"
+csv = "1.4.0"
 divvun-fst = { features = ["compression"], path = "../.." }

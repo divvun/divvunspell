@@ -13,4 +13,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 divvun-fst = { path = "../.." }
-jni = "0.21"
+jni = "0.22"
