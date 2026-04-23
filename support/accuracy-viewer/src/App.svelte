@@ -838,7 +838,7 @@ h2 {
 	}
 
 	/* Prevent horizontal scrolling on mobile */
-	body {
+	:global(body) {
 		overflow-x: hidden;
 	}
 
@@ -896,62 +896,66 @@ h2 {
 	<div>
 		<h3>Runtime</h3>
 		<table class="stats-table">
-			<tr>
-				<th></th>
-				<th>Words per second</th>
-				<th>Total runtime</th>
-			</tr>
-			<tr>
-				<th>Real<br><small>(clock time, parallelised processing)</small></th>
-				<td>{wordsPerSecond(report.total_time)}</td>
-				<td>{humanTime(report.total_time)}</td>
-			</tr>
-			<tr>
-				<th>CPU<br><small>(estimated serial processing time)</small></th>
-				<td>{wordsPerSecond(totalRuntime)}</td>
-				<td>{humanTime(totalRuntime)}</td>
-			</tr>
-			<tr>
-				<th>Average per word</th>
-				<td>-</td>
-				<td>{humanTimeMillis(report.summary.average_time)}</td>
-			</tr>
-			<tr>
-				<th>Average per word (95%)<br><small>(excluding slowest 5%)</small></th>
-				<td>-</td>
-				<td>{humanTimeMillis(report.summary.average_time_95pc)}</td>
-			</tr>
+			<tbody>
+				<tr>
+					<th></th>
+					<th>Words per second</th>
+					<th>Total runtime</th>
+				</tr>
+				<tr>
+					<th>Real<br><small>(clock time, parallelised processing)</small></th>
+					<td>{wordsPerSecond(report.total_time)}</td>
+					<td>{humanTime(report.total_time)}</td>
+				</tr>
+				<tr>
+					<th>CPU<br><small>(estimated serial processing time)</small></th>
+					<td>{wordsPerSecond(totalRuntime)}</td>
+					<td>{humanTime(totalRuntime)}</td>
+				</tr>
+				<tr>
+					<th>Average per word</th>
+					<td>-</td>
+					<td>{humanTimeMillis(report.summary.average_time)}</td>
+				</tr>
+				<tr>
+					<th>Average per word (95%)<br><small>(excluding slowest 5%)</small></th>
+					<td>-</td>
+					<td>{humanTimeMillis(report.summary.average_time_95pc)}</td>
+				</tr>
+			</tbody>
 		</table>
 	</div>
 	<div>
 		<h3>Spell Checker Classification</h3>
 		<div class="accuracy-stats-container">
 			<table class="stats-table">
-				<tr>
-					<th>True positive<br><small>(correctly flagged)</small></th>
-					<td>{report.summary.true_positive || 0}</td>
-					<td>{report.results.length > 0 ? ((report.summary.true_positive || 0) / report.results.length * 100).toFixed(1) + '%' : 'N/A'}</td>
-				</tr>
-				<tr>
-					<th>False negative<br><small>(incorrectly accepted)</small></th>
-					<td>{report.summary.false_negative || 0}</td>
-					<td>{report.results.length > 0 ? ((report.summary.false_negative || 0) / report.results.length * 100).toFixed(1) + '%' : 'N/A'}</td>
-				</tr>
-				<tr>
-					<th>True negative<br><small>(correctly accepted)</small></th>
-					<td>{report.summary.true_negative || 0}</td>
-					<td>{report.results.length > 0 ? ((report.summary.true_negative || 0) / report.results.length * 100).toFixed(1) + '%' : 'N/A'}</td>
-				</tr>
-				<tr>
-					<th>False positive<br><small>(incorrectly flagged)</small></th>
-					<td>{report.summary.false_accept || 0}</td>
-					<td>{report.results.length > 0 ? ((report.summary.false_accept || 0) / report.results.length * 100).toFixed(1) + '%' : 'N/A'}</td>
-				</tr>
-				<tr>
-					<th>Total words</th>
-					<td>{report.results.length}</td>
-					<td>100%</td>
-				</tr>
+				<tbody>
+					<tr>
+						<th>True positive<br><small>(correctly flagged)</small></th>
+						<td>{report.summary.true_positive || 0}</td>
+						<td>{report.results.length > 0 ? ((report.summary.true_positive || 0) / report.results.length * 100).toFixed(1) + '%' : 'N/A'}</td>
+					</tr>
+					<tr>
+						<th>False negative<br><small>(incorrectly accepted)</small></th>
+						<td>{report.summary.false_negative || 0}</td>
+						<td>{report.results.length > 0 ? ((report.summary.false_negative || 0) / report.results.length * 100).toFixed(1) + '%' : 'N/A'}</td>
+					</tr>
+					<tr>
+						<th>True negative<br><small>(correctly accepted)</small></th>
+						<td>{report.summary.true_negative || 0}</td>
+						<td>{report.results.length > 0 ? ((report.summary.true_negative || 0) / report.results.length * 100).toFixed(1) + '%' : 'N/A'}</td>
+					</tr>
+					<tr>
+						<th>False positive<br><small>(incorrectly flagged)</small></th>
+						<td>{report.summary.false_accept || 0}</td>
+						<td>{report.results.length > 0 ? ((report.summary.false_accept || 0) / report.results.length * 100).toFixed(1) + '%' : 'N/A'}</td>
+					</tr>
+					<tr>
+						<th>Total words</th>
+						<td>{report.results.length}</td>
+						<td>100%</td>
+					</tr>
+				</tbody>
 			</table>
 			<div class="metrics-box">
 				<ul>
@@ -982,31 +986,33 @@ h2 {
 <div class="accuracy-stats-container">
 	<div>
 		<table class="stats-table">
-			<tr>
-				<th>In 1st position</th>
-				<td>{firstPositionCount()}</td>
-				<td>{firstPosition()}%</td>
-			</tr>
-			<tr>
-				<th>In top 5</th>
-				<td>{topFiveCount()}</td>
-				<td>{topFive()}%</td>
-			</tr>
-			<tr>
-				<th>Anywhere</th>
-				<td>{anywhereCount()}</td>
-				<td>{anywhere()}%</td>
-			</tr>
-			<tr>
-				<th>No suggestions</th>
-				<td>{noSuggestionsCount()}</td>
-				<td>{noSuggestions()}%</td>
-			</tr>
-			<tr>
-				<th>Only wrong</th>
-				<td>{onlyWrongCount()}</td>
-				<td>{onlyWrong()}%</td>
-			</tr>
+			<tbody>
+				<tr>
+					<th>In 1st position</th>
+					<td>{firstPositionCount()}</td>
+					<td>{firstPosition()}%</td>
+				</tr>
+				<tr>
+					<th>In top 5</th>
+					<td>{topFiveCount()}</td>
+					<td>{topFive()}%</td>
+				</tr>
+				<tr>
+					<th>Anywhere</th>
+					<td>{anywhereCount()}</td>
+					<td>{anywhere()}%</td>
+				</tr>
+				<tr>
+					<th>No suggestions</th>
+					<td>{noSuggestionsCount()}</td>
+					<td>{noSuggestions()}%</td>
+				</tr>
+				<tr>
+					<th>Only wrong</th>
+					<td>{onlyWrongCount()}</td>
+					<td>{onlyWrong()}%</td>
+				</tr>
+			</tbody>
 		</table>
 		
 		<ul>
