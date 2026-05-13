@@ -9,7 +9,7 @@ pub mod hfst;
 pub mod thfst;
 
 mod alphabet;
-mod symbol_transition;
+pub(crate) mod symbol_transition;
 pub(crate) mod tree_node;
 
 use std::borrow::Cow;

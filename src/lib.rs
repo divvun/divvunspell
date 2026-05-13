@@ -20,6 +20,7 @@ Further examples of how to use divvunspell library can be found in the
 
 pub mod archive;
 
+pub mod generator;
 pub mod paths;
 pub mod speller;
 pub mod tokenizer;

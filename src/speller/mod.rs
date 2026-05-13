@@ -643,6 +643,32 @@ pub trait Speller {
         word: &str,
         config: &SpellerConfig,
     ) -> Vec<Suggestion>;
+
+    /// Forward generation: produce every inflected surface form whose
+    /// **output-tape prefix** equals `lemma`.
+    ///
+    /// The inverse direction of [`analyze_input`](Self::analyze_input):
+    /// where `analyze_input("dieđaheami")` returns the analysis
+    /// `"dieđahit+V+Action+Acc+Sg"`, `generate("dieđahit")` returns
+    /// `[("dieđahit","+V+Inf"), ("dieđaheami","+V+Action+Acc+Sg"), …]`.
+    ///
+    /// Default implementation returns an empty Vec to preserve API
+    /// compatibility for custom `Speller` impls. `HfstSpeller`
+    /// overrides with the real walker.
+    #[must_use]
+    fn generate(self: Arc<Self>, _lemma: &str) -> Vec<crate::generator::GenerationResult> {
+        Vec::new()
+    }
+
+    /// Forward generation with config options.
+    #[must_use]
+    fn generate_with_config(
+        self: Arc<Self>,
+        _lemma: &str,
+        _config: &crate::generator::GeneratorConfig,
+    ) -> Vec<crate::generator::GenerationResult> {
+        Vec::new()
+    }
 }
 
 impl<T, U> Speller for HfstSpeller<T, U>
@@ -798,6 +824,22 @@ where
     #[inline]
     fn analyze_suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
         self.analyze_suggest_with_config(word, &SpellerConfig::default())
+    }
+
+    fn generate_with_config(
+        self: Arc<Self>,
+        lemma: &str,
+        config: &crate::generator::GeneratorConfig,
+    ) -> Vec<crate::generator::GenerationResult> {
+        if lemma.is_empty() {
+            return Vec::new();
+        }
+        crate::generator::generate_from_lexicon(self.lexicon(), lemma, config)
+    }
+
+    #[inline]
+    fn generate(self: Arc<Self>, lemma: &str) -> Vec<crate::generator::GenerationResult> {
+        self.generate_with_config(lemma, &crate::generator::GeneratorConfig::default())
     }
 }
 
