@@ -1,7 +1,8 @@
-use jni::JNIEnv;
+use jni::errors::ThrowRuntimeExAndDefault;
 use jni::objects::{JClass, JString};
-use jni::strings::JavaStr;
+use jni::strings::{JNIString, MUTF8Chars};
 use jni::sys::{jboolean, jlong};
+use jni::{Env, EnvUnowned, jni_str};
 use std::ffi::c_char;
 
 #[repr(C)]
@@ -27,6 +28,10 @@ struct CCow {
     is_owned: u8,
 }
 
+/// Raw string handles captured alongside the context so that
+/// `cursorContext0`'s `MUTF8Chars` buffers can be released in `freeContext`.
+/// Each tuple is `(jstring, ptr, is_copy)` — the is_copy flag is required by
+/// `MUTF8Chars::from_raw` in jni 0.22.
 #[repr(C)]
 struct CWordContext<'local> {
     current: CCow,
@@ -35,159 +40,174 @@ struct CWordContext<'local> {
     first_after: CRustStr,
     second_after: CRustStr,
     _handles: (
-        (JString<'local>, *const c_char),
-        (JString<'local>, *const c_char),
+        (JString<'local>, *const c_char, bool),
+        (JString<'local>, *const c_char, bool),
     ),
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_Tokenizer_cursorContext0<'local>(
-    mut env: JNIEnv<'local>,
+    mut env: EnvUnowned<'local>,
     _class: JClass<'local>,
     first_half: JString<'local>,
     second_half: JString<'local>,
 ) -> jlong {
-    if first_half.is_null() || second_half.is_null() {
-        let _ = env.throw_new(
-            "java/lang/NullPointerException",
-            "Input strings cannot be null",
-        );
-        return 0;
-    }
-
-    let first_java_str = match JavaStr::from_env(&env, &first_half) {
-        Ok(s) => s,
-        Err(e) => {
-            let _ = env.throw_new(
-                "java/lang/RuntimeException",
-                format!("Failed to get first_half JavaStr: {}", e),
-            );
-            return 0;
+    env.with_env(|env: &mut Env<'local>| -> jni::errors::Result<jlong> {
+        if first_half.is_null() || second_half.is_null() {
+            env.throw_new(
+                jni_str!("java/lang/NullPointerException"),
+                jni_str!("Input strings cannot be null"),
+            )?;
+            return Ok(0);
         }
-    };
 
-    let second_java_str = match JavaStr::from_env(&env, &second_half) {
-        Ok(s) => s,
-        Err(e) => {
-            let _ = env.throw_new(
-                "java/lang/RuntimeException",
-                format!("Failed to get second_half JavaStr: {}", e),
-            );
-            return 0;
-        }
-    };
-
-    let first_len = first_java_str.count_bytes();
-    let second_len = second_java_str.count_bytes();
-
-    let first_ptr = first_java_str.into_raw();
-    let second_ptr = second_java_str.into_raw();
-
-    let first_slice = unsafe { std::slice::from_raw_parts(first_ptr as *const u8, first_len) };
-    let second_slice = unsafe { std::slice::from_raw_parts(second_ptr as *const u8, second_len) };
-
-    let first_str = match std::str::from_utf8(first_slice) {
-        Ok(s) => s,
-        Err(e) => {
-            unsafe {
-                let _ = JavaStr::from_raw(&env, &first_half, first_ptr);
-                let _ = JavaStr::from_raw(&env, &second_half, second_ptr);
+        let first_java_str = match first_half.mutf8_chars(env) {
+            Ok(s) => s,
+            Err(e) => {
+                env.throw_new(
+                    jni_str!("java/lang/RuntimeException"),
+                    JNIString::from(format!("Failed to get first_half JavaStr: {}", e)),
+                )?;
+                return Ok(0);
             }
-            let _ = env.throw_new(
-                "java/lang/IllegalArgumentException",
-                format!("Invalid UTF-8 in first_half: {}", e),
-            );
-            return 0;
-        }
-    };
+        };
 
-    let second_str = match std::str::from_utf8(second_slice) {
-        Ok(s) => s,
-        Err(e) => {
-            unsafe {
-                let _ = JavaStr::from_raw(&env, &first_half, first_ptr);
-                let _ = JavaStr::from_raw(&env, &second_half, second_ptr);
+        let second_java_str = match second_half.mutf8_chars(env) {
+            Ok(s) => s,
+            Err(e) => {
+                env.throw_new(
+                    jni_str!("java/lang/RuntimeException"),
+                    JNIString::from(format!("Failed to get second_half JavaStr: {}", e)),
+                )?;
+                return Ok(0);
             }
-            let _ = env.throw_new(
-                "java/lang/IllegalArgumentException",
-                format!("Invalid UTF-8 in second_half: {}", e),
-            );
-            return 0;
+        };
+
+        let first_len = first_java_str.to_bytes().len();
+        let second_len = second_java_str.to_bytes().len();
+
+        let (first_ptr, first_is_copy) = first_java_str.into_raw();
+        let (second_ptr, second_is_copy) = second_java_str.into_raw();
+
+        let first_slice = unsafe { std::slice::from_raw_parts(first_ptr as *const u8, first_len) };
+        let second_slice =
+            unsafe { std::slice::from_raw_parts(second_ptr as *const u8, second_len) };
+
+        let first_str = match std::str::from_utf8(first_slice) {
+            Ok(s) => s,
+            Err(e) => {
+                unsafe {
+                    let _ = MUTF8Chars::from_raw(env, &first_half, first_ptr, first_is_copy);
+                    let _ = MUTF8Chars::from_raw(env, &second_half, second_ptr, second_is_copy);
+                }
+                env.throw_new(
+                    jni_str!("java/lang/IllegalArgumentException"),
+                    JNIString::from(format!("Invalid UTF-8 in first_half: {}", e)),
+                )?;
+                return Ok(0);
+            }
+        };
+
+        let second_str = match std::str::from_utf8(second_slice) {
+            Ok(s) => s,
+            Err(e) => {
+                unsafe {
+                    let _ = MUTF8Chars::from_raw(env, &first_half, first_ptr, first_is_copy);
+                    let _ = MUTF8Chars::from_raw(env, &second_half, second_ptr, second_is_copy);
+                }
+                env.throw_new(
+                    jni_str!("java/lang/IllegalArgumentException"),
+                    JNIString::from(format!("Invalid UTF-8 in second_half: {}", e)),
+                )?;
+                return Ok(0);
+            }
+        };
+
+        let ctx = divvun_fst::tokenizer::cursor_context(first_str, second_str);
+
+        fn to_rust_str(opt: Option<(usize, &str)>) -> CRustStr {
+            opt.map(|(_, word)| CRustStr {
+                ptr: word.as_ptr(),
+                len: word.len(),
+            })
+            .unwrap_or(CRustStr {
+                ptr: std::ptr::null(),
+                len: 0,
+            })
         }
-    };
 
-    let ctx = divvun_fst::tokenizer::cursor_context(first_str, second_str);
-
-    fn to_rust_str(opt: Option<(usize, &str)>) -> CRustStr {
-        opt.map(|(_, word)| CRustStr {
-            ptr: word.as_ptr(),
-            len: word.len(),
-        })
-        .unwrap_or(CRustStr {
-            ptr: std::ptr::null(),
-            len: 0,
-        })
-    }
-
-    let ccow = match ctx.current.1 {
-        std::borrow::Cow::Borrowed(s) => CCow {
-            ptr: s.as_ptr(),
-            len: s.len(),
-            is_owned: 0,
-        },
-        std::borrow::Cow::Owned(s) => {
-            let s = std::mem::ManuallyDrop::new(s.into_boxed_str());
-            CCow {
+        let ccow = match ctx.current.1 {
+            std::borrow::Cow::Borrowed(s) => CCow {
                 ptr: s.as_ptr(),
                 len: s.len(),
-                is_owned: 1,
+                is_owned: 0,
+            },
+            std::borrow::Cow::Owned(s) => {
+                let s = std::mem::ManuallyDrop::new(s.into_boxed_str());
+                CCow {
+                    ptr: s.as_ptr(),
+                    len: s.len(),
+                    is_owned: 1,
+                }
             }
-        }
-    };
+        };
 
-    let c_ctx = CWordContext {
-        current: ccow,
-        first_before: to_rust_str(ctx.first_before),
-        second_before: to_rust_str(ctx.second_before),
-        first_after: to_rust_str(ctx.first_after),
-        second_after: to_rust_str(ctx.second_after),
-        _handles: ((first_half, first_ptr), (second_half, second_ptr)),
-    };
+        let c_ctx = CWordContext {
+            current: ccow,
+            first_before: to_rust_str(ctx.first_before),
+            second_before: to_rust_str(ctx.second_before),
+            first_after: to_rust_str(ctx.first_after),
+            second_after: to_rust_str(ctx.second_after),
+            _handles: (
+                (first_half, first_ptr, first_is_copy),
+                (second_half, second_ptr, second_is_copy),
+            ),
+        };
 
-    Box::into_raw(Box::new(c_ctx)) as jlong
+        Ok(Box::into_raw(Box::new(c_ctx)) as jlong)
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_no_divvun_fst_Tokenizer_freeContext(
-    env: JNIEnv,
-    _class: JClass,
+pub extern "system" fn Java_no_divvun_fst_Tokenizer_freeContext<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
     handle: jlong,
 ) {
     if handle == 0 {
         return;
     }
 
-    unsafe {
-        let ctx = *Box::from_raw(handle as *mut CWordContext);
+    env.with_env(|env: &mut Env<'local>| -> jni::errors::Result<()> {
+        unsafe {
+            let ctx = *Box::from_raw(handle as *mut CWordContext);
 
-        let ((first_jstring, first_ptr), (second_jstring, second_ptr)) = ctx._handles;
+            let (
+                (first_jstring, first_ptr, first_is_copy),
+                (second_jstring, second_ptr, second_is_copy),
+            ) = ctx._handles;
 
-        let _ = JavaStr::from_raw(&env, &first_jstring, first_ptr);
-        let _ = JavaStr::from_raw(&env, &second_jstring, second_ptr);
+            let _ = MUTF8Chars::from_raw(env, &first_jstring, first_ptr, first_is_copy);
+            let _ = MUTF8Chars::from_raw(env, &second_jstring, second_ptr, second_is_copy);
 
-        if ctx.current.is_owned != 0 && !ctx.current.ptr.is_null() {
-            let _ = std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::new(Box::from_raw(
-                std::slice::from_raw_parts_mut(ctx.current.ptr as *mut u8, ctx.current.len)
-                    as *mut [u8] as *mut str,
-            )));
+            if ctx.current.is_owned != 0 && !ctx.current.ptr.is_null() {
+                let _ =
+                    std::mem::ManuallyDrop::into_inner(std::mem::ManuallyDrop::new(Box::from_raw(
+                        std::slice::from_raw_parts_mut(ctx.current.ptr as *mut u8, ctx.current.len)
+                            as *mut [u8] as *mut str,
+                    )));
+            }
         }
-    }
+        Ok(())
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_Tokenizer_getCurrentPtr(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
 ) -> jlong {
     if handle == 0 {
@@ -199,8 +219,8 @@ pub extern "system" fn Java_no_divvun_fst_Tokenizer_getCurrentPtr(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_Tokenizer_getCurrentLen(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
 ) -> jlong {
     if handle == 0 {
@@ -212,21 +232,21 @@ pub extern "system" fn Java_no_divvun_fst_Tokenizer_getCurrentLen(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_Tokenizer_getCurrentIsOwned(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
 ) -> jboolean {
     if handle == 0 {
-        return 0;
+        return false;
     }
     let ctx = unsafe { &*(handle as *const CWordContext) };
-    (ctx.current.is_owned != 0) as jboolean
+    ctx.current.is_owned != 0
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_Tokenizer_getFirstBeforePtr(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
 ) -> jlong {
     if handle == 0 {
@@ -238,8 +258,8 @@ pub extern "system" fn Java_no_divvun_fst_Tokenizer_getFirstBeforePtr(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_Tokenizer_getFirstBeforeLen(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
 ) -> jlong {
     if handle == 0 {
@@ -251,8 +271,8 @@ pub extern "system" fn Java_no_divvun_fst_Tokenizer_getFirstBeforeLen(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_Tokenizer_getSecondBeforePtr(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
 ) -> jlong {
     if handle == 0 {
@@ -264,8 +284,8 @@ pub extern "system" fn Java_no_divvun_fst_Tokenizer_getSecondBeforePtr(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_Tokenizer_getSecondBeforeLen(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
 ) -> jlong {
     if handle == 0 {
@@ -277,8 +297,8 @@ pub extern "system" fn Java_no_divvun_fst_Tokenizer_getSecondBeforeLen(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_Tokenizer_getFirstAfterPtr(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
 ) -> jlong {
     if handle == 0 {
@@ -290,8 +310,8 @@ pub extern "system" fn Java_no_divvun_fst_Tokenizer_getFirstAfterPtr(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_Tokenizer_getFirstAfterLen(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
 ) -> jlong {
     if handle == 0 {
@@ -303,8 +323,8 @@ pub extern "system" fn Java_no_divvun_fst_Tokenizer_getFirstAfterLen(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_Tokenizer_getSecondAfterPtr(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
 ) -> jlong {
     if handle == 0 {
@@ -316,8 +336,8 @@ pub extern "system" fn Java_no_divvun_fst_Tokenizer_getSecondAfterPtr(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_Tokenizer_getSecondAfterLen(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
 ) -> jlong {
     if handle == 0 {
@@ -328,9 +348,9 @@ pub extern "system" fn Java_no_divvun_fst_Tokenizer_getSecondAfterLen(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_no_divvun_fst_RustStr_copyBytes(
-    env: JNIEnv,
-    _class: JClass,
+pub extern "system" fn Java_no_divvun_fst_RustStr_copyBytes<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
     ptr: jlong,
     len: jni::sys::jint,
 ) -> jni::sys::jbyteArray {
@@ -338,18 +358,19 @@ pub extern "system" fn Java_no_divvun_fst_RustStr_copyBytes(
         return std::ptr::null_mut();
     }
 
-    let slice = unsafe { std::slice::from_raw_parts(ptr as *const u8, len as usize) };
-
-    match env.byte_array_from_slice(slice) {
-        Ok(arr) => arr.into_raw(),
-        Err(_) => std::ptr::null_mut(),
-    }
+    env.with_env(
+        |env: &mut Env<'local>| -> jni::errors::Result<jni::sys::jbyteArray> {
+            let slice = unsafe { std::slice::from_raw_parts(ptr as *const u8, len as usize) };
+            Ok(env.byte_array_from_slice(slice)?.into_raw())
+        },
+    )
+    .resolve::<ThrowRuntimeExAndDefault>()
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_RustStr_hashCode(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     ptr: jlong,
     len: jlong,
 ) -> jni::sys::jint {
@@ -371,8 +392,8 @@ pub extern "system" fn Java_no_divvun_fst_RustStr_hashCode(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_SuggestionList_getSize(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
 ) -> jlong {
     if handle == 0 {
@@ -385,8 +406,8 @@ pub extern "system" fn Java_no_divvun_fst_SuggestionList_getSize(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_SuggestionList_getValuePtr(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
     index: jlong,
 ) -> jlong {
@@ -403,8 +424,8 @@ pub extern "system" fn Java_no_divvun_fst_SuggestionList_getValuePtr(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_SuggestionList_getValueLen(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
     index: jlong,
 ) -> jlong {
@@ -421,8 +442,8 @@ pub extern "system" fn Java_no_divvun_fst_SuggestionList_getValueLen(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_SuggestionList_getWeight(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
     index: jlong,
 ) -> jni::sys::jfloat {
@@ -439,8 +460,8 @@ pub extern "system" fn Java_no_divvun_fst_SuggestionList_getWeight(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_SuggestionList_getCompleted(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
     index: jlong,
 ) -> jni::sys::jbyte {
@@ -461,8 +482,8 @@ pub extern "system" fn Java_no_divvun_fst_SuggestionList_getCompleted(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_SuggestionList_free(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
 ) {
     if handle == 0 {
@@ -474,45 +495,49 @@ pub extern "system" fn Java_no_divvun_fst_SuggestionList_free(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_no_divvun_fst_SpellerArchive_nativeOpen(
-    mut env: JNIEnv,
-    _class: JClass,
-    path: JString,
+pub extern "system" fn Java_no_divvun_fst_SpellerArchive_nativeOpen<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
+    path: JString<'local>,
 ) -> jlong {
-    if path.is_null() {
-        let _ = env.throw_new("java/lang/NullPointerException", "Path cannot be null");
-        return 0;
-    }
-
-    let path_str = match env.get_string(&path) {
-        Ok(s) => s,
-        Err(e) => {
-            let _ = env.throw_new(
-                "java/lang/RuntimeException",
-                format!("Failed to get path string: {}", e),
-            );
-            return 0;
+    env.with_env(|env: &mut Env<'local>| -> jni::errors::Result<jlong> {
+        if path.is_null() {
+            env.throw_new(
+                jni_str!("java/lang/NullPointerException"),
+                jni_str!("Path cannot be null"),
+            )?;
+            return Ok(0);
         }
-    };
 
-    let path_string: String = path_str.into();
+        let path_string = match path.try_to_string(env) {
+            Ok(s) => s,
+            Err(e) => {
+                env.throw_new(
+                    jni_str!("java/lang/RuntimeException"),
+                    JNIString::from(format!("Failed to get path string: {}", e)),
+                )?;
+                return Ok(0);
+            }
+        };
 
-    match divvun_fst::archive::open(std::path::Path::new(&path_string)) {
-        Ok(archive) => Box::into_raw(Box::new(archive)) as jlong,
-        Err(e) => {
-            let _ = env.throw_new(
-                "java/io/IOException",
-                format!("Failed to open speller archive: {}", e),
-            );
-            0
+        match divvun_fst::archive::open(std::path::Path::new(&path_string)) {
+            Ok(archive) => Ok(Box::into_raw(Box::new(archive)) as jlong),
+            Err(e) => {
+                env.throw_new(
+                    jni_str!("java/io/IOException"),
+                    JNIString::from(format!("Failed to open speller archive: {}", e)),
+                )?;
+                Ok(0)
+            }
         }
-    }
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_SpellerArchive_nativeFree(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
 ) {
     if handle == 0 {
@@ -527,8 +552,8 @@ pub extern "system" fn Java_no_divvun_fst_SpellerArchive_nativeFree(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_SpellerArchive_nativeGetSpeller(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
 ) -> jlong {
     if handle == 0 {
@@ -543,8 +568,8 @@ pub extern "system" fn Java_no_divvun_fst_SpellerArchive_nativeGetSpeller(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_no_divvun_fst_Speller_free(
-    _env: JNIEnv,
-    _class: JClass,
+    _env: EnvUnowned<'_>,
+    _class: JClass<'_>,
     handle: jlong,
 ) {
     if handle == 0 {
@@ -558,50 +583,54 @@ pub extern "system" fn Java_no_divvun_fst_Speller_free(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_no_divvun_fst_Speller_isCorrect(
-    mut env: JNIEnv,
-    _class: JClass,
+pub extern "system" fn Java_no_divvun_fst_Speller_isCorrect<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
     handle: jlong,
-    word: JString,
+    word: JString<'local>,
 ) -> jboolean {
     if handle == 0 || word.is_null() {
-        return 0;
+        return false;
     }
 
-    let word_str = match env.get_string(&word) {
-        Ok(s) => s,
-        Err(_) => return 0,
-    };
+    env.with_env(|env: &mut Env<'local>| -> jni::errors::Result<jboolean> {
+        let word_string = match word.try_to_string(env) {
+            Ok(s) => s,
+            Err(_) => return Ok(false),
+        };
 
-    let word_string: String = word_str.into();
-    let speller = unsafe {
-        &*(handle as *const std::sync::Arc<dyn divvun_fst::speller::Speller + Send + Sync>)
-    };
+        let speller = unsafe {
+            &*(handle as *const std::sync::Arc<dyn divvun_fst::speller::Speller + Send + Sync>)
+        };
 
-    speller.clone().is_correct(&word_string) as jboolean
+        Ok(speller.clone().is_correct(&word_string))
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_no_divvun_fst_Speller_suggest(
-    mut env: JNIEnv,
-    _class: JClass,
+pub extern "system" fn Java_no_divvun_fst_Speller_suggest<'local>(
+    mut env: EnvUnowned<'local>,
+    _class: JClass<'local>,
     handle: jlong,
-    word: JString,
+    word: JString<'local>,
 ) -> jlong {
     if handle == 0 || word.is_null() {
         return 0;
     }
 
-    let word_str = match env.get_string(&word) {
-        Ok(s) => s,
-        Err(_) => return 0,
-    };
+    env.with_env(|env: &mut Env<'local>| -> jni::errors::Result<jlong> {
+        let word_string = match word.try_to_string(env) {
+            Ok(s) => s,
+            Err(_) => return Ok(0),
+        };
 
-    let word_string: String = word_str.into();
-    let speller = unsafe {
-        &*(handle as *const std::sync::Arc<dyn divvun_fst::speller::Speller + Send + Sync>)
-    };
+        let speller = unsafe {
+            &*(handle as *const std::sync::Arc<dyn divvun_fst::speller::Speller + Send + Sync>)
+        };
 
-    let suggestions = speller.clone().suggest(&word_string);
-    Box::into_raw(Box::new(suggestions)) as jlong
+        let suggestions = speller.clone().suggest(&word_string);
+        Ok(Box::into_raw(Box::new(suggestions)) as jlong)
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
 }

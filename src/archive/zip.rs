@@ -53,9 +53,16 @@ fn mmap_by_name<R: Read + Seek>(
         };
     }
 
+    let Some(data_start) = index.data_start() else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "No data_start found in index",
+        ));
+    };
+
     let mmap = unsafe {
         MmapOptions::new()
-            .offset(index.data_start())
+            .offset(data_start)
             .len(index.size() as usize)
             .map(&*zipfile)
     };
