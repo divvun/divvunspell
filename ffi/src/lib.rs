@@ -162,6 +162,9 @@ pub struct FfiSpellerConfig {
     pub beam: Weight,
     pub reweight: FfiReweightingConfig,
     pub node_pool_size: usize,
+    /// When non-zero, populate per-suggestion weight breakdowns
+    /// (see `DFST_VecSuggestion_get*Weight`/`Reweight*`).
+    pub verbose: u8,
 }
 
 pub struct SpellerConfigMarshaler;
@@ -199,6 +202,7 @@ impl ToForeign<SpellerConfig, *const std::ffi::c_void> for SpellerConfigMarshale
             beam: config.beam.unwrap_or(Weight::ZERO),
             reweight,
             node_pool_size: config.node_pool_size,
+            verbose: config.verbose as u8,
         };
 
         Ok(Box::into_raw(Box::new(out)) as *const _)
@@ -246,7 +250,7 @@ impl FromForeign<*const std::ffi::c_void, SpellerConfig> for SpellerConfigMarsha
             node_pool_size: config.node_pool_size,
             recase: true,
             completion_marker: None,
-            verbose: false,
+            verbose: config.verbose != 0,
         };
 
         Ok(out)
@@ -317,6 +321,76 @@ pub extern "C" fn DFST_VecSuggestion_getCompleted(
         Some(false) => 1,
         Some(true) => 2,
     }
+}
+
+/// Whether per-suggestion weight breakdowns are available (1) or not (0).
+///
+/// Breakdowns are only populated when the speller was run with `verbose`
+/// enabled in the config. The reweight middle penalty may legitimately be
+/// `-1.0` ("no middle section"), so the `get*` accessors below cannot use a
+/// sentinel to signal absence — check this first.
+#[cffi::marshal]
+pub extern "C" fn DFST_VecSuggestion_hasWeightDetails(
+    #[marshal(SuggestionVecRefMarshaler)] suggestions: &[Suggestion],
+    index: usize,
+) -> u8 {
+    suggestions[index].weight_details().is_some() as u8
+}
+
+#[cffi::marshal]
+pub extern "C" fn DFST_VecSuggestion_getLexiconWeight(
+    #[marshal(SuggestionVecRefMarshaler)] suggestions: &[Suggestion],
+    index: usize,
+) -> f32 {
+    suggestions[index]
+        .weight_details()
+        .map(|d| d.lexicon_weight.0)
+        .unwrap_or(0.0)
+}
+
+#[cffi::marshal]
+pub extern "C" fn DFST_VecSuggestion_getMutatorWeight(
+    #[marshal(SuggestionVecRefMarshaler)] suggestions: &[Suggestion],
+    index: usize,
+) -> f32 {
+    suggestions[index]
+        .weight_details()
+        .map(|d| d.mutator_weight.0)
+        .unwrap_or(0.0)
+}
+
+#[cffi::marshal]
+pub extern "C" fn DFST_VecSuggestion_getReweightStart(
+    #[marshal(SuggestionVecRefMarshaler)] suggestions: &[Suggestion],
+    index: usize,
+) -> f32 {
+    suggestions[index]
+        .weight_details()
+        .map(|d| d.reweight_start)
+        .unwrap_or(0.0)
+}
+
+/// Reweight middle penalty. A value of `-1.0` means "no middle section".
+#[cffi::marshal]
+pub extern "C" fn DFST_VecSuggestion_getReweightMid(
+    #[marshal(SuggestionVecRefMarshaler)] suggestions: &[Suggestion],
+    index: usize,
+) -> f32 {
+    suggestions[index]
+        .weight_details()
+        .map(|d| d.reweight_mid)
+        .unwrap_or(0.0)
+}
+
+#[cffi::marshal]
+pub extern "C" fn DFST_VecSuggestion_getReweightEnd(
+    #[marshal(SuggestionVecRefMarshaler)] suggestions: &[Suggestion],
+    index: usize,
+) -> f32 {
+    suggestions[index]
+        .weight_details()
+        .map(|d| d.reweight_end)
+        .unwrap_or(0.0)
 }
 
 #[cffi::marshal(return_marshaler = cffi::ArcMarshaler::<dyn SpellerArchive + Send + Sync>)]

@@ -13,6 +13,7 @@ extern "C" {
 
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 
 // Rust FFI required types
 typedef uint8_t rust_bool_t;
@@ -52,6 +53,24 @@ rust_slice_t DFST_SpellerArchive_locale(
     cffi_exception_callback exception
 );
 
+// Speller configuration (matches the Rust #[repr(C)] FfiSpellerConfig layout).
+// A zeroed reweight (all penalties 0.0) disables reweighting. Set verbose to a
+// non-zero value to populate the per-suggestion weight breakdown accessors.
+typedef struct DFST_ReweightingConfig_s {
+    float start_penalty;
+    float end_penalty;
+    float mid_penalty;
+} DFST_ReweightingConfig;
+
+typedef struct DFST_SpellerConfig_s {
+    rust_usize_t n_best;
+    float max_weight;
+    float beam;
+    DFST_ReweightingConfig reweight;
+    rust_usize_t node_pool_size;
+    uint8_t verbose;
+} DFST_SpellerConfig;
+
 // Speller functions - trait objects passed by value
 rust_bool_t DFST_Speller_isCorrect(
     DFST_Speller speller,
@@ -61,6 +80,12 @@ rust_bool_t DFST_Speller_isCorrect(
 DFST_VecSuggestion DFST_Speller_suggest(
     DFST_Speller speller,
     const rust_slice_t word,
+    cffi_exception_callback exception
+);
+DFST_VecSuggestion DFST_Speller_suggestWithConfig(
+    DFST_Speller speller,
+    const rust_slice_t word,
+    const DFST_SpellerConfig *_Nullable config,
     cffi_exception_callback exception
 );
 
@@ -80,6 +105,41 @@ float DFST_VecSuggestion_getWeight(
     cffi_exception_callback exception
 );
 uint8_t DFST_VecSuggestion_getCompleted(
+    DFST_VecSuggestion suggestions,
+    size_t index,
+    cffi_exception_callback exception
+);
+
+// Per-suggestion weight breakdown. Only populated when the speller was run with
+// a config that has verbose set; call DFST_VecSuggestion_hasWeightDetails first
+// (the reweight mid value may legitimately be -1.0 = "no middle section", so a
+// 0.0 return cannot signal absence).
+uint8_t DFST_VecSuggestion_hasWeightDetails(
+    DFST_VecSuggestion suggestions,
+    size_t index,
+    cffi_exception_callback exception
+);
+float DFST_VecSuggestion_getLexiconWeight(
+    DFST_VecSuggestion suggestions,
+    size_t index,
+    cffi_exception_callback exception
+);
+float DFST_VecSuggestion_getMutatorWeight(
+    DFST_VecSuggestion suggestions,
+    size_t index,
+    cffi_exception_callback exception
+);
+float DFST_VecSuggestion_getReweightStart(
+    DFST_VecSuggestion suggestions,
+    size_t index,
+    cffi_exception_callback exception
+);
+float DFST_VecSuggestion_getReweightMid(
+    DFST_VecSuggestion suggestions,
+    size_t index,
+    cffi_exception_callback exception
+);
+float DFST_VecSuggestion_getReweightEnd(
     DFST_VecSuggestion suggestions,
     size_t index,
     cffi_exception_callback exception

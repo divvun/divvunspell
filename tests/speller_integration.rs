@@ -1074,6 +1074,45 @@ fn test_verbose_reweight_fields() {
     );
 }
 
+// #73: the verbose weight breakdown (exposed via the new FFI accessors) must
+// reconstruct the total weight: lexicon + mutator + reweight == weight.
+#[test]
+fn test_verbose_weight_details_sum_to_total() {
+    let s = test_speller();
+    let cfg = SpellerConfig {
+        verbose: true,
+        recase: false,
+        ..SpellerConfig::default()
+    };
+    let suggs = s.clone().suggest_with_config("kat", &cfg);
+    let cat = suggs
+        .iter()
+        .find(|s| s.value == "cat")
+        .expect("should suggest cat");
+    let d = cat
+        .weight_details
+        .as_ref()
+        .expect("verbose mode should populate weight_details");
+
+    let reweight_total = d.reweight_start
+        + d.reweight_end
+        + if d.reweight_mid < 0.0 {
+            0.0
+        } else {
+            d.reweight_mid
+        };
+    let reconstructed = d.lexicon_weight.0 + d.mutator_weight.0 + reweight_total;
+    assert!(
+        (reconstructed - cat.weight.0).abs() < 1e-3,
+        "lex({}) + mut({}) + rew({}) = {} should equal total {}",
+        d.lexicon_weight.0,
+        d.mutator_weight.0,
+        reweight_total,
+        reconstructed,
+        cat.weight.0
+    );
+}
+
 // ===========================================================================
 // n_best
 // ===========================================================================
