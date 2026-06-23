@@ -95,6 +95,7 @@ struct ReweightPenalties {
 /// too (fixes #65 where mixed-case inputs silently skipped the reweight step).
 fn compute_reweight_penalties(
     input_lower: &[&str],
+    input_first: Option<&str>,
     sugg_value: &str,
     reweight: &ReweightingConfig,
     dl_buf: &mut Vec<usize>,
@@ -322,6 +323,21 @@ fn compute_reweight_penalties(
             (start_dist, mid_dist, end_dist)
         };
 
+    // A correction whose only difference at the first letter is its case (e.g.
+    // typed lowercase, suggested with an upper-case initial) folds away to a
+    // zero start distance above. Treat it like a start-position edit so it
+    // carries the start penalty (#65) — but only when the case-folded
+    // comparison found no real start edit, to avoid double counting.
+    let first_letter_case_change = match (input_first, Graphemes::new(sugg_value).next()) {
+        (Some(a), Some(b)) => a != b && a.to_lowercase() == b.to_lowercase(),
+        _ => false,
+    };
+    let start_dist = if first_letter_case_change && start_dist == 0 {
+        1
+    } else {
+        start_dist
+    };
+
     let penalty_start = if start_dist > 0 {
         reweight.start_penalty
     } else {
@@ -362,6 +378,7 @@ fn apply_first_results_reweight(
     suggestions: &mut [Suggestion],
     mutation: crate::tokenizer::case_handling::CaseMutation,
     input_lower: &[&str],
+    input_first: Option<&str>,
     reweight: &ReweightingConfig,
     dl_buf: &mut Vec<usize>,
 ) {
@@ -374,7 +391,8 @@ fn apply_first_results_reweight(
             CaseMutation::None => {}
         }
 
-        let penalties = compute_reweight_penalties(input_lower, sugg.value(), reweight, dl_buf);
+        let penalties =
+            compute_reweight_penalties(input_lower, input_first, sugg.value(), reweight, dl_buf);
         sugg.weight = sugg.weight + penalties.additional_weight;
 
         if let Some(ref mut details) = sugg.weight_details {
@@ -395,14 +413,19 @@ fn apply_first_results_reweight(
 ///
 /// Matches FFI behaviour: beam is only honoured when strictly greater than
 /// `Weight::ZERO`.
-fn apply_beam_filter(out: &mut Vec<Suggestion>, beam: Option<Weight>) {
+///
+/// Suggestions that are a case-only variant of the input (their lower-cased
+/// value equals `input_lower`) are never dropped: the case reweight penalty can
+/// push the correct recapitalisation past the beam, and dropping it would lose
+/// the right answer (#65).
+fn apply_beam_filter(out: &mut Vec<Suggestion>, beam: Option<Weight>, input_lower: &str) {
     let Some(beam) = beam else { return };
     if beam <= Weight::ZERO {
         return;
     }
     let Some(best) = out.first() else { return };
     let threshold = best.weight() + beam;
-    out.retain(|s| s.weight() <= threshold);
+    out.retain(|s| s.weight() <= threshold || s.value().to_lowercase() == input_lower);
 }
 
 /// Temporary struct to store weight details during suggestion generation
@@ -957,7 +980,8 @@ where
 
         tracing::trace!("suggesting single {}", word);
         let mut suggestions = worker.suggest();
-        apply_beam_filter(&mut suggestions, config.beam);
+        let word_lower = word.to_lowercase();
+        apply_beam_filter(&mut suggestions, config.beam, &word_lower);
         suggestions
     }
 
@@ -986,6 +1010,7 @@ where
 
         let input_lower_str = original_input.to_lowercase();
         let input_lower: Vec<&str> = Graphemes::new(&input_lower_str).collect();
+        let input_first: Option<&str> = Graphemes::new(original_input.as_str()).next();
         let mut dl_buf: Vec<usize> = Vec::new();
 
         for word in std::iter::once(&original_input).chain(words.iter()) {
@@ -1024,6 +1049,7 @@ where
                             additional_weight,
                         } = compute_reweight_penalties(
                             &input_lower,
+                            input_first,
                             sugg.value(),
                             reweight,
                             &mut dl_buf,
@@ -1102,6 +1128,7 @@ where
                             &mut suggestions,
                             mutation,
                             &input_lower,
+                            input_first,
                             reweight,
                             &mut dl_buf,
                         );
@@ -1109,7 +1136,7 @@ where
                         if let Some(n_best) = config.n_best {
                             suggestions.truncate(n_best);
                         }
-                        apply_beam_filter(&mut suggestions, config.beam);
+                        apply_beam_filter(&mut suggestions, config.beam, &input_lower_str);
                         return suggestions;
                     }
                 }
@@ -1133,6 +1160,7 @@ where
                         &mut suggestions,
                         mutation,
                         &input_lower,
+                        input_first,
                         reweight,
                         &mut dl_buf,
                     );
@@ -1140,7 +1168,7 @@ where
                     if let Some(n_best) = config.n_best {
                         suggestions.truncate(n_best);
                     }
-                    apply_beam_filter(&mut suggestions, config.beam);
+                    apply_beam_filter(&mut suggestions, config.beam, &input_lower_str);
                     return suggestions;
                 }
             }
@@ -1219,8 +1247,85 @@ where
         if let Some(n_best) = config.n_best {
             out.truncate(n_best);
         }
-        apply_beam_filter(&mut out, config.beam);
+        apply_beam_filter(&mut out, config.beam, &input_lower_str);
 
         out
+    }
+}
+
+#[cfg(test)]
+mod reweight_tests {
+    use super::*;
+
+    fn graphemes(s: &str) -> Vec<&str> {
+        Graphemes::new(s).collect()
+    }
+
+    // #65: a correction that only differs from the input by the case of the
+    // first letter must carry the start penalty, not 0/0/0.
+    #[test]
+    fn first_letter_case_change_gets_start_penalty() {
+        let reweight = ReweightingConfig::default_const();
+        let input_lower = graphemes("girona");
+        let mut dl = Vec::new();
+
+        let p = compute_reweight_penalties(&input_lower, Some("g"), "Girona", &reweight, &mut dl);
+        assert_eq!(p.start, reweight.start_penalty);
+        assert_eq!(p.mid, 0.0);
+        assert_eq!(p.end, 0.0);
+        assert_eq!(p.additional_weight, Weight(reweight.start_penalty));
+    }
+
+    // No case difference at the first letter => no extra penalty.
+    #[test]
+    fn identical_first_letter_case_no_penalty() {
+        let reweight = ReweightingConfig::default_const();
+        let input_lower = graphemes("girona");
+        let mut dl = Vec::new();
+
+        let p = compute_reweight_penalties(&input_lower, Some("G"), "Girona", &reweight, &mut dl);
+        assert_eq!(p.start, 0.0);
+        assert_eq!(p.mid, 0.0);
+        assert_eq!(p.end, 0.0);
+        assert_eq!(p.additional_weight, Weight(0.0));
+    }
+
+    // A real first-letter substitution (different letters) is unaffected by the
+    // case-only branch and still gets the start penalty exactly once.
+    #[test]
+    fn real_first_letter_edit_not_double_counted() {
+        let reweight = ReweightingConfig::default_const();
+        let input_lower = graphemes("kat");
+        let mut dl = Vec::new();
+
+        let p = compute_reweight_penalties(&input_lower, Some("k"), "cat", &reweight, &mut dl);
+        assert_eq!(p.start, reweight.start_penalty);
+        assert_eq!(p.end, 0.0);
+        assert_eq!(p.additional_weight, Weight(reweight.start_penalty));
+    }
+
+    // #65: the case reweight penalty can push the correct recapitalisation past
+    // the beam; case-only variants of the input must survive the beam filter.
+    #[test]
+    fn beam_filter_keeps_case_only_variant() {
+        let mut out = vec![
+            Suggestion::new(SmolStr::new("girnoa"), Weight(5.0), None), // best, non-variant
+            Suggestion::new(SmolStr::new("Girona"), Weight(25.0), None), // case-only variant
+            Suggestion::new(SmolStr::new("garona"), Weight(25.0), None), // non-variant
+        ];
+        out.sort();
+
+        apply_beam_filter(&mut out, Some(Weight(0.5)), "girona");
+
+        assert!(
+            out.iter().any(|s| s.value() == "Girona"),
+            "case-only variant should survive the beam: {:?}",
+            out.iter().map(|s| s.value()).collect::<Vec<_>>()
+        );
+        assert!(
+            !out.iter().any(|s| s.value() == "garona"),
+            "non-variant beyond the beam should be dropped"
+        );
+        assert!(out.iter().any(|s| s.value() == "girnoa"));
     }
 }
