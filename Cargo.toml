@@ -92,6 +92,11 @@ members = [
   "ffi",
   "ffi/java-jni"
 ]
+# The accuracy viewer is a standalone wasm app built with Trunk; keep it out of
+# the native workspace so `cargo build`/`cargo test` here don't try to build it.
+exclude = [
+  "support/accuracy-viewer"
+]
 
 [profile.dev]
 opt-level = 1

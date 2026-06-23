@@ -1,3 +1,5 @@
 .DS_Store
-node_modules
-public/bundle.*
+/target
+/dist
+# Local report under test (place report.json next to the served files)
+/report.json

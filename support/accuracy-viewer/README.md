@@ -1,69 +1,61 @@
-*Psst — looking for a shareable component template? Go here --> [sveltejs/component-template](https://github.com/sveltejs/component-template)*
+# Accuracy viewer
 
----
+A web viewer for `divvunspell` accuracy reports, written in Rust with
+[Dioxus](https://dioxuslabs.com/) and built to WebAssembly with
+[Trunk](https://trunkrs.dev/). It is a static site — no Node toolchain — that
+fetches a `report.json` served alongside it and renders the speller
+configuration, performance/classification/suggestion statistics, and a sortable,
+colour-coded results table.
 
-# svelte app
-
-This is a project template for [Svelte](https://svelte.dev) apps. It lives at https://github.com/sveltejs/template.
-
-To create a new project based on this template using [degit](https://github.com/Rich-Harris/degit):
-
-```bash
-npx degit sveltejs/template svelte-app
-cd svelte-app
-```
-
-*Note that you will need to have [Node.js](https://nodejs.org) installed.*
-
-
-## Get started
-
-Install the dependencies...
+## Prerequisites
 
 ```bash
-cd svelte-app
-npm install
+rustup target add wasm32-unknown-unknown
+cargo install trunk          # or: brew install trunk
 ```
 
-...then start [Rollup](https://rollupjs.org):
+This crate is intentionally **outside** the main `divvunspell` Cargo workspace
+(it has its own `[workspace]` table), so building it never interferes with the
+native library/CLI build.
+
+## Generate a report
 
 ```bash
-npm run dev
+# from the divvunspell repo root
+cargo run -p divvunspell-cli --features accuracy -- \
+    accuracy -o report.json typos.tsv path/to/language.bhfst
 ```
 
-Navigate to [localhost:5000](http://localhost:5000). You should see your app running. Edit a component file in `src`, save it, and reload the page to see your changes.
+`typos.tsv` is a tab-separated `input<TAB>expected` list; rows with an empty
+`expected` column are treated as correct words (to measure false positives).
+Add `-v` to include the per-suggestion weight breakdown (lexicon / mutator /
+reweight) in the report.
 
-
-## Deploying to the web
-
-### With [now](https://zeit.co/now)
-
-Install `now` if you haven't already:
+## Develop
 
 ```bash
-npm install -g now
+trunk serve --open
 ```
 
-Then, from within your project folder:
+Place the `report.json` to view in `dist/` (Trunk serves that directory), or copy
+it there after `trunk build`. The app fetches `report.json` relative to the page.
+
+## Build for deployment
 
 ```bash
-cd public
-now
+trunk build --release
 ```
 
-As an alternative, use the [Now desktop client](https://zeit.co/download) and simply drag the unzipped project folder to the taskbar icon.
+The static site is emitted to `dist/`. Copy your `report.json` into `dist/` and
+serve/publish the directory.
 
-### With [surge](https://surge.sh/)
+### GitHub Pages
 
-Install `surge` if you haven't already:
+When serving from a project subpath (e.g. `https://<org>.github.io/<repo>/`),
+build with a matching public URL so asset links resolve:
 
 ```bash
-npm install -g surge
+trunk build --release --public-url /<repo>/
 ```
 
-Then, from within your project folder:
-
-```bash
-npm run build
-surge public
-```
+Then publish `dist/` (with `report.json` inside it) to the Pages branch/directory.
