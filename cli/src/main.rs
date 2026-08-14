@@ -358,6 +358,10 @@ struct SuggestArgs {
     #[arg(long = "no-reweighting")]
     disable_reweight: bool,
 
+    /// Skip reweighting for this input word (can be specified multiple times)
+    #[arg(long = "no-reweighting-for", value_name = "WORD")]
+    no_reweighting_for: Vec<String>,
+
     /// Disables recasing algorithm (makes results more like hfst-ospell)
     #[arg(long = "no-recase")]
     disable_recase: bool,
@@ -471,6 +475,9 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
     if args.disable_reweight {
         suggest_cfg.reweight = None;
     }
+    suggest_cfg
+        .reweight_exceptions
+        .extend(args.no_reweighting_for);
     if args.disable_recase {
         suggest_cfg.recase = false;
     }

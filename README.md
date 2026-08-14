@@ -98,6 +98,7 @@ divvunspell suggest --archive language.zhfst -A "wordd"
 - `-w, --weight <WEIGHT>` - Maximum weight limit for suggestions
 - `-n, --nbest <N>` - Maximum number of suggestions to return
 - `--no-reweighting` - Disable suggestion reweighting (closer to hfst-ospell behavior)
+- `--no-reweighting-for <WORD>` - Skip suggestion reweighting for this input word; may be repeated
 - `--no-recase` - Disable case-aware suggestion handling
 - `--json` - Output results as JSON
 - `-v, --verbose` - Show detailed weight information (lexicon, mutator, reweighting)

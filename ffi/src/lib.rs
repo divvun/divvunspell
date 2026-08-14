@@ -247,6 +247,7 @@ impl FromForeign<*const std::ffi::c_void, SpellerConfig> for SpellerConfigMarsha
                 None
             },
             reweight,
+            reweight_exceptions: Vec::new(),
             node_pool_size: config.node_pool_size,
             recase: true,
             completion_marker: None,

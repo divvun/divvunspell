@@ -666,6 +666,21 @@ fn test_reweight_zero_for_correct() {
     assert_suggests_at_weight(&test_speller(), "cat", "cat", 0.0, &reweight_config());
 }
 
+#[test]
+fn test_reweight_exception_skips_only_matching_input() {
+    let s = test_speller();
+    let mut cfg = reweight_config();
+    cfg.reweight_exceptions = vec!["kat".to_string()];
+
+    let exception_suggs = suggestion_values(&s, "kat", &cfg);
+    let exception_cat = exception_suggs.iter().find(|(v, _)| v == "cat").unwrap().1;
+    assert_eq!(exception_cat, 5.0);
+
+    let regular_suggs = suggestion_values(&s, "cad", &cfg);
+    let regular_cat = regular_suggs.iter().find(|(v, _)| v == "cat").unwrap().1;
+    assert!(regular_cat > 5.0);
+}
+
 // Regression for #65: mixed-case inputs took the CaseMode::FirstResults path
 // (plus the lowercase fallback) which previously skipped reweight entirely,
 // returning an unpenalised weight and zero reweight_* fields. A mixed-case

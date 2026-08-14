@@ -514,6 +514,9 @@ pub struct SpellerConfig {
     /// extra penalties for different edit distance type errors
     #[serde(default = "default_reweight")]
     pub reweight: Option<ReweightingConfig>,
+    /// input words for which reweighting should be skipped
+    #[serde(default)]
+    pub reweight_exceptions: Vec<String>,
     /// some parallel stuff?
     #[serde(default = "default_node_pool_size")]
     pub node_pool_size: usize,
@@ -543,6 +546,7 @@ impl SpellerConfig {
             max_weight: default_max_weight(),
             beam: default_beam(),
             reweight: default_reweight(),
+            reweight_exceptions: Vec::new(),
             node_pool_size: default_node_pool_size(),
             recase: default_recase(),
             completion_marker: None,
@@ -905,12 +909,27 @@ where
             return vec![];
         }
 
-        if let Some(reweight) = config.reweight.as_ref() {
+        let config_without_exception_reweight;
+        let effective_config = if config
+            .reweight_exceptions
+            .iter()
+            .any(|exception| exception == word)
+        {
+            config_without_exception_reweight = SpellerConfig {
+                reweight: None,
+                ..config.clone()
+            };
+            &config_without_exception_reweight
+        } else {
+            config
+        };
+
+        if let Some(reweight) = effective_config.reweight.as_ref() {
             let case_handler = word_variants(word);
 
-            self.suggest_case(case_handler, config, reweight, mode)
+            self.suggest_case(case_handler, effective_config, reweight, mode)
         } else {
-            self.suggest_single(word, config, mode)
+            self.suggest_single(word, effective_config, mode)
         }
     }
 
