@@ -195,6 +195,10 @@ divvunspell accuracy -c config.json typos.tsv language.zhfst
     "end-penalty": 10.0,
     "mid-penalty": 5.0
   },
+  "reweight-exceptions": [
+    "nuvviDspeller",
+    "Divvun speller for Lule Sami"
+  ],
   "node-pool-size": 128,
   "recase": true,
   "completion-marker": null
@@ -210,6 +214,7 @@ divvunspell accuracy -c config.json typos.tsv language.zhfst
   - **`start-penalty`** (default: `10.0`): Penalty for errors at the start of the word
   - **`end-penalty`** (default: `10.0`): Penalty for errors at the end of the word
   - **`mid-penalty`** (default: `5.0`): Penalty for errors in the middle of the word
+- **`reweight-exceptions`** (default: `[]`): List of exact, case-sensitive input words for which suggestion reweighting is skipped
 - **`node-pool-size`** (default: `128`): Size of node pool for parallelization
 - **`recase`** (default: `true`): Whether to try fixing capitalization before other suggestions
 - **`completion-marker`** (default: `null`): Marker used when suggesting incomplete word parts. Set to `null` to disable
