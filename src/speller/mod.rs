@@ -97,9 +97,21 @@ fn compute_reweight_penalties(
     input_lower: &[&str],
     input_first: Option<&str>,
     sugg_value: &str,
-    reweight: &ReweightingConfig,
+    mutator_weight: Option<Weight>,
+    reweight: Option<&ReweightingConfig>,
     dl_buf: &mut Vec<usize>,
 ) -> ReweightPenalties {
+    // No penalties configured: still return a well-formed result, because case
+    // handling runs either way.
+    let Some(reweight) = reweight else {
+        return ReweightPenalties {
+            start: 0.0,
+            mid: 0.0,
+            end: 0.0,
+            additional_weight: Weight(0.0),
+        };
+    };
+
     let sugg_lower_str = sugg_value.to_lowercase();
     let sugg_lower: Vec<&str> = Graphemes::new(&sugg_lower_str).collect();
 
@@ -354,17 +366,46 @@ fn compute_reweight_penalties(
         0.0
     };
 
-    let additional_weight = Weight(if sugg_value.chars().all(is_emoji) {
+    let raw = if sugg_value.chars().all(is_emoji) {
         0.0
     } else {
         penalty_start + penalty_end + penalty_mid.max(0.0)
-    });
+    };
+
+    // These penalties describe where a *typo* fell, and the distances above are
+    // measured between two strings. When the error model holds an authored
+    // whole-word correction — the `words.default.txt` format,
+    // `misspelling:correct<TAB>weight` — those distances describe nothing: the
+    // model charged (near) nothing for a substitution the strings say is twenty
+    // edits, because it is one lexical entry and not twenty typos. Penalising
+    // it by the distance buries an entry its author declared certain.
+    //
+    // So: if the model charged less per apparent edit than the cheapest
+    // positional adjustment costs, the apparent edits are not edits, and there
+    // is no position to adjust for. Ordinary typos, which any error model
+    // charges more for than this, are untouched.
+    let apparent_edits = start_dist + mid_dist.max(0) as usize + end_dist;
+    let is_authored = match mutator_weight {
+        Some(Weight(charged)) if apparent_edits > 0 => {
+            charged / (apparent_edits as f32) < reweight.mid_penalty
+        }
+        _ => false,
+    };
+
+    if is_authored {
+        return ReweightPenalties {
+            start: 0.0,
+            mid: 0.0,
+            end: 0.0,
+            additional_weight: Weight(0.0),
+        };
+    }
 
     ReweightPenalties {
         start: penalty_start,
         mid: penalty_mid,
         end: penalty_end,
-        additional_weight,
+        additional_weight: Weight(raw),
     }
 }
 
@@ -379,7 +420,7 @@ fn apply_first_results_reweight(
     mutation: crate::tokenizer::case_handling::CaseMutation,
     input_lower: &[&str],
     input_first: Option<&str>,
-    reweight: &ReweightingConfig,
+    reweight: Option<&ReweightingConfig>,
     dl_buf: &mut Vec<usize>,
 ) {
     use crate::tokenizer::case_handling::{CaseMutation, upper_case, upper_first};
@@ -391,8 +432,14 @@ fn apply_first_results_reweight(
             CaseMutation::None => {}
         }
 
-        let penalties =
-            compute_reweight_penalties(input_lower, input_first, sugg.value(), reweight, dl_buf);
+        let penalties = compute_reweight_penalties(
+            input_lower,
+            input_first,
+            sugg.value(),
+            sugg.weight_details.as_ref().map(|d| d.mutator_weight),
+            reweight,
+            dl_buf,
+        );
         sugg.weight = sugg.weight + penalties.additional_weight;
 
         if let Some(ref mut details) = sugg.weight_details {
@@ -403,29 +450,38 @@ fn apply_first_results_reweight(
     }
 }
 
-/// Drop suggestions whose weight exceeds `best.weight + beam`.
+/// Re-apply `max_weight` and `beam` to reweighted suggestions.
 ///
-/// The in-search beam cutoff in `SpellerWorker::suggest` is optimistic: it
-/// tracks the running `best_weight`, which can be much higher early in the
-/// search than the final best. So suggestions added at that time may end up
-/// outside the true beam once a better best is found. Callers that return
-/// suggestions to the user must apply this post-filter to respect the beam.
+/// Both limits are enforced during the search too, but on pre-reweight weights:
+/// the in-search beam tracks a running `best_weight` that can be far above the
+/// final best, and neither limit has seen the reweight penalties yet. Without
+/// this pass a penalty can push a returned suggestion past `max_weight`, which
+/// is the one number a caller can rely on to mean "no worse than this".
 ///
 /// Matches FFI behaviour: beam is only honoured when strictly greater than
 /// `Weight::ZERO`.
 ///
 /// Suggestions that are a case-only variant of the input (their lower-cased
 /// value equals `input_lower`) are never dropped: the case reweight penalty can
-/// push the correct recapitalisation past the beam, and dropping it would lose
+/// push the correct recapitalisation past a limit, and dropping it would lose
 /// the right answer (#65).
-fn apply_beam_filter(out: &mut Vec<Suggestion>, beam: Option<Weight>, input_lower: &str) {
-    let Some(beam) = beam else { return };
-    if beam <= Weight::ZERO {
+fn apply_weight_limits(out: &mut Vec<Suggestion>, config: &SpellerConfig, input_lower: &str) {
+    let beam_threshold = config
+        .beam
+        .filter(|beam| *beam > Weight::ZERO)
+        .zip(out.first().map(Suggestion::weight))
+        .map(|(beam, best)| best + beam);
+
+    if beam_threshold.is_none() && config.max_weight.is_none() {
         return;
     }
-    let Some(best) = out.first() else { return };
-    let threshold = best.weight() + beam;
-    out.retain(|s| s.weight() <= threshold || s.value().to_lowercase() == input_lower);
+
+    out.retain(|s| {
+        let within = beam_threshold.is_none_or(|threshold| s.weight() <= threshold)
+            && config.max_weight.is_none_or(|max| s.weight() <= max);
+
+        within || s.value().to_lowercase() == input_lower
+    });
 }
 
 /// Temporary struct to store weight details during suggestion generation
@@ -905,13 +961,9 @@ where
             return vec![];
         }
 
-        if let Some(reweight) = config.reweight.as_ref() {
-            let case_handler = word_variants(word);
-
-            self.suggest_case(case_handler, config, reweight, mode)
-        } else {
-            self.suggest_single(word, config, mode)
-        }
+        // Case handling is not conditional on reweighting: without it, an
+        // all-caps input used to produce no suggestions at all.
+        self.suggest_case(word_variants(word), config, config.reweight.as_ref(), mode)
     }
 
     /// get the error model automaton
@@ -964,32 +1016,11 @@ where
             .collect()
     }
 
-    fn suggest_single(
-        self: Arc<Self>,
-        word: &str,
-        config: &SpellerConfig,
-        mode: OutputMode,
-    ) -> Vec<Suggestion> {
-        let worker = SpellerWorker::new_mutator_input(
-            self.clone(),
-            self.to_input_vec(word),
-            self.to_input_vec_lexicon(word),
-            config,
-            mode,
-        );
-
-        tracing::trace!("suggesting single {}", word);
-        let mut suggestions = worker.suggest();
-        let word_lower = word.to_lowercase();
-        apply_beam_filter(&mut suggestions, config.beam, &word_lower);
-        suggestions
-    }
-
     fn suggest_case(
         self: Arc<Self>,
         case: CaseHandler,
         config: &SpellerConfig,
-        reweight: &ReweightingConfig,
+        reweight: Option<&ReweightingConfig>,
         output_mode: OutputMode,
     ) -> Vec<Suggestion> {
         use crate::tokenizer::case_handling::*;
@@ -1051,6 +1082,7 @@ where
                             &input_lower,
                             input_first,
                             sugg.value(),
+                            sugg.weight_details.as_ref().map(|d| d.mutator_weight),
                             reweight,
                             &mut dl_buf,
                         );
@@ -1136,7 +1168,7 @@ where
                         if let Some(n_best) = config.n_best {
                             suggestions.truncate(n_best);
                         }
-                        apply_beam_filter(&mut suggestions, config.beam, &input_lower_str);
+                        apply_weight_limits(&mut suggestions, config, &input_lower_str);
                         return suggestions;
                     }
                 }
@@ -1168,7 +1200,7 @@ where
                     if let Some(n_best) = config.n_best {
                         suggestions.truncate(n_best);
                     }
-                    apply_beam_filter(&mut suggestions, config.beam, &input_lower_str);
+                    apply_weight_limits(&mut suggestions, config, &input_lower_str);
                     return suggestions;
                 }
             }
@@ -1247,7 +1279,7 @@ where
         if let Some(n_best) = config.n_best {
             out.truncate(n_best);
         }
-        apply_beam_filter(&mut out, config.beam, &input_lower_str);
+        apply_weight_limits(&mut out, config, &input_lower_str);
 
         out
     }
@@ -1269,11 +1301,76 @@ mod reweight_tests {
         let input_lower = graphemes("girona");
         let mut dl = Vec::new();
 
-        let p = compute_reweight_penalties(&input_lower, Some("g"), "Girona", &reweight, &mut dl);
+        let p = compute_reweight_penalties(
+            &input_lower,
+            Some("g"),
+            "Girona",
+            None,
+            Some(&reweight),
+            &mut dl,
+        );
         assert_eq!(p.start, reweight.start_penalty);
         assert_eq!(p.mid, 0.0);
         assert_eq!(p.end, 0.0);
         assert_eq!(p.additional_weight, Weight(reweight.start_penalty));
+    }
+
+    // An error model that charged next to nothing for what the strings call a
+    // long substitution is describing one authored correction, not many typos:
+    // there is no edit position to adjust for. This is what keeps
+    // `words.default.txt` entries — and the `nuvviDspeller` version strings
+    // built in the same format — at the weight their author gave them.
+    #[test]
+    fn authored_correction_is_not_reweighted() {
+        let reweight = ReweightingConfig::default_const();
+        let input_lower = graphemes("nuvvidspeller");
+        let mut dl = Vec::new();
+
+        let p = compute_reweight_penalties(
+            &input_lower,
+            Some("n"),
+            "Divvun speller for Northern Sami",
+            Some(Weight(1.0)),
+            Some(&reweight),
+            &mut dl,
+        );
+
+        assert_eq!(p.additional_weight, Weight(0.0));
+        assert_eq!((p.start, p.mid, p.end), (0.0, 0.0, 0.0));
+    }
+
+    // An ordinary typo, which any error model charges a real edit for, keeps
+    // its positional penalty.
+    #[test]
+    fn ordinary_edit_is_still_reweighted() {
+        let reweight = ReweightingConfig::default_const();
+        let input_lower = graphemes("kat");
+        let mut dl = Vec::new();
+
+        let p = compute_reweight_penalties(
+            &input_lower,
+            Some("k"),
+            "cat",
+            Some(Weight(10.0)),
+            Some(&reweight),
+            &mut dl,
+        );
+
+        assert_eq!(p.start, reweight.start_penalty);
+        assert_eq!(p.additional_weight, Weight(reweight.start_penalty));
+    }
+
+    // Without a configured `ReweightingConfig` there are no penalties — but the
+    // caller still gets a well-formed result, because case handling runs either
+    // way.
+    #[test]
+    fn no_reweight_config_means_no_penalties() {
+        let input_lower = graphemes("kat");
+        let mut dl = Vec::new();
+
+        let p = compute_reweight_penalties(&input_lower, Some("k"), "cat", None, None, &mut dl);
+
+        assert_eq!(p.additional_weight, Weight(0.0));
     }
 
     // No case difference at the first letter => no extra penalty.
@@ -1283,7 +1380,14 @@ mod reweight_tests {
         let input_lower = graphemes("girona");
         let mut dl = Vec::new();
 
-        let p = compute_reweight_penalties(&input_lower, Some("G"), "Girona", &reweight, &mut dl);
+        let p = compute_reweight_penalties(
+            &input_lower,
+            Some("G"),
+            "Girona",
+            None,
+            Some(&reweight),
+            &mut dl,
+        );
         assert_eq!(p.start, 0.0);
         assert_eq!(p.mid, 0.0);
         assert_eq!(p.end, 0.0);
@@ -1298,7 +1402,14 @@ mod reweight_tests {
         let input_lower = graphemes("kat");
         let mut dl = Vec::new();
 
-        let p = compute_reweight_penalties(&input_lower, Some("k"), "cat", &reweight, &mut dl);
+        let p = compute_reweight_penalties(
+            &input_lower,
+            Some("k"),
+            "cat",
+            None,
+            Some(&reweight),
+            &mut dl,
+        );
         assert_eq!(p.start, reweight.start_penalty);
         assert_eq!(p.end, 0.0);
         assert_eq!(p.additional_weight, Weight(reweight.start_penalty));
@@ -1315,7 +1426,12 @@ mod reweight_tests {
         ];
         out.sort();
 
-        apply_beam_filter(&mut out, Some(Weight(0.5)), "girona");
+        let config = SpellerConfig {
+            beam: Some(Weight(0.5)),
+            max_weight: None,
+            ..SpellerConfig::default()
+        };
+        apply_weight_limits(&mut out, &config, "girona");
 
         assert!(
             out.iter().any(|s| s.value() == "Girona"),

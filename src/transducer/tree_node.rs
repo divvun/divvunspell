@@ -14,6 +14,14 @@ pub(crate) struct TreeNode {
     pub(crate) mutator_state: TransitionTableIndex,
     pub(crate) input_state: InputIndex,
     pub(crate) weight: Weight,
+    /// The error model's share of `weight`.
+    ///
+    /// Kept apart from the total so the caller can tell what the model charged
+    /// for this correction from what the lexicon charged for the result. A
+    /// whole-word entry authored in `words.default.txt` costs whatever its
+    /// author wrote, however far the two strings are apart; reweighting keys
+    /// off that rather than off the string distance.
+    pub(crate) mutator_weight: Weight,
     pub(crate) flag_state: FlagDiacriticState,
     pub(crate) string: Vec<SymbolNumber>,
 }
@@ -67,6 +75,7 @@ impl lifeguard::Recycleable for TreeNode {
             lexicon_state: TransitionTableIndex(0),
             flag_state: vec![],
             weight: Weight(0.0),
+            mutator_weight: Weight(0.0),
         }
     }
 
@@ -84,6 +93,7 @@ impl lifeguard::InitializeWith<&TreeNode> for TreeNode {
         self.lexicon_state = source.lexicon_state;
         self.flag_state.clone_from(&source.flag_state);
         self.weight = source.weight;
+        self.mutator_weight = source.mutator_weight;
     }
 }
 
@@ -100,6 +110,7 @@ impl TreeNode {
             lexicon_state: TransitionTableIndex(0),
             flag_state: start_state,
             weight: Weight(0.0),
+            mutator_weight: Weight(0.0),
         })
     }
 
@@ -129,6 +140,7 @@ impl TreeNode {
         node.lexicon_state = transition.target().unwrap();
         node.flag_state.clone_from(&self.flag_state);
         node.weight = self.weight + transition.weight().unwrap();
+        node.mutator_weight = self.mutator_weight;
 
         node
     }
@@ -146,6 +158,7 @@ impl TreeNode {
         node.lexicon_state = self.lexicon_state;
         node.flag_state.clone_from(&self.flag_state);
         node.weight = self.weight + transition.weight().unwrap();
+        node.mutator_weight = self.mutator_weight + transition.weight().unwrap();
         node
     }
 
@@ -158,6 +171,7 @@ impl TreeNode {
         next_mutator: TransitionTableIndex,
         next_lexicon: TransitionTableIndex,
         weight: Weight,
+        mutator_weight: Weight,
     ) -> Recycled<'a, TreeNode> {
         let mut node = pool.new();
 
@@ -171,6 +185,7 @@ impl TreeNode {
         node.lexicon_state = next_lexicon;
         node.flag_state.clone_from(&self.flag_state);
         node.weight = self.weight + weight;
+        node.mutator_weight = self.mutator_weight + mutator_weight;
 
         if let Some(input) = next_input {
             node.input_state = input;
@@ -208,6 +223,7 @@ impl TreeNode {
         node.lexicon_state = transition.target().unwrap();
         node.flag_state.clone_from(&self.flag_state);
         node.weight = self.weight + transition.weight().unwrap();
+        node.mutator_weight = self.mutator_weight;
         node
     }
 

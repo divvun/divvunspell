@@ -2081,6 +2081,66 @@ fn test_eps_analyze_noun_before_verb() {
 }
 
 // ===========================================================================
+// Case handling and weight limits around reweighting
+// ===========================================================================
+
+// Case handling used to hang off `reweight.is_some()`, so turning penalties off
+// silently turned off case-variant expansion too — an all-caps input returned
+// nothing at all.
+#[test]
+fn test_case_handling_without_reweighting() {
+    let s = test_speller();
+    let config = SpellerConfig {
+        reweight: None,
+        ..SpellerConfig::default()
+    };
+
+    let suggs = suggestion_values(&s, "KAT", &config);
+    assert!(
+        suggs.iter().any(|(v, _)| v == "CAT"),
+        "all-caps input should still be corrected: {suggs:?}"
+    );
+
+    let suggs = suggestion_values(&s, "Kat", &config);
+    assert!(
+        suggs.iter().any(|(v, _)| v == "Cat"),
+        "first-caps input should still be corrected: {suggs:?}"
+    );
+}
+
+// `max_weight` is enforced during the search, on weights that have not been
+// reweighted yet. Without a second pass a penalty can push a returned
+// suggestion past the one limit a caller can rely on.
+#[test]
+fn test_max_weight_applied_after_reweighting() {
+    let s = test_speller();
+    // "kat" -> "cat" costs 5, plus a 10 start penalty once reweighted.
+    let within = SpellerConfig {
+        recase: false,
+        max_weight: Some(Weight(20.0)),
+        ..SpellerConfig::default()
+    };
+    let beyond = SpellerConfig {
+        recase: false,
+        max_weight: Some(Weight(10.0)),
+        ..SpellerConfig::default()
+    };
+
+    let suggs = suggestion_values(&s, "kat", &within);
+    let cat = suggs
+        .iter()
+        .find(|(v, _)| v == "cat")
+        .expect("cat within limit");
+    assert!(cat.1 > 10.0, "expected the penalty to apply: {}", cat.1);
+
+    let suggs = suggestion_values(&s, "kat", &beyond);
+    assert!(
+        !suggs.iter().any(|(v, _)| v == "cat"),
+        "reweighted past max_weight, should be dropped: {suggs:?}"
+    );
+}
+
+// ===========================================================================
 // Fixture regeneration
 // ===========================================================================
 

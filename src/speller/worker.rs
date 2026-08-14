@@ -291,6 +291,7 @@ where
                             mutator_state,
                             noneps_trans.target().unwrap(),
                             noneps_trans.weight().unwrap() + mutator_weight,
+                            mutator_weight,
                         ),
                         OutputMode::WithTags => next_node.update(
                             pool,
@@ -299,6 +300,7 @@ where
                             mutator_state,
                             noneps_trans.target().unwrap(),
                             noneps_trans.weight().unwrap() + mutator_weight,
+                            mutator_weight,
                         ),
                     };
                     output_nodes.push(new_node);
@@ -336,6 +338,7 @@ where
                         Some(next_node.input_state.incr(1)),
                         transition.target().unwrap(),
                         next_node.lexicon_state,
+                        transition_weight,
                         transition_weight,
                     );
 
@@ -674,7 +677,8 @@ where
         let mut nodes = speller_start_node(&pool, self.state_size() as usize);
         // Key on symbol sequences to avoid string_from_symbols in the hot loop.
         // Converted to SmolStr once after the loop.
-        let mut corrections: HashMap<Vec<SymbolNumber>, Weight> = HashMap::new();
+        // Total weight and the error model's share of it, keyed by output form.
+        let mut corrections: HashMap<Vec<SymbolNumber>, (Weight, Weight)> = HashMap::new();
         let mut best_weight = Weight::MAX;
         let key_table = self.speller.mutator().alphabet().key_table();
         let n_best = self.config.n_best.unwrap_or(usize::MAX);
@@ -736,6 +740,7 @@ where
                 .final_weight(next_node.mutator_state)
                 .unwrap();
             let weight = node_weight + lexicon_final + mutator_final;
+            let mutator_weight = next_node.mutator_weight + mutator_final;
 
             if !self.is_under_weight_limit(max_weight, weight) {
                 continue;
@@ -748,11 +753,11 @@ where
             // Dedup by symbol sequence — avoid string conversion in the hot loop.
             // On hit: just compare/update weight. On miss: clone the symbol vec.
             if let Some(entry) = corrections.get_mut(next_node.string.as_slice()) {
-                if *entry > weight {
-                    *entry = weight;
+                if entry.0 > weight {
+                    *entry = (weight, mutator_weight);
                 }
             } else {
-                corrections.insert(next_node.string.clone(), weight);
+                corrections.insert(next_node.string.clone(), (weight, mutator_weight));
             }
 
             // Update the n-best weight heap for pruning
@@ -768,104 +773,12 @@ where
 
         // Convert symbol sequences to strings and build final suggestions
         let alphabet = self.speller.lexicon().alphabet();
-        let string_corrections: HashMap<SmolStr, Weight> = corrections
+        let string_corrections: HashMap<SmolStr, (Weight, Weight)> = corrections
             .into_iter()
             .map(|(syms, w)| (alphabet.string_from_symbols(&syms), w))
             .collect();
 
-        if self.config.verbose {
-            self.generate_sorted_suggestions(&string_corrections)
-        } else {
-            self.generate_sorted_suggestions_basic(&string_corrections)
-        }
-    }
-
-    fn generate_sorted_suggestions(
-        &self,
-        corrections: &HashMap<SmolStr, Weight>,
-    ) -> Vec<Suggestion> {
-        //tracing::trace!("Generating sorted suggestions");
-        let mut c: Vec<Suggestion>;
-
-        if self.config.verbose {
-            // When verbose, analyze each unique suggestion to get lexicon weight
-            // Use a local cache to avoid cross-speller contamination
-            let mut lexicon_weight_cache: HashMap<SmolStr, Weight> = HashMap::new();
-
-            // Analyze each word to get its lexicon weight
-            for word in corrections.keys() {
-                let lexicon_weight = self.analyze_output_form(word.as_str());
-                lexicon_weight_cache.insert(word.clone(), lexicon_weight);
-            }
-
-            // Now build suggestions using cached weights
-            if let Some(s) = &self.config.completion_marker {
-                c = corrections
-                    .into_iter()
-                    .map(|x| {
-                        let lexicon_weight = lexicon_weight_cache
-                            .get(x.0.as_str())
-                            .copied()
-                            .unwrap_or(Weight::ZERO);
-                        let mutator_weight = *x.1 - lexicon_weight;
-
-                        let weight_details = WeightDetails {
-                            lexicon_weight,
-                            mutator_weight,
-                            reweight_start: 0.0,
-                            reweight_mid: 0.0,
-                            reweight_end: 0.0,
-                        };
-                        Suggestion::new_with_details(
-                            x.0.clone(),
-                            *x.1,
-                            Some(!x.0.ends_with(s)),
-                            weight_details,
-                        )
-                    })
-                    .collect();
-            } else {
-                c = corrections
-                    .into_iter()
-                    .map(|x| {
-                        let lexicon_weight = lexicon_weight_cache
-                            .get(x.0.as_str())
-                            .copied()
-                            .unwrap_or(Weight::ZERO);
-                        let mutator_weight = *x.1 - lexicon_weight;
-
-                        let weight_details = WeightDetails {
-                            lexicon_weight,
-                            mutator_weight,
-                            reweight_start: 0.0,
-                            reweight_mid: 0.0,
-                            reweight_end: 0.0,
-                        };
-                        Suggestion::new_with_details(x.0.clone(), *x.1, None, weight_details)
-                    })
-                    .collect();
-            }
-        } else {
-            // When not verbose, just use basic constructor
-            if let Some(s) = &self.config.completion_marker {
-                c = corrections
-                    .into_iter()
-                    .map(|x| Suggestion::new(x.0.clone(), *x.1, Some(!x.0.ends_with(s))))
-                    .collect();
-            } else {
-                c = corrections
-                    .into_iter()
-                    .map(|x| Suggestion::new(x.0.clone(), *x.1, None))
-                    .collect();
-            }
-        }
-
-        c.sort();
-
-        if let Some(n) = self.config.n_best {
-            c.truncate(n);
-        }
-        c
+        self.generate_sorted_suggestions(&string_corrections)
     }
 
     // Analyze an output form using only the lexicon to get its weight
@@ -926,5 +839,55 @@ where
         } else {
             best_weight
         }
+    }
+
+    /// Build suggestions, splitting each total into what the lexicon charged
+    /// for the result and what the error model charged for getting there.
+    ///
+    /// `mutator_weight` always comes from the path taken, so it is exact. In
+    /// verbose mode `lexicon_weight` is instead the best lexicon-only analysis
+    /// of the output form, which is the figure cgspell's `<WA:>` is defined
+    /// against (#73); the two are therefore measured differently and need not
+    /// sum to the total. Otherwise it is the path's own lexicon share.
+    fn generate_sorted_suggestions(
+        &self,
+        corrections: &HashMap<SmolStr, (Weight, Weight)>,
+    ) -> Vec<Suggestion> {
+        let mut c: Vec<Suggestion> = corrections
+            .iter()
+            .map(|(value, (weight, mutator_weight))| {
+                let lexicon_weight = if self.config.verbose {
+                    self.analyze_output_form(value.as_str())
+                } else {
+                    *weight - *mutator_weight
+                };
+
+                let completed = self
+                    .config
+                    .completion_marker
+                    .as_ref()
+                    .map(|marker| !value.ends_with(marker.as_str()));
+
+                Suggestion::new_with_details(
+                    value.clone(),
+                    *weight,
+                    completed,
+                    WeightDetails {
+                        lexicon_weight,
+                        mutator_weight: *mutator_weight,
+                        reweight_start: 0.0,
+                        reweight_mid: 0.0,
+                        reweight_end: 0.0,
+                    },
+                )
+            })
+            .collect();
+
+        c.sort();
+
+        if let Some(n) = self.config.n_best {
+            c.truncate(n);
+        }
+        c
     }
 }
