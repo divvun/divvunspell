@@ -14,6 +14,7 @@ use divvun_fst::transducer::TransducerLoader;
 use divvun_fst::transducer::hfst::HfstTransducer;
 use divvun_fst::types::Weight;
 use divvun_fst::vfs::Fs;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::Serialize;
 
 use divvun_fst::{
@@ -257,7 +258,7 @@ impl OutputWriter for JsonWriter {
 }
 
 fn run(
-    speller: Arc<dyn Speller + Send>,
+    speller: Arc<dyn Speller + Send + Sync>,
     words: Vec<String>,
     writer: &mut dyn OutputWriter,
     is_analyzing: bool,
@@ -266,32 +267,42 @@ fn run(
     suggest_cfg: &SpellerConfig,
     verbose: bool,
 ) {
-    for word in words {
-        let is_correct = speller.clone().is_correct_with_config(&word, &suggest_cfg);
-        writer.write_correction(&word, is_correct);
-
-        if is_analyzing {
-            // Get suggestions using the regular suggest path (not analyze_suggest_with_config)
-            // to avoid double analysis
-            let suggestions = speller.clone().suggest_with_config(&word, &suggest_cfg);
-
-            // For each suggestion, get its morphological analyses and filter based on +Spell/NoSugg
-            let mut combined: Vec<(Suggestion, Vec<Suggestion>)> = vec![];
-            for sugg in suggestions {
-                let analyses = speller
-                    .clone()
-                    .analyze_input_with_config(&sugg.value, &suggest_cfg);
-
-                // Only include suggestion if not all analyses have +Spell/NoSugg
-                let all_filtered = analyses.iter().all(|a| a.value.contains("+Spell/NoSugg"));
-                if !all_filtered {
-                    combined.push((sugg, analyses));
+    let results: Vec<(
+        String,
+        bool,
+        Option<Vec<(Suggestion, Vec<Suggestion>)>>,
+        Option<Vec<Suggestion>>,
+    )> = words
+        .par_iter()
+        .map(|word| {
+            let is_correct = speller.clone().is_correct_with_config(word, &suggest_cfg);
+            if is_analyzing {
+                let suggestions = speller.clone().suggest_with_config(word, &suggest_cfg);
+                let mut combined: Vec<(Suggestion, Vec<Suggestion>)> = vec![];
+                for sugg in suggestions {
+                    let analyses = speller
+                        .clone()
+                        .analyze_input_with_config(&sugg.value, &suggest_cfg);
+                    let all_filtered = analyses.iter().all(|a| a.value.contains("+Spell/NoSugg"));
+                    if !all_filtered {
+                        combined.push((sugg, analyses));
+                    }
                 }
+                (word.clone(), is_correct, Some(combined), None)
+            } else if is_suggesting && (is_always_suggesting || !is_correct) {
+                let suggestions = speller.clone().suggest_with_config(word, &suggest_cfg);
+                (word.clone(), is_correct, None, Some(suggestions))
+            } else {
+                (word.clone(), is_correct, None, None)
             }
+        })
+        .collect();
 
+    for (word, is_correct, combined, suggestions) in results {
+        writer.write_correction(&word, is_correct);
+        if let Some(combined) = combined {
             writer.write_combined_suggestions_analyses(&word, &combined, verbose);
-        } else if is_suggesting && (is_always_suggesting || !is_correct) {
-            let suggestions = speller.clone().suggest_with_config(&word, &suggest_cfg);
+        } else if let Some(suggestions) = suggestions {
             writer.write_suggestions(&word, &suggestions, verbose);
         }
     }
