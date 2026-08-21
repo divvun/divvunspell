@@ -742,46 +742,42 @@ where
         }
 
         let input_sym = self.input[input_state];
-
-        if mutator.has_transitions(next_node.mutator_state.incr(), Some(input_sym)) {
-            self.queue_mutator_arcs(pool, max_weight, &next_node, input_sym, output_nodes);
-            return;
-        }
-
-        // No direct transition. If the input character was missing from the
-        // mutator's alphabet (to_input_vec fell back to the UNKNOWN marker),
-        // try the alphabet-level wildcards — identity first, then unknown.
-        // Previously this was gated on `input_sym >= initial_symbol_count`,
-        // which never fires because to_input_vec hands back the mutator's
-        // own UNKNOWN symbol (an in-range value). That left the wildcard
-        // fallback dead for the exact case it was meant to handle (lang-sma#160).
         let alphabet = mutator.alphabet();
-        let input_was_missing = match alphabet.unknown() {
-            Some(u) => input_sym == u,
+        let lookup = next_node.mutator_state.incr();
+
+        // A grapheme the error model has never seen was replaced by the model's
+        // UNKNOWN marker in `to_input_vec` (or by epsilon, for a model with no
+        // UNKNOWN symbol at all). That marker is not a symbol to match
+        // literally: it stands for "some character outside the alphabet", and
+        // *both* of the model's wildcard arc classes apply to it —
+        // `@_IDENTITY_@` passes the character through unchanged, `@_UNKNOWN_@`
+        // replaces it with a different one.
+        //
+        // Matching the marker literally happens to hit exactly the
+        // `@_UNKNOWN_@` arcs, so treating that as "the" transition and stopping
+        // there silently drops every pass-through path. Which class a model
+        // offers at a given state is an artefact of how it was compiled: a
+        // determinised error model floats both up to its start state, where the
+        // literal match then wins and the free pass-through is lost — while the
+        // same relation left as a union of components offers only identity
+        // there and keeps it. Same relation, different suggestions, and the
+        // determinised build charges a substitution for a character it should
+        // have passed through for nothing. Explore both classes and neither
+        // compilation shows.
+        let input_is_out_of_alphabet = match alphabet.unknown() {
+            Some(unknown) => input_sym == unknown,
             None => input_sym == SymbolNumber::ZERO,
         };
-        if !input_was_missing {
-            return;
+
+        if input_is_out_of_alphabet
+            && let Some(identity) = alphabet.identity()
+            && mutator.has_transitions(lookup, Some(identity))
+        {
+            self.queue_mutator_arcs(pool, max_weight, next_node, identity, output_nodes);
         }
 
-        if mutator.has_transitions(next_node.mutator_state.incr(), alphabet.identity()) {
-            self.queue_mutator_arcs(
-                pool,
-                max_weight,
-                &next_node,
-                alphabet.identity().unwrap(),
-                output_nodes,
-            );
-        }
-
-        if mutator.has_transitions(next_node.mutator_state.incr(), alphabet.unknown()) {
-            self.queue_mutator_arcs(
-                pool,
-                max_weight,
-                &next_node,
-                alphabet.unknown().unwrap(),
-                output_nodes,
-            );
+        if mutator.has_transitions(lookup, Some(input_sym)) {
+            self.queue_mutator_arcs(pool, max_weight, next_node, input_sym, output_nodes);
         }
     }
 

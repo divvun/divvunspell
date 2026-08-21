@@ -290,6 +290,118 @@ fn build_mutator(dir: &Path) {
     write_thfst(dir, &build_alphabet_json(symbols), &idx, &tr);
 }
 
+// ---------------------------------------------------------------------------
+// Wildcard (identity/unknown) fixture builders
+// ---------------------------------------------------------------------------
+//
+// Two error models over the SAME weighted relation, differing only in how the
+// two wildcard arc classes are laid out — the difference between a compact
+// error model (a union of components, wildcards behind an epsilon hop) and the
+// same model determinised (both wildcard classes on the start state). Paired
+// with `lexicon.thfst`, whose alphabet has "ä" and whose words are cat/car/
+// cart/care/cär.
+//
+// Relation, over alphabet {c,a,t,r} — "ä" is deliberately absent from it, so
+// the mutator only ever sees "ä" as a wildcard:
+//
+//   c→c, a→a, t→t, r→r   (w=0)   in-alphabet pass-through
+//   t→r                  (w=5)   substitution
+//   X→X for X ∉ Σ        (w=0)   @_IDENTITY_@ pass-through
+//   X→a for X ∉ Σ        (w=6)   @_UNKNOWN_@ substitution
+//
+// "cät" therefore corrects to "cär" (5, via identity + t→r), "cat" (6, via the
+// unknown substitution) and "car" (11, via both). A search that treats the
+// UNKNOWN input marker as a symbol to match literally finds only the arcs of
+// the unknown class, loses "cär" entirely — and loses it only in the
+// determinised layout, where the literal match has something to hit.
+
+/// Symbols shared by both wildcard mutators:
+/// eps=0, `@_IDENTITY_SYMBOL_@`=1, `@_UNKNOWN_SYMBOL_@`=2, c=3, a=4, t=5, r=6.
+const WILDCARD_SYMBOLS: &[&str] = &[
+    "@_EPSILON_SYMBOL_@",
+    "@_IDENTITY_SYMBOL_@",
+    "@_UNKNOWN_SYMBOL_@",
+    "c",
+    "a",
+    "t",
+    "r",
+];
+
+/// Compact layout: the start state carries the concrete arcs, and each wildcard
+/// class sits behind its own epsilon hop, the way a union of error-model
+/// components comes out of the compiler.
+fn build_wildcard_compact_mutator(dir: &Path) {
+    let alphabet = build_alphabet_json_full(WILDCARD_SYMBOLS, Some(1), Some(2), &[], 0);
+    let n = WILDCARD_SYMBOLS.len(); // 7 → 8 entries per state
+
+    let mut idx = Vec::new();
+
+    // State 0 @0: start + final, concrete arcs, epsilon into both branches.
+    write_index_final(&mut idx, 0.0);
+    write_index_entry(&mut idx, 0, TARGET_TABLE); // eps → trans[0..1]
+    write_index_empty(&mut idx); // no identity here
+    write_index_empty(&mut idx); // no unknown here
+    write_index_entry(&mut idx, 3, TARGET_TABLE + 2); // c → trans[2]
+    write_index_entry(&mut idx, 4, TARGET_TABLE + 3); // a → trans[3]
+    write_index_entry(&mut idx, 5, TARGET_TABLE + 4); // t → trans[4..5]
+    write_index_entry(&mut idx, 6, TARGET_TABLE + 6); // r → trans[6]
+
+    // State 1 @8: identity branch.
+    write_index_empty(&mut idx);
+    write_index_empty(&mut idx); // eps
+    write_index_entry(&mut idx, 1, TARGET_TABLE + 7); // identity → trans[7]
+    write_empties(&mut idx, n - 2);
+
+    // State 2 @16: unknown branch.
+    write_index_empty(&mut idx);
+    write_index_empty(&mut idx); // eps
+    write_index_empty(&mut idx); // identity
+    write_index_entry(&mut idx, 2, TARGET_TABLE + 8); // unknown → trans[8]
+    write_empties(&mut idx, n - 3);
+
+    let mut tr = Vec::new();
+    write_trans_entry(&mut tr, 0, 0, 8, 0.0); // [0] ε:ε → identity branch
+    write_trans_entry(&mut tr, 0, 0, 16, 0.0); // [1] ε:ε → unknown branch
+    write_trans_entry(&mut tr, 3, 3, 0, 0.0); // [2] c→c
+    write_trans_entry(&mut tr, 4, 4, 0, 0.0); // [3] a→a
+    write_trans_entry(&mut tr, 5, 5, 0, 0.0); // [4] t→t
+    write_trans_entry(&mut tr, 5, 6, 0, 5.0); // [5] t→r
+    write_trans_entry(&mut tr, 6, 6, 0, 0.0); // [6] r→r
+    write_trans_entry(&mut tr, 1, 1, 0, 0.0); // [7] IDENTITY→IDENTITY
+    write_trans_entry(&mut tr, 2, 4, 0, 6.0); // [8] UNKNOWN→a
+
+    write_thfst(dir, &alphabet, &idx, &tr);
+}
+
+/// Expanded layout: the same relation determinised, so both wildcard classes
+/// leave the start state directly.
+fn build_wildcard_expanded_mutator(dir: &Path) {
+    let alphabet = build_alphabet_json_full(WILDCARD_SYMBOLS, Some(1), Some(2), &[], 0);
+
+    let mut idx = Vec::new();
+
+    // State 0 @0: start + final, everything self-looping.
+    write_index_final(&mut idx, 0.0);
+    write_index_empty(&mut idx); // no eps
+    write_index_entry(&mut idx, 1, TARGET_TABLE); // identity → trans[0]
+    write_index_entry(&mut idx, 2, TARGET_TABLE + 1); // unknown → trans[1]
+    write_index_entry(&mut idx, 3, TARGET_TABLE + 2); // c → trans[2]
+    write_index_entry(&mut idx, 4, TARGET_TABLE + 3); // a → trans[3]
+    write_index_entry(&mut idx, 5, TARGET_TABLE + 4); // t → trans[4..5]
+    write_index_entry(&mut idx, 6, TARGET_TABLE + 6); // r → trans[6]
+
+    let mut tr = Vec::new();
+    write_trans_entry(&mut tr, 1, 1, 0, 0.0); // [0] IDENTITY→IDENTITY
+    write_trans_entry(&mut tr, 2, 4, 0, 6.0); // [1] UNKNOWN→a
+    write_trans_entry(&mut tr, 3, 3, 0, 0.0); // [2] c→c
+    write_trans_entry(&mut tr, 4, 4, 0, 0.0); // [3] a→a
+    write_trans_entry(&mut tr, 5, 5, 0, 0.0); // [4] t→t
+    write_trans_entry(&mut tr, 5, 6, 0, 5.0); // [5] t→r
+    write_trans_entry(&mut tr, 6, 6, 0, 0.0); // [6] r→r
+
+    write_thfst(dir, &alphabet, &idx, &tr);
+}
+
 /// Lexicon for the n-best pruning-order regression: "xbc" (w=0), "abxc" (w=0).
 ///
 /// ```text
@@ -2096,6 +2208,62 @@ fn test_identity_replacement_uses_mutator_symbol() {
 }
 
 // ===========================================================================
+// Wildcard (identity/unknown) representation independence
+// ===========================================================================
+
+fn wildcard_speller(mutator: &str) -> Arc<HfstSpeller<MmapThfstTransducer, MmapThfstTransducer>> {
+    let base = fixtures_dir();
+    load_speller(&base.join("lexicon.thfst"), &base.join(mutator))
+}
+
+/// A character outside the error model's alphabet must be able to take both
+/// wildcard arc classes: `@_IDENTITY_@` to pass through unchanged, and
+/// `@_UNKNOWN_@` to be replaced.
+///
+/// "cät" has no "ä" in the mutator alphabet, so it corrects through identity
+/// ("cär", the t→r substitution alone) and through the unknown substitution
+/// ("cat", "car"). Taking the UNKNOWN input marker as a symbol to match
+/// literally finds only the unknown class, so "cär" disappears.
+#[test]
+fn test_wildcard_input_takes_both_arc_classes() {
+    for mutator in [
+        "wildcard-compact-mutator.thfst",
+        "wildcard-expanded-mutator.thfst",
+    ] {
+        let suggs = suggestion_values(&wildcard_speller(mutator), "cät", &raw_config());
+        assert_eq!(
+            suggs,
+            vec![
+                ("cär".to_string(), 5.0),
+                ("cat".to_string(), 6.0),
+                ("car".to_string(), 11.0),
+            ],
+            "{mutator}"
+        );
+    }
+}
+
+/// The same relation laid out two ways must suggest the same things at the same
+/// weights. Determinising an error model floats both wildcard classes onto the
+/// start state; leaving it as a union of components puts each behind its own
+/// epsilon hop. Neither layout changes what the model accepts or charges, so
+/// neither may change what the speller answers.
+#[test]
+fn test_wildcard_layouts_agree() {
+    let cfg = raw_config();
+    let compact = wildcard_speller("wildcard-compact-mutator.thfst");
+    let expanded = wildcard_speller("wildcard-expanded-mutator.thfst");
+
+    for word in &["cät", "cär", "cäd", "kät", "cä", "ät"] {
+        assert_eq!(
+            suggestion_values(&compact, word, &cfg),
+            suggestion_values(&expanded, word, &cfg),
+            "compact and expanded layouts disagree on '{word}'"
+        );
+    }
+}
+
+// ===========================================================================
 // Lexicon epsilon/tag tests
 // ===========================================================================
 
@@ -2327,6 +2495,20 @@ fn rebuild_fixtures() {
             build_reorder_mutator,
             "reorder-lexicon.thfst",
             "reorder-mutator.thfst",
+        ),
+        // Both wildcard mutators pair with the main lexicon, which is rewritten
+        // byte-identically each time round.
+        (
+            build_lexicon,
+            build_wildcard_compact_mutator,
+            "lexicon.thfst",
+            "wildcard-compact-mutator.thfst",
+        ),
+        (
+            build_lexicon,
+            build_wildcard_expanded_mutator,
+            "lexicon.thfst",
+            "wildcard-expanded-mutator.thfst",
         ),
     ] {
         let lex = base.join(lex_name);
