@@ -1021,6 +1021,43 @@ where
     }
 }
 
+/// The symbols an `@_UNKNOWN_@` on the mutator's output tape can stand for.
+///
+/// The marker denotes "some symbol outside the mutator's alphabet", so the
+/// candidates are exactly the lexicon's symbols that the mutator's alphabet
+/// does not name — the same set HFST's harmonisation expands an unknown
+/// against when it composes two transducers, computed here once because the
+/// speller composes them on the fly instead.
+///
+/// `alphabet_translator` maps every mutator symbol to its lexicon counterpart,
+/// so its image is precisely the part of the lexicon alphabet the mutator can
+/// write literally. Epsilon, flag diacritics and the lexicon's own wildcard
+/// markers are not symbols a correction can contain and are excluded with it.
+fn build_unknown_output_domain<U>(
+    lexicon: &U,
+    alphabet_translator: &[SymbolNumber],
+) -> Vec<SymbolNumber>
+where
+    U: Transducer,
+{
+    let alphabet = lexicon.alphabet();
+    let symbol_count = alphabet.key_table().len();
+
+    let mut named_by_mutator = vec![false; symbol_count];
+    for sym in alphabet_translator {
+        if let Some(slot) = named_by_mutator.get_mut(sym.0 as usize) {
+            *slot = true;
+        }
+    }
+
+    (1..symbol_count)
+        .map(|i| SymbolNumber(i as u16))
+        .filter(|sym| !named_by_mutator[sym.0 as usize])
+        .filter(|sym| !alphabet.is_flag(*sym))
+        .filter(|sym| Some(*sym) != alphabet.identity() && Some(*sym) != alphabet.unknown())
+        .collect()
+}
+
 #[derive(Debug)]
 pub struct HfstSpeller<T, U>
 where
@@ -1030,6 +1067,7 @@ where
     mutator: T,
     lexicon: U,
     alphabet_translator: Vec<SymbolNumber>,
+    unknown_output_domain: Vec<SymbolNumber>,
 }
 
 impl<T, U> HfstSpeller<T, U>
@@ -1040,11 +1078,13 @@ where
     /// create new speller from two automata
     pub fn new(mutator: T, mut lexicon: U) -> Arc<HfstSpeller<T, U>> {
         let alphabet_translator = lexicon.alphabet_mut().create_translator_from(&mutator);
+        let unknown_output_domain = build_unknown_output_domain(&lexicon, &alphabet_translator);
 
         Arc::new(HfstSpeller {
             mutator,
             lexicon,
             alphabet_translator,
+            unknown_output_domain,
         })
     }
 
@@ -1077,6 +1117,11 @@ where
 
     fn alphabet_translator(&self) -> &Vec<SymbolNumber> {
         &self.alphabet_translator
+    }
+
+    /// The symbols an `@_UNKNOWN_@` on the mutator's output tape stands for.
+    fn unknown_output_domain(&self) -> &[SymbolNumber] {
+        &self.unknown_output_domain
     }
 
     fn to_input_vec(&self, word: &str) -> Vec<SymbolNumber> {

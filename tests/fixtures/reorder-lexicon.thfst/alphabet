@@ -1,1 +1,1 @@
-{"key_table":["@_EPSILON_SYMBOL_@","a","b","c","x"],"initial_symbol_count":5,"flag_state_size":0,"length":5,"string_to_symbol":{"x":4,"c":3,"b":2,"a":1},"operations":{},"identity_symbol":null,"unknown_symbol":null}
+{"key_table":["@_EPSILON_SYMBOL_@","a","b","c","x"],"initial_symbol_count":5,"flag_state_size":0,"length":5,"string_to_symbol":{"a":1,"b":2,"c":3,"x":4},"operations":{},"identity_symbol":null,"unknown_symbol":null}

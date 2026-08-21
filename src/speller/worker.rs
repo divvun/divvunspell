@@ -495,6 +495,30 @@ where
             }
 
             if let Some(sym) = transition.symbol() {
+                let (Some(target), Some(weight)) = (transition.target(), transition.weight())
+                else {
+                    next_m = next_m.incr();
+                    continue;
+                };
+
+                // An `@_UNKNOWN_@` output against an epsilon input inserts
+                // "some symbol outside the alphabet" — no character in
+                // particular, so the lexicon settles which ones that is.
+                if mutator.alphabet().unknown() == Some(sym) {
+                    self.queue_unknown_output_arcs(
+                        pool,
+                        max_weight,
+                        next_node,
+                        target,
+                        weight,
+                        0,
+                        None,
+                        output_nodes,
+                    );
+                    next_m = next_m.incr();
+                    continue;
+                }
+
                 let trans_sym = alphabet_translator[sym.0 as usize];
 
                 if !lexicon.has_transitions(next_node.lexicon_state.incr(), Some(trans_sym)) {
@@ -616,6 +640,68 @@ where
         }
     }
 
+    /// Queue the lexicon arcs an `@_UNKNOWN_@` on the mutator's *output* tape
+    /// stands for.
+    ///
+    /// The marker is not a character the correction can contain. It denotes
+    /// "some symbol outside the mutator's alphabet", and which symbols those
+    /// are is settled by the transducer it is composed with: the candidates are
+    /// the ones the lexicon offers an arc for at this very state and the
+    /// mutator's alphabet cannot name. Enumerating the mutator's own alphabet
+    /// instead would let the model write, for free, characters it has explicit
+    /// (and priced) arcs for.
+    ///
+    /// `exclude` is the input character's lexicon symbol, and dropping it is
+    /// the whole difference between the two wildcard classes: `@_UNKNOWN_@`
+    /// means a *different* out-of-alphabet symbol, and leaving the character
+    /// alone is `@_IDENTITY_@`'s reading, at the identity arc's own weight.
+    /// For an `x:@_UNKNOWN_@` arc the exclusion costs nothing — an `x` the
+    /// mutator can name is outside the domain already.
+    #[inline]
+    fn queue_unknown_output_arcs<'a>(
+        &self,
+        pool: &'a Pool<TreeNode>,
+        max_weight: Weight,
+        next_node: &TreeNode,
+        mutator_state: TransitionTableIndex,
+        mutator_weight: Weight,
+        input_increment: i16,
+        exclude: Option<SymbolNumber>,
+        output_nodes: &mut Vec<Recycled<'a, TreeNode>>,
+    ) {
+        // Every candidate is charged this arc plus a lexicon arc, and lexicon
+        // weights are non-negative, so an arc already over the cutoff cannot
+        // produce anything under it — worth checking once instead of once per
+        // candidate.
+        if !self.is_under_weight_limit(max_weight, next_node.weight() + mutator_weight) {
+            return;
+        }
+
+        let lexicon = self.speller.lexicon();
+        let lookup = next_node.lexicon_state.incr();
+
+        for &candidate in self.speller.unknown_output_domain() {
+            if Some(candidate) == exclude {
+                continue;
+            }
+
+            if !lexicon.has_transitions(lookup, Some(candidate)) {
+                continue;
+            }
+
+            self.queue_lexicon_arcs(
+                pool,
+                max_weight,
+                next_node,
+                candidate,
+                mutator_state,
+                mutator_weight,
+                input_increment,
+                output_nodes,
+            );
+        }
+    }
+
     #[inline(always)]
     fn queue_mutator_arcs<'a>(
         &self,
@@ -655,22 +741,44 @@ where
             }
 
             if let Some(sym) = symbol {
-                // If the mutator's output is a pass-through marker (identity or
-                // unknown) then the real character emerging from the mutator is
-                // the input character itself. Encode it in the lexicon alphabet
-                // (via `lexicon_input`) so the lexicon walk can match explicit
-                // arcs for it — without this, out-of-mutator-alphabet characters
+                let (Some(target), Some(weight)) = (transition.target(), transition.weight())
+                else {
+                    next_m = next_m.incr();
+                    continue;
+                };
+
+                let mut_alpha = mutator.alphabet();
+                let input_state_idx = next_node.input_state.0 as usize;
+                let input_lexicon_sym = self.lexicon_input.get(input_state_idx).copied();
+
+                // `@_UNKNOWN_@` on the output tape is not a character to write:
+                // it stands for some symbol outside the mutator's alphabet, and
+                // the lexicon says which ones are available here.
+                if mut_alpha.unknown() == Some(sym) {
+                    self.queue_unknown_output_arcs(
+                        pool,
+                        max_weight,
+                        next_node,
+                        target,
+                        weight,
+                        1,
+                        input_lexicon_sym,
+                        output_nodes,
+                    );
+                    next_m = next_m.incr();
+                    continue;
+                }
+
+                // `@_IDENTITY_@` on the output tape does name a character: the
+                // input one, unchanged. Encode it in the lexicon alphabet (via
+                // `lexicon_input`) so the lexicon walk can match explicit arcs
+                // for it — without this, out-of-mutator-alphabet characters
                 // like "Z" in the festschrift model silently dead-end when the
                 // lexicon has no identity arcs but does have an explicit "Z"
                 // arc (lang-sma#160).
-                let mut_alpha = mutator.alphabet();
-                let is_pass_through = mut_alpha.identity().map_or(false, |id| sym == id)
-                    || mut_alpha.unknown().map_or(false, |u| sym == u);
-                let input_state_idx = next_node.input_state.0 as usize;
-                let trans_sym = if is_pass_through && input_state_idx < self.lexicon_input.len() {
-                    self.lexicon_input[input_state_idx]
-                } else {
-                    alphabet_translator[sym.0 as usize]
+                let trans_sym = match input_lexicon_sym {
+                    Some(lexicon_sym) if mut_alpha.identity() == Some(sym) => lexicon_sym,
+                    _ => alphabet_translator[sym.0 as usize],
                 };
 
                 if !lexicon.has_transitions(next_node.lexicon_state.incr(), Some(trans_sym)) {
@@ -684,8 +792,8 @@ where
                                 max_weight,
                                 &next_node,
                                 lexicon.alphabet().unknown().unwrap(),
-                                transition.target().unwrap(),
-                                transition.weight().unwrap(),
+                                target,
+                                weight,
                                 1,
                                 output_nodes,
                             );
@@ -699,8 +807,8 @@ where
                                 max_weight,
                                 &next_node,
                                 lexicon.alphabet().identity().unwrap(),
-                                transition.target().unwrap(),
-                                transition.weight().unwrap(),
+                                target,
+                                weight,
                                 1,
                                 output_nodes,
                             );
@@ -715,8 +823,8 @@ where
                     max_weight,
                     &next_node,
                     trans_sym,
-                    transition.target().unwrap(),
-                    transition.weight().unwrap(),
+                    target,
+                    weight,
                     1,
                     output_nodes,
                 );

@@ -52,7 +52,9 @@ fn build_alphabet_json_full(
     flag_state_size: u16,
 ) -> String {
     let mut key_table_entries = Vec::new();
-    let mut string_to_symbol = std::collections::HashMap::new();
+    // Ordered, so a fixture rebuild rewrites byte-identical files instead of
+    // reshuffling every alphabet's JSON on each run.
+    let mut string_to_symbol = std::collections::BTreeMap::new();
 
     for (i, sym) in symbols.iter().enumerate() {
         let escaped = sym.replace('\\', "\\\\").replace('"', "\\\"");
@@ -398,6 +400,181 @@ fn build_wildcard_expanded_mutator(dir: &Path) {
     write_trans_entry(&mut tr, 5, 5, 0, 0.0); // [4] t→t
     write_trans_entry(&mut tr, 5, 6, 0, 5.0); // [5] t→r
     write_trans_entry(&mut tr, 6, 6, 0, 0.0); // [6] r→r
+
+    write_thfst(dir, &alphabet, &idx, &tr);
+}
+
+// ---------------------------------------------------------------------------
+// Unknown-on-the-output-tape fixture builders
+// ---------------------------------------------------------------------------
+//
+// The wildcard fixtures above put `@_UNKNOWN_@` on the mutator's *input* tape.
+// These put it on the *output* tape, where it does not name a character at all:
+// it stands for some symbol outside the mutator's alphabet, and the lexicon is
+// what decides which symbols are available.
+//
+// The lexicon holds "cat", "cät" and "cöt"; the mutator's alphabet is {c,a,t},
+// so both "ä" and "ö" are outside it and "a" is not. The relation, over that
+// alphabet:
+//
+//   c→c, a→a, t→t     (w=0)   in-alphabet pass-through
+//   X→X for X ∉ Σ     (w=6)   @_IDENTITY_@ pass-through
+//   X→Y for X,Y ∉ Σ   (w=2)   @_UNKNOWN_@:@_UNKNOWN_@, Y ≠ X
+//   a→Y for Y ∉ Σ     (w=3)   a:@_UNKNOWN_@
+//
+// Identity is deliberately dearer than the unknown substitution, so a search
+// that lets an unknown output stand for the input character cannot hide behind
+// identity's reading: it would answer "cät" for 2, which the relation prices at
+// 6.
+
+/// Lexicon accepting "cat", "cät" and "cöt", all at w=0.
+///
+/// ```text
+/// Alphabet: [eps, c, a, t, ä, ö]  (symbols 0-5)
+///
+/// (0)--c-->(1)--a-->(2)--t-->(5) FINAL w=0   "cat"
+///               |
+///               ä-->(3)--t-->(6) FINAL w=0   "cät"
+///               |
+///               ö-->(4)--t-->(7) FINAL w=0   "cöt"
+/// ```
+fn build_unknown_out_lexicon(dir: &Path) {
+    // eps=0, c=1, a=2, t=3, ä=4, ö=5
+    let symbols = &["@_EPSILON_SYMBOL_@", "c", "a", "t", "ä", "ö"];
+    let n = symbols.len(); // 6 → 7 entries per state
+
+    let mut idx = Vec::new();
+
+    // State 0 (start) @0
+    write_index_empty(&mut idx); // not final
+    write_index_empty(&mut idx); // eps
+    write_index_entry(&mut idx, 1, TARGET_TABLE); // c → trans[0]
+    write_empties(&mut idx, n - 2); // a, t, ä, ö
+
+    // State 1 (after "c") @7
+    write_index_empty(&mut idx);
+    write_index_empty(&mut idx); // eps
+    write_index_empty(&mut idx); // c
+    write_index_entry(&mut idx, 2, TARGET_TABLE + 1); // a → trans[1]
+    write_index_empty(&mut idx); // t
+    write_index_entry(&mut idx, 4, TARGET_TABLE + 2); // ä → trans[2]
+    write_index_entry(&mut idx, 5, TARGET_TABLE + 3); // ö → trans[3]
+
+    // State 2 (after "ca") @14
+    write_index_empty(&mut idx);
+    write_empties(&mut idx, 3); // eps, c, a
+    write_index_entry(&mut idx, 3, TARGET_TABLE + 4); // t → trans[4]
+    write_empties(&mut idx, 2); // ä, ö
+
+    // State 3 (after "cä") @21
+    write_index_empty(&mut idx);
+    write_empties(&mut idx, 3); // eps, c, a
+    write_index_entry(&mut idx, 3, TARGET_TABLE + 5); // t → trans[5]
+    write_empties(&mut idx, 2); // ä, ö
+
+    // State 4 (after "cö") @28
+    write_index_empty(&mut idx);
+    write_empties(&mut idx, 3); // eps, c, a
+    write_index_entry(&mut idx, 3, TARGET_TABLE + 6); // t → trans[6]
+    write_empties(&mut idx, 2); // ä, ö
+
+    // States 5 ("cat"), 6 ("cät"), 7 ("cöt"): FINAL w=0 @35, @42, @49
+    for _ in 0..3 {
+        write_index_final(&mut idx, 0.0);
+        write_empties(&mut idx, n);
+    }
+
+    let mut tr = Vec::new();
+    write_trans_entry(&mut tr, 1, 1, 7, 0.0); // [0] c→c → state 1
+    write_trans_entry(&mut tr, 2, 2, 14, 0.0); // [1] a→a → state 2
+    write_trans_entry(&mut tr, 4, 4, 21, 0.0); // [2] ä→ä → state 3
+    write_trans_entry(&mut tr, 5, 5, 28, 0.0); // [3] ö→ö → state 4
+    write_trans_entry(&mut tr, 3, 3, 35, 0.0); // [4] t→t → state 5
+    write_trans_entry(&mut tr, 3, 3, 42, 0.0); // [5] t→t → state 6
+    write_trans_entry(&mut tr, 3, 3, 49, 0.0); // [6] t→t → state 7
+
+    write_thfst(dir, &build_alphabet_json(symbols), &idx, &tr);
+}
+
+/// Symbols shared by both unknown-output mutators:
+/// eps=0, `@_IDENTITY_SYMBOL_@`=1, `@_UNKNOWN_SYMBOL_@`=2, c=3, a=4, t=5.
+const UNKNOWN_OUT_SYMBOLS: &[&str] = &[
+    "@_EPSILON_SYMBOL_@",
+    "@_IDENTITY_SYMBOL_@",
+    "@_UNKNOWN_SYMBOL_@",
+    "c",
+    "a",
+    "t",
+];
+
+/// Compact layout: concrete arcs on the start state, each wildcard class behind
+/// its own epsilon hop, the way a union of error-model components compiles.
+fn build_unknown_out_compact_mutator(dir: &Path) {
+    let alphabet = build_alphabet_json_full(UNKNOWN_OUT_SYMBOLS, Some(1), Some(2), &[], 0);
+    let n = UNKNOWN_OUT_SYMBOLS.len(); // 6 → 7 entries per state
+
+    let mut idx = Vec::new();
+
+    // State 0 @0: start + final, concrete arcs, epsilon into both branches.
+    write_index_final(&mut idx, 0.0);
+    write_index_entry(&mut idx, 0, TARGET_TABLE); // eps → trans[0..1]
+    write_index_empty(&mut idx); // no identity here
+    write_index_empty(&mut idx); // no unknown here
+    write_index_entry(&mut idx, 3, TARGET_TABLE + 2); // c → trans[2]
+    write_index_entry(&mut idx, 4, TARGET_TABLE + 3); // a → trans[3]
+    write_index_entry(&mut idx, 5, TARGET_TABLE + 4); // t → trans[4]
+
+    // State 1 @7: identity branch.
+    write_index_empty(&mut idx);
+    write_index_empty(&mut idx); // eps
+    write_index_entry(&mut idx, 1, TARGET_TABLE + 5); // identity → trans[5]
+    write_empties(&mut idx, n - 2);
+
+    // State 2 @14: unknown-output branch, both of its arcs.
+    write_index_empty(&mut idx);
+    write_index_empty(&mut idx); // eps
+    write_index_empty(&mut idx); // identity
+    write_index_entry(&mut idx, 2, TARGET_TABLE + 6); // unknown → trans[6]
+    write_index_empty(&mut idx); // c
+    write_index_entry(&mut idx, 4, TARGET_TABLE + 7); // a → trans[7]
+    write_index_empty(&mut idx); // t
+
+    let mut tr = Vec::new();
+    write_trans_entry(&mut tr, 0, 0, 7, 0.0); // [0] ε:ε → identity branch
+    write_trans_entry(&mut tr, 0, 0, 14, 0.0); // [1] ε:ε → unknown branch
+    write_trans_entry(&mut tr, 3, 3, 0, 0.0); // [2] c→c
+    write_trans_entry(&mut tr, 4, 4, 0, 0.0); // [3] a→a
+    write_trans_entry(&mut tr, 5, 5, 0, 0.0); // [4] t→t
+    write_trans_entry(&mut tr, 1, 1, 0, 6.0); // [5] IDENTITY→IDENTITY
+    write_trans_entry(&mut tr, 2, 2, 0, 2.0); // [6] UNKNOWN→UNKNOWN
+    write_trans_entry(&mut tr, 4, 2, 0, 3.0); // [7] a→UNKNOWN
+
+    write_thfst(dir, &alphabet, &idx, &tr);
+}
+
+/// Expanded layout: the same relation determinised, every arc leaving the start
+/// state directly.
+fn build_unknown_out_expanded_mutator(dir: &Path) {
+    let alphabet = build_alphabet_json_full(UNKNOWN_OUT_SYMBOLS, Some(1), Some(2), &[], 0);
+
+    let mut idx = Vec::new();
+
+    // State 0 @0: start + final, everything self-looping.
+    write_index_final(&mut idx, 0.0);
+    write_index_empty(&mut idx); // no eps
+    write_index_entry(&mut idx, 1, TARGET_TABLE); // identity → trans[0]
+    write_index_entry(&mut idx, 2, TARGET_TABLE + 1); // unknown → trans[1]
+    write_index_entry(&mut idx, 3, TARGET_TABLE + 2); // c → trans[2]
+    write_index_entry(&mut idx, 4, TARGET_TABLE + 3); // a → trans[3..4]
+    write_index_entry(&mut idx, 5, TARGET_TABLE + 5); // t → trans[5]
+
+    let mut tr = Vec::new();
+    write_trans_entry(&mut tr, 1, 1, 0, 6.0); // [0] IDENTITY→IDENTITY
+    write_trans_entry(&mut tr, 2, 2, 0, 2.0); // [1] UNKNOWN→UNKNOWN
+    write_trans_entry(&mut tr, 3, 3, 0, 0.0); // [2] c→c
+    write_trans_entry(&mut tr, 4, 4, 0, 0.0); // [3] a→a
+    write_trans_entry(&mut tr, 4, 2, 0, 3.0); // [4] a→UNKNOWN
+    write_trans_entry(&mut tr, 5, 5, 0, 0.0); // [5] t→t
 
     write_thfst(dir, &alphabet, &idx, &tr);
 }
@@ -2264,6 +2441,86 @@ fn test_wildcard_layouts_agree() {
 }
 
 // ===========================================================================
+// Unknown on the output tape
+// ===========================================================================
+
+fn unknown_out_speller(
+    mutator: &str,
+) -> Arc<HfstSpeller<MmapThfstTransducer, MmapThfstTransducer>> {
+    let base = fixtures_dir();
+    load_speller(&base.join("unknown-out-lexicon.thfst"), &base.join(mutator))
+}
+
+/// `@_UNKNOWN_@:@_UNKNOWN_@` replaces an out-of-alphabet character with a
+/// *different* out-of-alphabet character, and the lexicon says which.
+///
+/// "ä" is outside the mutator's alphabet, so the arc applies to it, and the one
+/// symbol the lexicon offers after "c" that the mutator cannot name and that is
+/// not "ä" itself is "ö" — so "cät" corrects to "cöt" for the arc's 2. Leaving
+/// the character alone is the identity class's reading and costs identity's 6,
+/// which is the whole difference between the two classes: an unknown output
+/// that stood for the input character would hand back "cät" for 2.
+#[test]
+fn test_unknown_output_substitutes_a_different_symbol() {
+    for mutator in [
+        "unknown-out-compact-mutator.thfst",
+        "unknown-out-expanded-mutator.thfst",
+    ] {
+        let suggs = suggestion_values(&unknown_out_speller(mutator), "cät", &raw_config());
+        assert_eq!(
+            suggs,
+            vec![("cöt".to_string(), 2.0), ("cät".to_string(), 6.0)],
+            "{mutator}"
+        );
+    }
+}
+
+/// An `x:@_UNKNOWN_@` arc replaces a character the mutator *can* name with one
+/// it cannot, and the enumeration is the same lexicon-licensed set.
+///
+/// "a" is in the mutator's alphabet, so the arc's output ranges over the two
+/// symbols the lexicon offers after "c" that the mutator's alphabet does not
+/// name. The mutator's own symbols are never candidates: "cat" is only ever
+/// reachable through the explicit `a→a` arc, for nothing, not through the
+/// unknown arc for 3.
+#[test]
+fn test_unknown_output_from_known_input() {
+    for mutator in [
+        "unknown-out-compact-mutator.thfst",
+        "unknown-out-expanded-mutator.thfst",
+    ] {
+        let suggs = suggestion_values(&unknown_out_speller(mutator), "cat", &raw_config());
+        assert_eq!(
+            suggs,
+            vec![
+                ("cat".to_string(), 0.0),
+                ("cät".to_string(), 3.0),
+                ("cöt".to_string(), 3.0),
+            ],
+            "{mutator}"
+        );
+    }
+}
+
+/// The enumeration is drawn from the two alphabets alone, so the two layouts of
+/// one relation must enumerate identically — the same guarantee the wildcard
+/// layouts get, extended to the output tape.
+#[test]
+fn test_unknown_output_layouts_agree() {
+    let cfg = raw_config();
+    let compact = unknown_out_speller("unknown-out-compact-mutator.thfst");
+    let expanded = unknown_out_speller("unknown-out-expanded-mutator.thfst");
+
+    for word in &["cat", "cät", "cöt", "cöä", "ct", "cät ", "cäät", "ä"] {
+        assert_eq!(
+            suggestion_values(&compact, word, &cfg),
+            suggestion_values(&expanded, word, &cfg),
+            "compact and expanded layouts disagree on '{word}'"
+        );
+    }
+}
+
+// ===========================================================================
 // Lexicon epsilon/tag tests
 // ===========================================================================
 
@@ -2509,6 +2766,20 @@ fn rebuild_fixtures() {
             build_wildcard_expanded_mutator,
             "lexicon.thfst",
             "wildcard-expanded-mutator.thfst",
+        ),
+        // Both unknown-output mutators pair with their own lexicon, which is
+        // rewritten byte-identically each time round.
+        (
+            build_unknown_out_lexicon,
+            build_unknown_out_compact_mutator,
+            "unknown-out-lexicon.thfst",
+            "unknown-out-compact-mutator.thfst",
+        ),
+        (
+            build_unknown_out_lexicon,
+            build_unknown_out_expanded_mutator,
+            "unknown-out-lexicon.thfst",
+            "unknown-out-expanded-mutator.thfst",
         ),
     ] {
         let lex = base.join(lex_name);
