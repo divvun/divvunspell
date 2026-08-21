@@ -179,6 +179,10 @@ where
 
 // Implement the trait for all memory types
 impl<M: Memory> crate::transducer::IndexTableTrait for IndexTable<M> {
+    fn len(&self) -> TransitionTableIndex {
+        self.size
+    }
+
     fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
         self.input_symbol(i)
     }

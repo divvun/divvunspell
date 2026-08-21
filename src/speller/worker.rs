@@ -1,6 +1,6 @@
 use std::collections::BinaryHeap;
 
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use smol_str::SmolStr;
 use std::sync::Arc;
 
@@ -18,6 +18,300 @@ fn speller_start_node(pool: &Pool<TreeNode>, size: usize) -> Vec<Recycled<'_, Tr
     let mut nodes = Vec::with_capacity(256);
     nodes.push(start_node);
     nodes
+}
+
+/// Min-order wrapper so `BinaryHeap` (a max-heap) pops the most promising node
+/// first.
+///
+/// The order is A*'s `f = g + h`: `g` is the weight accumulated so far and `h`
+/// is [`Transducer::distance_to_final`] summed over the two transducers — a
+/// lower bound on what finishing must still cost. Plain best-first (`h = 0`)
+/// has no lookahead and drowns in shallow, cheap, hopeless paths before any
+/// final state tightens the cutoff; `h` prices the rest of the word in.
+struct OrderedNode<'a> {
+    /// `g + h`. Never overestimates the weight of any completion of this node,
+    /// which is what makes it safe to both prune and stop on.
+    estimate: Weight,
+    node: Recycled<'a, TreeNode>,
+}
+
+impl PartialEq for OrderedNode<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        self.estimate == other.estimate && self.node.weight() == other.node.weight()
+    }
+}
+impl Eq for OrderedNode<'_> {}
+impl PartialOrd for OrderedNode<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for OrderedNode<'_> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Reversed: cheapest estimate first out of the max-heap. Ties go to the
+        // node that has already travelled further, which reaches a complete
+        // correction sooner and so tightens the cutoff sooner.
+        other
+            .estimate
+            .cmp(&self.estimate)
+            .then_with(|| self.node.weight().cmp(&other.node.weight()))
+    }
+}
+
+/// Opt-in accounting of what the suggestion search spends its iterations on,
+/// switched on with `DIVVUNSPELL_SEARCH_STATS=1` and written to stderr as one
+/// `SEARCHSTATS` line per search.
+///
+/// An iteration count on its own cannot say *why* a search is expensive. The
+/// two questions that tell a genuinely large error model apart from a badly
+/// shaped one are both answered here:
+///
+/// * `distinct_sigs` against `pops` — is the search reaching new
+///   configurations, or re-walking the same ones along different paths?
+/// * `live_mutator_states` — how many error-model states are alive for one and
+///   the same partial correction. Near 1 means the model behaves like a DFA;
+///   well above 1 means it is an NFA and the search pays for it on every node.
+///
+/// Everything accumulated here is allocated only when it is switched on.
+static SEARCH_STATS: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var_os("DIVVUNSPELL_SEARCH_STATS").is_some());
+
+#[derive(Default)]
+struct SearchStats {
+    pops: u64,
+    /// Pops of a triple already popped at no greater weight — pure path
+    /// redundancy, and exactly what a visited-set would eliminate.
+    redundant_pops: u64,
+    push_lexicon_epsilons: u64,
+    push_mutator_epsilons: u64,
+    push_consume_input: u64,
+    pushes_kept: u64,
+    max_queue: usize,
+    corrections: u64,
+    first_correction_pop: Option<u64>,
+    seen: HashMap<(u32, u32, u32), (Weight, u32)>,
+    /// Distinct `(triple, output-so-far)` signatures. A pop whose signature has
+    /// been seen before cannot contribute a correction the earlier one could
+    /// not, so this separates "the model is big" from "the search is walking
+    /// the same partial correction over and over".
+    signatures: HashSet<(u32, u32, u32, u64)>,
+    /// Signatures with the mutator state dropped. `signatures / this` is the
+    /// average number of mutator states alive for one and the same partial
+    /// correction — the price of running a non-determinised error model as an
+    /// NFA, and the ceiling on what on-the-fly determinisation could recover.
+    signatures_no_mutator: HashSet<(u32, u32, u64)>,
+    mutator_states: HashSet<u32>,
+    lexicon_states: HashSet<u32>,
+}
+
+impl SearchStats {
+    fn record_pop(&mut self, node: &TreeNode) {
+        use std::hash::{BuildHasher, Hash, Hasher};
+
+        self.pops += 1;
+        let key = (
+            node.input_state.0,
+            node.mutator_state.0,
+            node.lexicon_state.0,
+        );
+        match self.seen.get_mut(&key) {
+            Some((best, count)) => {
+                *count += 1;
+                if *best <= node.weight() {
+                    self.redundant_pops += 1;
+                } else {
+                    *best = node.weight();
+                }
+            }
+            None => {
+                self.seen.insert(key, (node.weight(), 1));
+            }
+        }
+
+        let mut hasher = self.signatures.hasher().build_hasher();
+        node.string.hash(&mut hasher);
+        for value in &node.flag_state {
+            value.0.hash(&mut hasher);
+        }
+        let output = hasher.finish();
+        self.signatures.insert((key.0, key.1, key.2, output));
+        self.signatures_no_mutator.insert((key.0, key.2, output));
+
+        self.mutator_states.insert(node.mutator_state.0);
+        self.lexicon_states.insert(node.lexicon_state.0);
+    }
+
+    fn report(&self, word: &str, queue_len: usize) {
+        let hottest = self.seen.values().map(|(_, c)| *c).max().unwrap_or(0);
+        eprintln!(
+            "SEARCHSTATS\tword={word}\tpops={}\tdistinct_triples={}\tdistinct_sigs={}\t\
+             sigs_no_mutator={}\tlive_mutator_states={:.2}\t\
+             hottest_triple_pops={}\tredundant_pops={}\t\
+             redundant_pct={:.1}\tmutator_states={}\tlexicon_states={}\t\
+             push_lex_eps={}\tpush_mut_eps={}\tpush_consume={}\tpushes_kept={}\t\
+             max_queue={}\tqueue_left={}\tcorrections={}\tfirst_correction_pop={}",
+            self.pops,
+            self.seen.len(),
+            self.signatures.len(),
+            self.signatures_no_mutator.len(),
+            self.signatures.len() as f64 / self.signatures_no_mutator.len().max(1) as f64,
+            hottest,
+            self.redundant_pops,
+            100.0 * self.redundant_pops as f64 / (self.pops.max(1)) as f64,
+            self.mutator_states.len(),
+            self.lexicon_states.len(),
+            self.push_lexicon_epsilons,
+            self.push_mutator_epsilons,
+            self.push_consume_input,
+            self.pushes_kept,
+            self.max_queue,
+            queue_len,
+            self.corrections,
+            self.first_correction_pop
+                .map(|p| p.to_string())
+                .unwrap_or_else(|| "-".to_string()),
+        );
+    }
+}
+
+/// The set of search states already reached, and the cheapest way found to
+/// each — what turns the suggestion search from a walk of *paths* into a walk
+/// of *states*.
+///
+/// Two nodes that agree on input position, mutator state, lexicon state, flag
+/// state **and the output spelled so far** are interchangeable: every
+/// completion of one is a completion of the other, producing the same
+/// correction string at a weight that differs by exactly the difference
+/// between the two. So the dearer of the pair can only ever yield a
+/// worse-weighted copy of what the cheaper one yields, and dropping it loses
+/// no correction and no best weight.
+///
+/// Keying on the output string is what makes that argument hold, and is what
+/// separates this from the usual product-state visited set. Two paths that
+/// reach the same pair of transducer states having spelled *different* words
+/// stay apart, so distinct corrections are never collapsed into one — the
+/// failure mode that makes a naive visited set unusable here.
+///
+/// Weight-pushed error models make this matter enormously. An error model that
+/// has been determinised (the "expanded" build) offers roughly one path per
+/// state, so the distinction is invisible. One that has not — a plain union of
+/// components, which is 19x smaller on disk — offers combinatorially many
+/// paths to the same state, and a path-walk drowns in them.
+struct Closed {
+    /// Keys live in `arena`; a table entry only points at one. Interning them
+    /// this way keeps the whole structure to a handful of growing allocations
+    /// instead of one per state reached, which on an easy word is most of what
+    /// tracking states would otherwise cost.
+    table: hashbrown::HashTable<ClosedEntry>,
+    /// Concatenated keys, each `[input, mutator, lexicon, flags.., output..]`.
+    /// Flag state has a fixed width for the whole search, so the layout needs
+    /// no separator.
+    arena: Vec<u16>,
+    /// The key being looked up, rebuilt per query so lookups never allocate.
+    scratch: Vec<u16>,
+    hasher: hashbrown::DefaultHashBuilder,
+}
+
+struct ClosedEntry {
+    start: u32,
+    len: u32,
+    hash: u64,
+    weight: Weight,
+}
+
+impl Closed {
+    fn new() -> Closed {
+        Closed {
+            table: hashbrown::HashTable::new(),
+            arena: Vec::new(),
+            scratch: Vec::with_capacity(64),
+            hasher: hashbrown::DefaultHashBuilder::default(),
+        }
+    }
+
+    /// Flatten a node's search state into `scratch` and hash it.
+    ///
+    /// State indices are `u32` and everything else is 16 bits wide, so the key
+    /// is built out of `u16` halves — half the bytes to copy and to hash
+    /// compared with widening everything to `u32`.
+    #[inline(always)]
+    fn build_key(&mut self, node: &TreeNode) -> u64 {
+        use std::hash::BuildHasher;
+
+        self.scratch.clear();
+        for index in [
+            node.input_state.0,
+            node.mutator_state.0,
+            node.lexicon_state.0,
+        ] {
+            self.scratch.push(index as u16);
+            self.scratch.push((index >> 16) as u16);
+        }
+        self.scratch
+            .extend(node.flag_state.iter().map(|value| value.0 as u16));
+        self.scratch.extend(node.string.iter().map(|sym| sym.0));
+
+        self.hasher.hash_one(self.scratch.as_slice())
+    }
+
+    /// Whether this node is worth queueing: true unless some path already
+    /// reached the same state at no greater weight.
+    #[inline(always)]
+    fn admit(&mut self, node: &TreeNode) -> bool {
+        let hash = self.build_key(node);
+        // Split the borrow so the equality test can read the arena while the
+        // table is held mutably, keeping this to a single lookup.
+        let Closed {
+            table,
+            arena,
+            scratch,
+            ..
+        } = self;
+
+        if let Some(entry) = table.find_mut(hash, |entry| {
+            entry.hash == hash && arena[entry.start as usize..][..entry.len as usize] == scratch[..]
+        }) {
+            if entry.weight <= node.weight() {
+                return false;
+            }
+            entry.weight = node.weight();
+            return true;
+        }
+
+        let start = arena.len() as u32;
+        arena.extend_from_slice(scratch);
+        table.insert_unique(
+            hash,
+            ClosedEntry {
+                start,
+                len: scratch.len() as u32,
+                hash,
+                weight: node.weight(),
+            },
+            |entry| entry.hash,
+        );
+        true
+    }
+
+    /// Whether this node still carries the best known weight for its state, or
+    /// has been superseded by a cheaper path queued after it.
+    #[inline(always)]
+    fn is_current(&mut self, node: &TreeNode) -> bool {
+        let hash = self.build_key(node);
+        let Closed {
+            table,
+            arena,
+            scratch,
+            ..
+        } = self;
+
+        table
+            .find(hash, |entry| {
+                entry.hash == hash
+                    && arena[entry.start as usize..][..entry.len as usize] == scratch[..]
+            })
+            .is_none_or(|entry| entry.weight >= node.weight())
+    }
 }
 
 pub struct SpellerWorker<'c, T: Transducer, U: Transducer> {
@@ -40,6 +334,10 @@ pub struct SpellerWorker<'c, T: Transducer, U: Transducer> {
     /// When true, `input` already holds lexicon-alphabet symbols, so
     /// `lexicon_consume` skips the mutator-to-lexicon translator step.
     input_is_lexicon_alphabet: bool,
+    /// Prices candidates the way `suggest_case` will after the search, so the
+    /// n-best cutoff prunes in final (post-reweight) order. `None` on the
+    /// lexicon-only paths (`is_correct`/`analyze`), which never reweight.
+    reweight_ctx: Option<super::ReweightContext>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -75,7 +373,13 @@ where
             config,
             output_mode,
             input_is_lexicon_alphabet: false,
+            reweight_ctx: None,
         }
+    }
+
+    pub(crate) fn with_reweight_ctx(mut self, ctx: super::ReweightContext) -> Self {
+        self.reweight_ctx = Some(ctx);
+        self
     }
 
     /// Construct a worker whose `input` is already in the **lexicon** alphabet.
@@ -97,6 +401,7 @@ where
             config,
             output_mode,
             input_is_lexicon_alphabet: true,
+            reweight_ctx: None,
         }
     }
 
@@ -566,7 +871,10 @@ where
         let c = &self.config;
         let mut max_weight = c.max_weight.unwrap_or(Weight::MAX);
 
-        if let Some(beam) = c.beam {
+        // beam == 0 means disabled, matching `apply_weight_limits` and FFI
+        // behaviour. Under best-first traversal an active beam of zero would
+        // otherwise end the search the moment the best path is found.
+        if let Some(beam) = c.beam.filter(|beam| *beam > Weight::ZERO) {
             let candidate_weight = best_weight + beam;
 
             max_weight = match max_weight.partial_cmp(&candidate_weight).unwrap_or(Equal) {
@@ -670,26 +978,94 @@ where
         c
     }
 
+    /// Lower bound on what a node still has to pay to become a correction.
+    ///
+    /// Both transducers must end in a final state for the node to be accepted,
+    /// and the weight of getting there is charged to the path, so the two
+    /// backward distances add. Neither accounts for the remaining input, which
+    /// can only make the real cost higher — so this never overestimates, and
+    /// ordering, pruning and stopping on `weight + heuristic` all stay sound.
+    #[inline(always)]
+    fn heuristic(&self, node: &TreeNode) -> Weight {
+        if !self.config.astar_lookahead {
+            return Weight::ZERO;
+        }
+
+        let lexicon = self.speller.lexicon().distance_to_final(node.lexicon_state);
+        let mutator = self.speller.mutator().distance_to_final(node.mutator_state);
+
+        // A state that cannot reach a final state at all poisons the sum: the
+        // node is a dead end, sorts last, and gets pruned by the cutoff.
+        if lexicon == Weight::INFINITE || mutator == Weight::INFINITE {
+            Weight::INFINITE
+        } else {
+            lexicon + mutator
+        }
+    }
+
+    #[inline(always)]
+    fn ordered<'a>(&self, node: Recycled<'a, TreeNode>) -> OrderedNode<'a> {
+        let estimate = node.weight() + self.heuristic(&node);
+        OrderedNode { estimate, node }
+    }
+
     pub(crate) fn suggest(&self) -> Vec<Suggestion> {
         tracing::trace!("Beginning suggest");
 
         let pool = Pool::with_size_and_max(self.config.node_pool_size, self.config.node_pool_size);
-        let mut nodes = speller_start_node(&pool, self.state_size() as usize);
+        // A*: always expand the node with the cheapest `weight + heuristic`.
+        // Arc weights are non-negative and the heuristic is admissible, so the
+        // first time a final configuration is reached it is via a least-weight
+        // path, the n-best heap fills with good candidates early (tightening
+        // the cutoff), and the whole search can stop when the cheapest open
+        // estimate exceeds the cutoff.
+        let mut queue: BinaryHeap<OrderedNode> = BinaryHeap::with_capacity(256);
+        queue.extend(
+            speller_start_node(&pool, self.state_size() as usize)
+                .into_iter()
+                .map(|node| self.ordered(node)),
+        );
+        let mut scratch: Vec<Recycled<TreeNode>> = Vec::with_capacity(256);
         // Key on symbol sequences to avoid string_from_symbols in the hot loop.
         // Converted to SmolStr once after the loop.
         // Total weight and the error model's share of it, keyed by output form.
         let mut corrections: HashMap<Vec<SymbolNumber>, (Weight, Weight)> = HashMap::new();
         let mut best_weight = Weight::MAX;
         let key_table = self.speller.mutator().alphabet().key_table();
+        let alphabet = self.speller.lexicon().alphabet();
         let n_best = self.config.n_best.unwrap_or(usize::MAX);
 
-        // Max-heap tracking the n-best weights. The peek (max) is the cutoff.
+        // Max-heap tracking the n-best POST-REWEIGHT weights of distinct
+        // corrections. The peek (max) is the cutoff. Raw path weights may be
+        // compared against it because reweight penalties are non-negative:
+        // a partial path whose raw weight already exceeds the n-th best final
+        // weight cannot finish above it. Keying this heap on raw weights
+        // instead used to prune candidates that reweighting would have
+        // promoted into the n best.
         let mut weight_heap: BinaryHeap<Weight> = BinaryHeap::with_capacity(n_best.min(64));
+        let mut dl_buf: Vec<usize> = Vec::new();
 
         let mut iteration_count = 0usize;
+        let mut stats = SEARCH_STATS.then(SearchStats::default);
+        let mut closed = self.config.search_dedup.then(Closed::new);
 
-        while let Some(next_node) = nodes.pop() {
+        while let Some(OrderedNode {
+            estimate,
+            node: next_node,
+        }) = queue.pop()
+        {
             iteration_count += 1;
+            if let Some(s) = stats.as_mut() {
+                s.record_pop(&next_node);
+            }
+
+            // A cheaper path to this exact state was queued after this node
+            // was; that one carries everything this one could contribute.
+            if let Some(c) = closed.as_mut()
+                && !c.is_current(&next_node)
+            {
+                continue;
+            }
 
             let nth_best = if weight_heap.len() >= n_best {
                 weight_heap.peek().copied()
@@ -705,20 +1081,57 @@ where
                     .map(|s| &*key_table[s.0 as usize])
                     .collect();
                 tracing::warn!("{}: iteration count at {}", name, iteration_count);
-                tracing::warn!("Node count: {}", nodes.len());
+                tracing::warn!("Node count: {}", queue.len());
                 tracing::warn!("Node weight: {}", next_node.weight());
                 break;
             }
 
-            if !self.is_under_weight_limit(max_weight, next_node.weight()) {
-                continue;
+            if !self.is_under_weight_limit(max_weight, estimate) {
+                // No completion of the most promising open node can come in
+                // under the cutoff, and the cutoff only ever tightens — so the
+                // same holds for every other open node. Done.
+                break;
             }
 
-            self.lexicon_epsilons(&pool, max_weight, &next_node, &mut nodes);
-            self.mutator_epsilons(&pool, max_weight, &next_node, &mut nodes);
+            // `scratch` is drained at the end of every iteration, so these marks
+            // attribute each child to the expansion that produced it.
+            self.lexicon_epsilons(&pool, max_weight, &next_node, &mut scratch);
+            let lexicon_eps_mark = scratch.len();
+            self.mutator_epsilons(&pool, max_weight, &next_node, &mut scratch);
+            let mutator_eps_mark = scratch.len();
+            if let Some(s) = stats.as_mut() {
+                s.push_lexicon_epsilons += lexicon_eps_mark as u64;
+                s.push_mutator_epsilons += (mutator_eps_mark - lexicon_eps_mark) as u64;
+            }
 
-            if next_node.input_state.0 as usize != self.input.len() {
-                self.consume_input(&pool, max_weight, &next_node, &mut nodes);
+            let at_input_end = next_node.input_state.0 as usize == self.input.len();
+            if !at_input_end {
+                self.consume_input(&pool, max_weight, &next_node, &mut scratch);
+            }
+            if let Some(s) = stats.as_mut() {
+                s.push_consume_input += (scratch.len() - mutator_eps_mark) as u64;
+            }
+            let queue_before = queue.len();
+            // Children were filtered on their weight alone; the estimate also
+            // prices what they still owe, which drops dead ends outright. What
+            // survives that is queued only if it reaches a state no cheaper
+            // path has already reached.
+            queue.extend(
+                scratch
+                    .drain(..)
+                    .map(|node| self.ordered(node))
+                    .filter(|queued| self.is_under_weight_limit(max_weight, queued.estimate))
+                    .filter(|queued| {
+                        closed
+                            .as_mut()
+                            .is_none_or(|closed| closed.admit(&queued.node))
+                    }),
+            );
+            if let Some(s) = stats.as_mut() {
+                s.pushes_kept += (queue.len() - queue_before) as u64;
+                s.max_queue = s.max_queue.max(queue.len());
+            }
+            if !at_input_end {
                 continue;
             }
 
@@ -756,23 +1169,53 @@ where
                 if entry.0 > weight {
                     *entry = (weight, mutator_weight);
                 }
+                // The heap entry for this correction is left at its older,
+                // higher weight: a stale-high entry only loosens the cutoff,
+                // never over-tightens it. A second heap slot here would let one
+                // correction occupy two of the n, over-tightening the cutoff
+                // below the n-th best *distinct* correction.
             } else {
+                let final_weight = match &self.reweight_ctx {
+                    Some(ctx) => {
+                        let value = alphabet.string_from_symbols(&next_node.string);
+                        weight + ctx.additional_weight_for(&value, mutator_weight, &mut dl_buf)
+                    }
+                    None => weight,
+                };
                 corrections.insert(next_node.string.clone(), (weight, mutator_weight));
-            }
+                if let Some(s) = stats.as_mut() {
+                    s.corrections += 1;
+                    s.first_correction_pop.get_or_insert(s.pops);
+                }
 
-            // Update the n-best weight heap for pruning
-            if weight_heap.len() < n_best {
-                weight_heap.push(weight);
-            } else if let Some(&worst) = weight_heap.peek() {
-                if weight < worst {
-                    weight_heap.pop();
-                    weight_heap.push(weight);
+                if weight_heap.len() < n_best {
+                    weight_heap.push(final_weight);
+                } else if let Some(&worst) = weight_heap.peek() {
+                    if final_weight < worst {
+                        weight_heap.pop();
+                        weight_heap.push(final_weight);
+                    }
                 }
             }
         }
 
+        tracing::debug!(
+            heuristic = self.config.astar_lookahead,
+            iterations = iteration_count,
+            queued = queue.len(),
+            "suggest search finished"
+        );
+
+        if let Some(s) = stats.as_ref() {
+            let word: SmolStr = self
+                .input
+                .iter()
+                .map(|sym| &*key_table[sym.0 as usize])
+                .collect();
+            s.report(&word, queue.len());
+        }
+
         // Convert symbol sequences to strings and build final suggestions
-        let alphabet = self.speller.lexicon().alphabet();
         let string_corrections: HashMap<SmolStr, (Weight, Weight)> = corrections
             .into_iter()
             .map(|(syms, w)| (alphabet.string_from_symbols(&syms), w))
@@ -885,9 +1328,9 @@ where
 
         c.sort();
 
-        if let Some(n) = self.config.n_best {
-            c.truncate(n);
-        }
+        // No n-best truncation here: these weights are pre-reweight, and
+        // cutting on them drops candidates the reweight step would promote
+        // into the n best. `suggest_case` truncates after reweighting.
         c
     }
 }

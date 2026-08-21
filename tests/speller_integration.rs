@@ -1,10 +1,12 @@
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
 use divvun_fst::speller::{HfstSpeller, Speller, SpellerConfig};
+use divvun_fst::transducer::Transducer;
 use divvun_fst::transducer::TransducerLoader;
 use divvun_fst::transducer::thfst::MmapThfstTransducer;
-use divvun_fst::types::Weight;
+use divvun_fst::types::{SymbolNumber, TransitionTableIndex, Weight};
 use divvun_fst::vfs::Fs;
 
 const TARGET_TABLE: u32 = 2_147_483_648; // 0x80000000
@@ -284,6 +286,108 @@ fn build_mutator(dir: &Path) {
     write_trans_entry(&mut tr, 8, 8, 0, 0.0); // [23] ä→ä
     write_trans_entry(&mut tr, 8, 2, 0, 5.0); // [24] ä→a
     write_trans_entry(&mut tr, 8, 0, 0, 7.0); // [25] ä→ε
+
+    write_thfst(dir, &build_alphabet_json(symbols), &idx, &tr);
+}
+
+/// Lexicon for the n-best pruning-order regression: "xbc" (w=0), "abxc" (w=0).
+///
+/// ```text
+/// Alphabet: [eps, a, b, c, x]  (symbols 0-4)
+///
+/// (0)--a-->(1)--b-->(2)--x-->(3)--c-->(4) FINAL w=0   "abxc"
+///   |
+///   x-->(5)--b-->(6)--c-->(7) FINAL w=0               "xbc"
+/// ```
+fn build_reorder_lexicon(dir: &Path) {
+    // eps=0, a=1, b=2, c=3, x=4
+    let symbols = &["@_EPSILON_SYMBOL_@", "a", "b", "c", "x"];
+    let n = symbols.len(); // 5 → 6 entries per state
+
+    let mut idx = Vec::new();
+
+    // State 0 (start) @0
+    write_index_empty(&mut idx); // header, not final
+    write_index_empty(&mut idx); // eps
+    write_index_entry(&mut idx, 1, TARGET_TABLE); // a → trans[0]
+    write_index_empty(&mut idx); // b
+    write_index_empty(&mut idx); // c
+    write_index_entry(&mut idx, 4, TARGET_TABLE + 1); // x → trans[1]
+
+    // State 1 ("a") @6
+    write_index_empty(&mut idx);
+    write_empties(&mut idx, 2); // eps, a
+    write_index_entry(&mut idx, 2, TARGET_TABLE + 2); // b → trans[2]
+    write_empties(&mut idx, 2); // c, x
+
+    // State 2 ("ab") @12
+    write_index_empty(&mut idx);
+    write_empties(&mut idx, 4); // eps, a, b, c
+    write_index_entry(&mut idx, 4, TARGET_TABLE + 3); // x → trans[3]
+
+    // State 3 ("abx") @18
+    write_index_empty(&mut idx);
+    write_empties(&mut idx, 3); // eps, a, b
+    write_index_entry(&mut idx, 3, TARGET_TABLE + 4); // c → trans[4]
+    write_index_empty(&mut idx); // x
+
+    // State 4 ("abxc") FINAL w=0 @24
+    write_index_final(&mut idx, 0.0);
+    write_empties(&mut idx, n);
+
+    // State 5 ("x") @30
+    write_index_empty(&mut idx);
+    write_empties(&mut idx, 2); // eps, a
+    write_index_entry(&mut idx, 2, TARGET_TABLE + 5); // b → trans[5]
+    write_empties(&mut idx, 2); // c, x
+
+    // State 6 ("xb") @36
+    write_index_empty(&mut idx);
+    write_empties(&mut idx, 3); // eps, a, b
+    write_index_entry(&mut idx, 3, TARGET_TABLE + 6); // c → trans[6]
+    write_index_empty(&mut idx); // x
+
+    // State 7 ("xbc") FINAL w=0 @42
+    write_index_final(&mut idx, 0.0);
+    write_empties(&mut idx, n);
+
+    let mut tr = Vec::new();
+    write_trans_entry(&mut tr, 1, 1, 6, 0.0); // [0] a→a → state 1
+    write_trans_entry(&mut tr, 4, 4, 30, 0.0); // [1] x→x → state 5
+    write_trans_entry(&mut tr, 2, 2, 12, 0.0); // [2] b→b → state 2
+    write_trans_entry(&mut tr, 4, 4, 18, 0.0); // [3] x→x → state 3
+    write_trans_entry(&mut tr, 3, 3, 24, 0.0); // [4] c→c → state 4
+    write_trans_entry(&mut tr, 2, 2, 36, 0.0); // [5] b→b → state 6
+    write_trans_entry(&mut tr, 3, 3, 42, 0.0); // [6] c→c → state 7
+
+    write_thfst(dir, &build_alphabet_json(symbols), &idx, &tr);
+}
+
+/// Mutator for the n-best pruning-order regression.
+///
+/// Identity a/b/c/x (w=0), substitution a→x (w=5), insertion ε→x (w=8).
+/// Single start+final state (w=0), self-loops.
+fn build_reorder_mutator(dir: &Path) {
+    // eps=0, a=1, b=2, c=3, x=4
+    let symbols = &["@_EPSILON_SYMBOL_@", "a", "b", "c", "x"];
+
+    let mut idx = Vec::new();
+
+    // State 0: header + 5 symbol slots
+    write_index_final(&mut idx, 0.0);
+    write_index_entry(&mut idx, 0, TARGET_TABLE); // eps → trans[0]
+    write_index_entry(&mut idx, 1, TARGET_TABLE + 1); // a → trans[1]
+    write_index_entry(&mut idx, 2, TARGET_TABLE + 3); // b → trans[3]
+    write_index_entry(&mut idx, 3, TARGET_TABLE + 4); // c → trans[4]
+    write_index_entry(&mut idx, 4, TARGET_TABLE + 5); // x → trans[5]
+
+    let mut tr = Vec::new();
+    write_trans_entry(&mut tr, 0, 4, 0, 8.0); // [0] ε→x insertion
+    write_trans_entry(&mut tr, 1, 1, 0, 0.0); // [1] a→a
+    write_trans_entry(&mut tr, 1, 4, 0, 5.0); // [2] a→x substitution
+    write_trans_entry(&mut tr, 2, 2, 0, 0.0); // [3] b→b
+    write_trans_entry(&mut tr, 3, 3, 0, 0.0); // [4] c→c
+    write_trans_entry(&mut tr, 4, 4, 0, 0.0); // [5] x→x
 
     write_thfst(dir, &build_alphabet_json(symbols), &idx, &tr);
 }
@@ -2141,6 +2245,50 @@ fn test_max_weight_applied_after_reweighting() {
 }
 
 // ===========================================================================
+// n-best must be applied in post-reweight order (recall regression)
+// ===========================================================================
+
+// The n-best cutoff used to operate on raw path weights, both as the search's
+// pruning threshold and as a per-worker truncation before reweighting ran. A
+// candidate that reweighting would promote into the n best was cut before the
+// reweight step ever saw it: on the sme corpus, corrections with a final rank
+// as low as 12 were absent from an n-best=100 run.
+//
+// Fixture: input "abc". "xbc" = start substitution, raw 5, +10 start penalty
+// → 15. "abxc" = mid insertion, raw 8, +5 mid penalty → 13. Raw order and
+// final order disagree across the n-best=1 boundary.
+#[test]
+fn test_n_best_uses_post_reweight_order() {
+    let base = fixtures_dir();
+    let s = load_speller(
+        &base.join("reorder-lexicon.thfst"),
+        &base.join("reorder-mutator.thfst"),
+    );
+
+    let cfg = SpellerConfig {
+        n_best: Some(1),
+        ..reweight_config()
+    };
+    let suggs = suggestion_values(&s, "abc", &cfg);
+    assert_eq!(
+        suggs.iter().map(|(v, _)| v.as_str()).collect::<Vec<_>>(),
+        vec!["abxc"],
+        "n-best truncation must happen after reweighting: {suggs:?}"
+    );
+
+    let cfg2 = SpellerConfig {
+        n_best: Some(2),
+        ..reweight_config()
+    };
+    let suggs = suggestion_values(&s, "abc", &cfg2);
+    assert_eq!(
+        suggs.iter().map(|(v, _)| v.as_str()).collect::<Vec<_>>(),
+        vec!["abxc", "xbc"],
+        "post-reweight order: mid insertion (8+5) beats start substitution (5+10): {suggs:?}"
+    );
+}
+
+// ===========================================================================
 // Fixture regeneration
 // ===========================================================================
 
@@ -2174,6 +2322,12 @@ fn rebuild_fixtures() {
             "eps-lexicon.thfst",
             "eps-mutator.thfst",
         ),
+        (
+            build_reorder_lexicon,
+            build_reorder_mutator,
+            "reorder-lexicon.thfst",
+            "reorder-mutator.thfst",
+        ),
     ] {
         let lex = base.join(lex_name);
         let mut_ = base.join(mut_name);
@@ -2184,4 +2338,478 @@ fn rebuild_fixtures() {
     }
 
     eprintln!("Rebuilt all fixtures at {}", base.display());
+}
+
+// ===========================================================================
+// A* heuristic: backward shortest distance
+// ===========================================================================
+
+/// Every state the search can stand in, with its outgoing arcs, discovered
+/// through the public traversal API — i.e. exactly the sub-automaton the
+/// suggestion search can walk, with none of the raw-table reasoning the
+/// heuristic's own enumeration does.
+fn reachable_arcs<T: Transducer>(t: &T) -> HashMap<u32, Vec<(u32, f32)>> {
+    let symbol_count = t.alphabet().key_table().len();
+    let mut arcs: HashMap<u32, Vec<(u32, f32)>> = HashMap::new();
+    let mut pending = vec![0u32];
+
+    while let Some(state) = pending.pop() {
+        if arcs.contains_key(&state) {
+            continue;
+        }
+
+        let address = TransitionTableIndex(state);
+        let lookup = TransitionTableIndex(state.wrapping_add(1));
+        let mut out: Vec<(u32, f32)> = Vec::new();
+
+        if t.has_epsilons_or_flags(lookup) {
+            if let Some(start) = t.next(address, SymbolNumber(0)) {
+                let mut record = start;
+                while let Some(transition) = t.take_epsilons_and_flags(record) {
+                    if let (Some(target), Some(weight)) = (transition.target(), transition.weight())
+                    {
+                        out.push((target.0, weight.0));
+                    }
+                    record = TransitionTableIndex(record.0 + 1);
+                }
+            }
+        }
+
+        for symbol in 1..symbol_count as u16 {
+            let symbol = SymbolNumber(symbol);
+            if !t.has_transitions(lookup, Some(symbol)) {
+                continue;
+            }
+            let Some(start) = t.next(address, symbol) else {
+                continue;
+            };
+            let mut record = start;
+            while let Some(transition) = t.take_non_epsilons(record, symbol) {
+                if let (Some(target), Some(weight)) = (transition.target(), transition.weight()) {
+                    out.push((target.0, weight.0));
+                }
+                record = TransitionTableIndex(record.0 + 1);
+            }
+        }
+
+        for (target, _) in &out {
+            pending.push(*target);
+        }
+        arcs.insert(state, out);
+    }
+
+    arcs
+}
+
+/// Brute-force backward shortest distance over that sub-automaton: relax every
+/// arc until nothing moves. Slow, obvious, and independent of the production
+/// implementation.
+fn reference_distances<T: Transducer>(t: &T) -> HashMap<u32, f32> {
+    let arcs = reachable_arcs(t);
+    let mut dist: HashMap<u32, f32> = HashMap::new();
+
+    for state in arcs.keys() {
+        let address = TransitionTableIndex(*state);
+        if t.is_final(address) {
+            if let Some(weight) = t.final_weight(address) {
+                dist.insert(*state, weight.0);
+            }
+        }
+    }
+
+    loop {
+        let mut changed = false;
+        for (state, out) in &arcs {
+            for (target, weight) in out {
+                let Some(&reachable) = dist.get(target) else {
+                    continue;
+                };
+                let candidate = reachable + weight;
+                if candidate < dist.get(state).copied().unwrap_or(f32::INFINITY) {
+                    dist.insert(*state, candidate);
+                    changed = true;
+                }
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+
+    dist
+}
+
+/// The heuristic must never claim a state is more expensive to finish from than
+/// it really is — that is the whole basis for pruning and stopping on it.
+fn assert_admissible<T: Transducer>(t: &T, label: &str) {
+    let reference = reference_distances(t);
+    let arcs = reachable_arcs(t);
+    let mut informative = false;
+
+    for state in arcs.keys() {
+        let claimed = t.distance_to_final(TransitionTableIndex(*state)).0;
+        let truth = reference.get(state).copied().unwrap_or(f32::INFINITY);
+
+        assert!(
+            claimed <= truth + 1e-6,
+            "{label}: state {state} claims {claimed} to reach a final state, but the real cost is {truth}"
+        );
+
+        if claimed > 0.0 && claimed.is_finite() {
+            informative = true;
+        }
+
+        // Where the search's own view of the transducer is the whole story, the
+        // precomputed value should be exact, not merely a bound.
+        if truth.is_finite() {
+            assert!(
+                (claimed - truth).abs() < 1e-6,
+                "{label}: state {state} should cost exactly {truth} to finish, got {claimed}"
+            );
+        }
+    }
+
+    assert!(
+        informative,
+        "{label}: every state claims zero — the heuristic is not being computed"
+    );
+}
+
+#[test]
+fn test_heuristic_matches_brute_force_lexicon() {
+    let s = test_speller();
+    assert_admissible(s.lexicon(), "lexicon");
+}
+
+#[test]
+fn test_heuristic_matches_brute_force_mutator() {
+    let s = test_speller();
+    // The mutator's single state is final at weight 0, so it is uninformative
+    // by construction; assert the bound holds rather than that it says anything.
+    let reference = reference_distances(s.mutator());
+    for (state, truth) in reference {
+        let claimed = s.mutator().distance_to_final(TransitionTableIndex(state)).0;
+        assert!(
+            claimed <= truth + 1e-6,
+            "mutator: state {state} claims {claimed}, real cost {truth}"
+        );
+    }
+}
+
+#[test]
+fn test_heuristic_matches_brute_force_flag_lexicon() {
+    let s = flag_speller();
+    let t = s.lexicon();
+    let reference = reference_distances(t);
+    // Flag arcs are enumerated wider than the search can walk them, so the
+    // value may undershoot here — it must never overshoot.
+    for (state, truth) in reference {
+        let claimed = t.distance_to_final(TransitionTableIndex(state)).0;
+        assert!(
+            claimed <= truth + 1e-6,
+            "flag lexicon: state {state} claims {claimed}, real cost {truth}"
+        );
+    }
+}
+
+#[test]
+fn test_heuristic_lexicon_known_values() {
+    let s = test_speller();
+    let t = s.lexicon();
+
+    // "cart" is final at weight 1, and is the only word reachable from state 40.
+    assert_eq!(t.distance_to_final(TransitionTableIndex(40)).0, 1.0);
+    // From the start, "cat" finishes at zero.
+    assert_eq!(t.distance_to_final(TransitionTableIndex(0)).0, 0.0);
+    // State 32 is "car" (final, weight 0).
+    assert_eq!(t.distance_to_final(TransitionTableIndex(32)).0, 0.0);
+}
+
+#[test]
+fn test_heuristic_dead_end_is_infinite() {
+    let s = test_speller();
+    let t = s.lexicon();
+    // Index entries that are nobody's state can reach nothing; the search never
+    // asks about them, but the value must be the "no path" one, not a bound
+    // that would let a dead path look promising.
+    assert_eq!(
+        t.distance_to_final(TransitionTableIndex(1)).0,
+        f32::INFINITY
+    );
+}
+
+/// The heuristic reorders the search; it must not change what the search finds.
+fn assert_same_suggestions(
+    s: &Arc<HfstSpeller<MmapThfstTransducer, MmapThfstTransducer>>,
+    words: &[&str],
+    base: &SpellerConfig,
+    label: &str,
+) {
+    for word in words {
+        let with = SpellerConfig {
+            astar_lookahead: true,
+            ..base.clone()
+        };
+        let without = SpellerConfig {
+            astar_lookahead: false,
+            ..base.clone()
+        };
+
+        let a = suggestion_values(s, word, &with);
+        let b = suggestion_values(s, word, &without);
+
+        assert_eq!(
+            a, b,
+            "{label}: '{word}' differs with and without the heuristic:\n  A* {a:?}\n  best-first {b:?}"
+        );
+    }
+}
+
+#[test]
+fn test_heuristic_agrees_with_plain_best_first() {
+    let words = &[
+        "kat", "cet", "cad", "dog", "ca", "c", "ct", "cart", "cat", "kart", "kaart", "caat",
+        "ccccc", "kät", "cär", "carte", "art", "at", "",
+    ];
+
+    assert_same_suggestions(&test_speller(), words, &raw_config(), "raw");
+    assert_same_suggestions(&test_speller(), words, &reweight_config(), "reweight");
+    assert_same_suggestions(
+        &test_speller(),
+        words,
+        &SpellerConfig {
+            n_best: Some(1),
+            ..raw_config()
+        },
+        "n_best=1",
+    );
+    assert_same_suggestions(
+        &test_speller(),
+        words,
+        &SpellerConfig {
+            n_best: None,
+            ..raw_config()
+        },
+        "n_best=none",
+    );
+    assert_same_suggestions(
+        &test_speller(),
+        words,
+        &SpellerConfig {
+            beam: Some(Weight(6.0)),
+            ..raw_config()
+        },
+        "beam",
+    );
+    assert_same_suggestions(
+        &test_speller(),
+        words,
+        &SpellerConfig {
+            max_weight: Some(Weight(8.0)),
+            ..raw_config()
+        },
+        "max_weight",
+    );
+}
+
+/// Walking states instead of paths collapses the search; it must not change
+/// what the search finds.
+fn assert_same_suggestions_dedup(
+    s: &Arc<HfstSpeller<MmapThfstTransducer, MmapThfstTransducer>>,
+    words: &[&str],
+    base: &SpellerConfig,
+    label: &str,
+) {
+    for word in words {
+        let with = SpellerConfig {
+            search_dedup: true,
+            ..base.clone()
+        };
+        let without = SpellerConfig {
+            search_dedup: false,
+            ..base.clone()
+        };
+
+        let a = suggestion_values(s, word, &with);
+        let b = suggestion_values(s, word, &without);
+
+        assert_eq!(
+            a, b,
+            "{label}: '{word}' differs with and without search dedup:\n  dedup {a:?}\n  paths {b:?}"
+        );
+    }
+}
+
+/// Two paths that arrive at the same search state having spelled the same
+/// output are interchangeable, so keeping only the cheapest must be invisible
+/// in the results. The fixtures that matter most are the ones whose mutators
+/// offer more than one route to a state: flags, identity arcs and epsilons.
+#[test]
+fn test_search_dedup_agrees_with_path_walk() {
+    let words = &[
+        "kat", "cet", "cad", "dog", "ca", "c", "ct", "cart", "cat", "kart", "kaart", "caat",
+        "ccccc", "kät", "cär", "carte", "art", "at", "",
+    ];
+
+    assert_same_suggestions_dedup(&test_speller(), words, &raw_config(), "raw");
+    assert_same_suggestions_dedup(&test_speller(), words, &reweight_config(), "reweight");
+    assert_same_suggestions_dedup(
+        &test_speller(),
+        words,
+        &SpellerConfig {
+            n_best: Some(1),
+            ..raw_config()
+        },
+        "n_best=1",
+    );
+    assert_same_suggestions_dedup(
+        &test_speller(),
+        words,
+        &SpellerConfig {
+            n_best: None,
+            ..raw_config()
+        },
+        "n_best=none",
+    );
+    assert_same_suggestions_dedup(
+        &test_speller(),
+        words,
+        &SpellerConfig {
+            beam: Some(Weight(6.0)),
+            ..raw_config()
+        },
+        "beam",
+    );
+
+    let short = &["cat", "car", "cart", "kat", "cet", "cxt", "ct", "cattt"];
+    assert_same_suggestions_dedup(&flag_speller(), short, &raw_config(), "flag");
+    assert_same_suggestions_dedup(&identity_speller(), short, &raw_config(), "identity");
+    assert_same_suggestions_dedup(&eps_speller(), short, &raw_config(), "eps");
+
+    let base = fixtures_dir();
+    let reorder = load_speller(
+        &base.join("reorder-lexicon.thfst"),
+        &base.join("reorder-mutator.thfst"),
+    );
+    assert_same_suggestions_dedup(
+        &reorder,
+        &["abc", "xbc", "abxc", "abx", "ab"],
+        &reweight_config(),
+        "reorder",
+    );
+}
+
+#[test]
+fn test_heuristic_agrees_on_other_fixtures() {
+    let words = &["cat", "car", "cart", "kat", "cet", "cxt", "ct", "cattt"];
+
+    assert_same_suggestions(&flag_speller(), words, &raw_config(), "flag");
+    assert_same_suggestions(&identity_speller(), words, &raw_config(), "identity");
+    assert_same_suggestions(&eps_speller(), words, &raw_config(), "eps");
+
+    let base = fixtures_dir();
+    let reorder = load_speller(
+        &base.join("reorder-lexicon.thfst"),
+        &base.join("reorder-mutator.thfst"),
+    );
+    assert_same_suggestions(
+        &reorder,
+        &["abc", "xbc", "abxc", "abx", "ab"],
+        &reweight_config(),
+        "reorder",
+    );
+}
+
+/// Lexicon whose middle state lives in the *transition* table rather than the
+/// index table — the `p + TARGET_TABLE` addressing, where record `p` is the
+/// state's head and its arcs start at `p + 1`.
+///
+/// ```text
+/// Alphabet: [eps, a, b, c]
+/// (0) --a/1--> (transition-table state) --b/2--> (5) FINAL w=3     "ab" = 6
+/// ```
+fn build_trans_state_lexicon(dir: &Path) {
+    let symbols = &["@_EPSILON_SYMBOL_@", "a", "b", "c"];
+    let n = symbols.len(); // 4 → 5 entries per state
+
+    let mut idx = Vec::new();
+
+    // State 0 @0: a → trans[0]
+    write_index_empty(&mut idx); // [0] header, not final
+    write_index_empty(&mut idx); // [1] eps
+    write_index_entry(&mut idx, 1, TARGET_TABLE); // [2] a
+    write_empties(&mut idx, 2); // [3] b, [4] c
+
+    // State @5: final w=3
+    write_index_final(&mut idx, 3.0);
+    write_empties(&mut idx, n);
+
+    let mut tr = Vec::new();
+    // [0] a→a, into the transition-table state headed at record 1
+    write_trans_entry(&mut tr, 1, 1, TARGET_TABLE + 1, 1.0);
+    // [1] that state's head record: not final
+    write_trans_entry(&mut tr, 0xFFFF, 0xFFFF, 0xFFFF_FFFF, 0.0);
+    // [2] its only arc: b→b into index state 5
+    write_trans_entry(&mut tr, 2, 2, 5, 2.0);
+    // [3] closing head record, which ends the block
+    write_trans_entry(&mut tr, 0xFFFF, 0xFFFF, 0xFFFF_FFFF, 0.0);
+
+    write_thfst(dir, &build_alphabet_json(symbols), &idx, &tr);
+}
+
+/// Identity-only mutator over the same alphabet.
+fn build_trans_state_mutator(dir: &Path) {
+    let symbols = &["@_EPSILON_SYMBOL_@", "a", "b", "c"];
+
+    let mut idx = Vec::new();
+    write_index_final(&mut idx, 0.0);
+    write_index_empty(&mut idx); // no eps
+    write_index_entry(&mut idx, 1, TARGET_TABLE);
+    write_index_entry(&mut idx, 2, TARGET_TABLE + 1);
+    write_index_entry(&mut idx, 3, TARGET_TABLE + 2);
+
+    let mut tr = Vec::new();
+    write_trans_entry(&mut tr, 1, 1, 0, 0.0);
+    write_trans_entry(&mut tr, 2, 2, 0, 0.0);
+    write_trans_entry(&mut tr, 3, 3, 0, 0.0);
+
+    write_thfst(dir, &build_alphabet_json(symbols), &idx, &tr);
+}
+
+#[test]
+fn test_heuristic_handles_transition_table_states() {
+    let dir = tempfile::tempdir().unwrap();
+    let lexicon_dir = dir.path().join("lexicon.thfst");
+    let mutator_dir = dir.path().join("mutator.thfst");
+    std::fs::create_dir_all(&lexicon_dir).unwrap();
+    std::fs::create_dir_all(&mutator_dir).unwrap();
+    build_trans_state_lexicon(&lexicon_dir);
+    build_trans_state_mutator(&mutator_dir);
+
+    let s = load_speller(&lexicon_dir, &mutator_dir);
+    let t = s.lexicon();
+
+    // The fixture only makes its point if the search really does route through
+    // a transition-table state.
+    assert!(
+        s.clone().is_correct("ab"),
+        "fixture lexicon should accept ab"
+    );
+
+    assert_admissible(t, "transition-table lexicon");
+
+    assert_eq!(
+        t.distance_to_final(TransitionTableIndex(0)).0,
+        6.0,
+        "start: a (1) + b (2) + final (3)"
+    );
+    assert_eq!(
+        t.distance_to_final(TransitionTableIndex(TARGET_TABLE + 1))
+            .0,
+        5.0,
+        "transition-table state: b (2) + final (3)"
+    );
+    assert_eq!(t.distance_to_final(TransitionTableIndex(5)).0, 3.0);
+
+    assert_same_suggestions(&s, &["ab", "a", "abc", "b", "ac"], &raw_config(), "trans");
 }

@@ -11,7 +11,7 @@ pub mod transition_table;
 use std::borrow::Cow;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use memmap2::Mmap;
 
@@ -21,6 +21,7 @@ use super::alphabet::TransducerAlphabet;
 use super::symbol_transition::SymbolTransition;
 use super::{Transducer, TransducerError, TransducerLoader};
 use crate::constants::{INDEX_TABLE_SIZE, TARGET_TABLE, TRANS_TABLE_SIZE};
+use crate::transducer::heuristic::BackwardDistance;
 use crate::transducer::hfst::index_table::MappedIndexTable;
 use crate::transducer::hfst::transition_table::MappedTransitionTable;
 use crate::types::{HeaderFlag, SymbolNumber, TransitionTableIndex, Weight};
@@ -32,6 +33,55 @@ pub struct HfstTransducer {
     alphabet: TransducerAlphabet,
     pub(crate) index_table: MappedIndexTable,
     pub(crate) transition_table: MappedTransitionTable,
+    /// Backward shortest distances, computed on first use by the suggestion
+    /// search and kept for the transducer's lifetime.
+    distances: OnceLock<BackwardDistance>,
+}
+
+impl crate::transducer::heuristic::BackwardTables for HfstTransducer {
+    fn index_len(&self) -> u32 {
+        self.index_table.size.0
+    }
+
+    fn trans_len(&self) -> u32 {
+        self.transition_table.size.0
+    }
+
+    fn index_input_symbol(&self, i: u32) -> Option<SymbolNumber> {
+        self.index_table.input_symbol(TransitionTableIndex(i))
+    }
+
+    fn index_target(&self, i: u32) -> Option<TransitionTableIndex> {
+        self.index_table.target(TransitionTableIndex(i))
+    }
+
+    fn index_final_weight(&self, i: u32) -> Option<Weight> {
+        self.index_table.final_weight(TransitionTableIndex(i))
+    }
+
+    fn index_is_final(&self, i: u32) -> bool {
+        self.index_table.is_final(TransitionTableIndex(i))
+    }
+
+    fn trans_input_symbol(&self, i: u32) -> Option<SymbolNumber> {
+        self.transition_table.input_symbol(TransitionTableIndex(i))
+    }
+
+    fn trans_target(&self, i: u32) -> Option<TransitionTableIndex> {
+        self.transition_table.target(TransitionTableIndex(i))
+    }
+
+    fn trans_weight(&self, i: u32) -> Option<Weight> {
+        self.transition_table.weight(TransitionTableIndex(i))
+    }
+
+    fn trans_is_final(&self, i: u32) -> bool {
+        self.transition_table.is_final(TransitionTableIndex(i))
+    }
+
+    fn is_flag_symbol(&self, symbol: SymbolNumber) -> bool {
+        self.alphabet.is_flag(symbol)
+    }
 }
 
 impl fmt::Debug for HfstTransducer {
@@ -133,6 +183,7 @@ impl HfstTransducer {
             alphabet,
             index_table,
             transition_table: trans_table,
+            distances: OnceLock::new(),
         })
     }
 
@@ -154,6 +205,13 @@ impl HfstTransducer {
 
 impl Transducer for HfstTransducer {
     const FILE_EXT: &'static str = "hfst";
+
+    #[inline(always)]
+    fn distance_to_final(&self, i: TransitionTableIndex) -> Weight {
+        self.distances
+            .get_or_init(|| BackwardDistance::compute(self))
+            .get(i)
+    }
 
     #[inline(always)]
     fn is_final(&self, i: TransitionTableIndex) -> bool {

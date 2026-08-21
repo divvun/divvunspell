@@ -250,6 +250,13 @@ impl FromForeign<*const std::ffi::c_void, SpellerConfig> for SpellerConfigMarsha
             node_pool_size: config.node_pool_size,
             recase: true,
             completion_marker: None,
+            // Deliberately not exposed across the boundary: the heuristic
+            // changes how fast the search runs, never what it returns.
+            astar_lookahead: SpellerConfig::default().astar_lookahead,
+            // Likewise: collapsing paths that arrive at the same search state
+            // having spelled the same output changes what the search costs,
+            // not what it finds.
+            search_dedup: SpellerConfig::default().search_dedup,
             verbose: config.verbose != 0,
         };
 

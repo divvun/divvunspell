@@ -1,6 +1,8 @@
 use std::path::Path;
+use std::sync::OnceLock;
 
 use crate::constants::TARGET_TABLE;
+use crate::transducer::heuristic::BackwardDistance;
 use crate::transducer::symbol_transition::SymbolTransition;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 
@@ -21,6 +23,9 @@ pub struct ThfstChunkedTransducer {
     transition_tables: Vec<TransitionTable<memmap2::Mmap>>,
     transitions_per_chunk: TransitionTableIndex,
     alphabet: TransducerAlphabet,
+    /// Backward shortest distances, computed on first use by the suggestion
+    /// search and kept for the transducer's lifetime.
+    distances: OnceLock<BackwardDistance>,
 }
 
 /// Type alias for memory-mapped chunked THFST transducer.
@@ -42,8 +47,73 @@ macro_rules! index_rel_index {
     }};
 }
 
+impl crate::transducer::heuristic::BackwardTables for ThfstChunkedTransducer {
+    fn index_len(&self) -> u32 {
+        self.index_tables.iter().map(|t| t.size.0).sum()
+    }
+
+    fn trans_len(&self) -> u32 {
+        self.transition_tables.iter().map(|t| t.size.0).sum()
+    }
+
+    fn index_input_symbol(&self, i: u32) -> Option<SymbolNumber> {
+        let (page, index) = index_rel_index!(self, TransitionTableIndex(i));
+        self.index_tables.get(page)?.input_symbol(index)
+    }
+
+    fn index_target(&self, i: u32) -> Option<TransitionTableIndex> {
+        let (page, index) = index_rel_index!(self, TransitionTableIndex(i));
+        self.index_tables.get(page)?.target(index)
+    }
+
+    fn index_final_weight(&self, i: u32) -> Option<Weight> {
+        let (page, index) = index_rel_index!(self, TransitionTableIndex(i));
+        self.index_tables.get(page)?.final_weight(index)
+    }
+
+    fn index_is_final(&self, i: u32) -> bool {
+        let (page, index) = index_rel_index!(self, TransitionTableIndex(i));
+        self.index_tables
+            .get(page)
+            .is_some_and(|table| table.is_final(index))
+    }
+
+    fn trans_input_symbol(&self, i: u32) -> Option<SymbolNumber> {
+        let (page, index) = transition_rel_index!(self, TransitionTableIndex(i));
+        self.transition_tables.get(page)?.input_symbol(index)
+    }
+
+    fn trans_target(&self, i: u32) -> Option<TransitionTableIndex> {
+        let (page, index) = transition_rel_index!(self, TransitionTableIndex(i));
+        self.transition_tables.get(page)?.target(index)
+    }
+
+    fn trans_weight(&self, i: u32) -> Option<Weight> {
+        let (page, index) = transition_rel_index!(self, TransitionTableIndex(i));
+        self.transition_tables.get(page)?.weight(index)
+    }
+
+    fn trans_is_final(&self, i: u32) -> bool {
+        let (page, index) = transition_rel_index!(self, TransitionTableIndex(i));
+        self.transition_tables
+            .get(page)
+            .is_some_and(|table| table.is_final(index))
+    }
+
+    fn is_flag_symbol(&self, symbol: SymbolNumber) -> bool {
+        self.alphabet.is_flag(symbol)
+    }
+}
+
 impl Transducer for ThfstChunkedTransducer {
     const FILE_EXT: &'static str = "thfst";
+
+    #[inline(always)]
+    fn distance_to_final(&self, i: TransitionTableIndex) -> Weight {
+        self.distances
+            .get_or_init(|| BackwardDistance::compute(self))
+            .get(i)
+    }
 
     #[inline(always)]
     fn alphabet(&self) -> &TransducerAlphabet {
@@ -283,6 +353,7 @@ impl<F: vfs::File> TransducerLoader<F> for ThfstChunkedTransducer {
             index_tables,
             transition_tables,
             alphabet,
+            distances: OnceLock::new(),
         };
 
         tracing::debug!("{:#?}", transducer);

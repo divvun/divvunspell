@@ -9,6 +9,7 @@ pub mod hfst;
 pub mod thfst;
 
 mod alphabet;
+pub(crate) mod heuristic;
 pub(crate) mod symbol_transition;
 pub(crate) mod tree_node;
 
@@ -137,6 +138,23 @@ pub trait Transducer: Sized {
     fn is_final(&self, i: TransitionTableIndex) -> bool;
     /// get end state weight of a state.
     fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight>;
+
+    /// Lower bound on the weight of any path from state `i` to a final state,
+    /// final weight included.
+    ///
+    /// This is the admissible heuristic the suggestion search orders its queue
+    /// by: a partial path standing at `i` cannot possibly finish for less than
+    /// this, so `path weight + distance_to_final` never overestimates the
+    /// cheapest completion. [`Weight::INFINITE`] means no final state is
+    /// reachable from `i` at all.
+    ///
+    /// The default implementation answers [`Weight::ZERO`], which is a valid
+    /// (if uninformative) lower bound for every state — a backend that does not
+    /// implement it degrades the search to plain best-first order rather than
+    /// changing its results.
+    fn distance_to_final(&self, _i: TransitionTableIndex) -> Weight {
+        Weight::ZERO
+    }
 }
 
 /// Trait for loading transducers from files.
@@ -153,6 +171,12 @@ pub trait TransducerLoader<F: vfs::File>: Transducer {
 
 /// Transition table contains the arcs of the automaton (and states).
 pub trait TransitionTableTrait: Sized {
+    /// number of records in the table.
+    fn len(&self) -> TransitionTableIndex;
+    /// whether the table holds no records.
+    fn is_empty(&self) -> bool {
+        self.len() == TransitionTableIndex(0)
+    }
     /// get input symbol of a transition.
     fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber>;
     /// get output symbol of a transition.
@@ -186,6 +210,12 @@ pub trait TransitionTableLoader<F: vfs::File>: TransitionTableTrait {
 
 /// Index table contains something.
 pub trait IndexTableTrait: Sized {
+    /// number of entries in the table.
+    fn len(&self) -> TransitionTableIndex;
+    /// whether the table holds no entries.
+    fn is_empty(&self) -> bool {
+        self.len() == TransitionTableIndex(0)
+    }
     fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber>;
     fn target(&self, i: TransitionTableIndex) -> Option<TransitionTableIndex>;
     fn final_weight(&self, i: TransitionTableIndex) -> Option<Weight>;

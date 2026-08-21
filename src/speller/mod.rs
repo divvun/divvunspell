@@ -19,7 +19,7 @@ use unic_ucd_category::GeneralCategory;
 
 use self::worker::SpellerWorker;
 use crate::speller::suggestion::Suggestion;
-use crate::tokenizer::case_handling::CaseHandler;
+use crate::tokenizer::case_handling::{CaseHandler, CaseMutation, upper_case, upper_first};
 use crate::transducer::Transducer;
 use crate::types::{SymbolNumber, Weight};
 
@@ -409,6 +409,68 @@ fn compute_reweight_penalties(
     }
 }
 
+/// Everything the search worker needs to price a candidate the way
+/// `suggest_case` will price it afterwards: same case mutation, same penalty
+/// function. The worker keys its n-best cutoff on these post-reweight weights;
+/// keyed on raw path weights, the cutoff prunes candidates that reweighting
+/// would have promoted into the n best (a candidate with final rank 12 could
+/// be absent from an n-best=100 run because ~100 raw-cheaper candidates each
+/// absorbed +10..+25 in penalties only after the search had already cut it).
+#[derive(Clone)]
+pub(crate) struct ReweightContext {
+    input_lower: Vec<SmolStr>,
+    input_first: Option<SmolStr>,
+    mutation: CaseMutation,
+    reweight: Option<ReweightingConfig>,
+}
+
+impl ReweightContext {
+    fn new(
+        original_input: &str,
+        mutation: CaseMutation,
+        reweight: Option<&ReweightingConfig>,
+    ) -> Self {
+        let lower = original_input.to_lowercase();
+        ReweightContext {
+            input_lower: Graphemes::new(&lower).map(SmolStr::from).collect(),
+            input_first: Graphemes::new(original_input).next().map(SmolStr::from),
+            mutation,
+            reweight: reweight.cloned(),
+        }
+    }
+
+    /// The reweight surcharge `suggest_case` will add to this candidate.
+    pub(crate) fn additional_weight_for(
+        &self,
+        value: &str,
+        mutator_weight: Weight,
+        dl_buf: &mut Vec<usize>,
+    ) -> Weight {
+        let mutated;
+        let value = match self.mutation {
+            CaseMutation::FirstCaps => {
+                mutated = upper_first(value);
+                mutated.as_str()
+            }
+            CaseMutation::AllCaps => {
+                mutated = upper_case(value);
+                mutated.as_str()
+            }
+            CaseMutation::None => value,
+        };
+        let input_lower: Vec<&str> = self.input_lower.iter().map(|s| s.as_str()).collect();
+        compute_reweight_penalties(
+            &input_lower,
+            self.input_first.as_deref(),
+            value,
+            Some(mutator_weight),
+            self.reweight.as_ref(),
+            dl_buf,
+        )
+        .additional_weight
+    }
+}
+
 /// Apply case mutation and reweight penalties to each suggestion in-place.
 ///
 /// Used by the `CaseMode::FirstResults` path, which returns suggestions
@@ -579,6 +641,24 @@ pub struct SpellerConfig {
     /// used when suggesting unfinished word parts
     #[serde(default)]
     pub completion_marker: Option<String>,
+    /// whether the suggestion search orders itself by the A* heuristic
+    ///
+    /// The heuristic is admissible, so switching it off changes how long the
+    /// search runs, not what it finds. It is here as an escape hatch, and so a
+    /// test can assert the two orders agree; leave it on.
+    #[serde(default = "default_astar_lookahead")]
+    pub astar_lookahead: bool,
+    /// whether the suggestion search walks states rather than paths
+    ///
+    /// With this off the search re-walks every path that leads to a given
+    /// search state, which for a determinised ("expanded") error model is
+    /// roughly one path per state, and for a compact one — a plain union of
+    /// components, 19x smaller on disk — is combinatorially many. Two paths
+    /// that arrive at the same state having spelled the same output are
+    /// interchangeable, so keeping only the cheapest changes what the search
+    /// costs, not what it finds. It is here as an escape hatch; leave it on.
+    #[serde(default = "default_search_dedup")]
+    pub search_dedup: bool,
     /// whether to output detailed weight information (not serialized)
     #[serde(skip)]
     pub verbose: bool,
@@ -592,6 +672,7 @@ impl SpellerConfig {
     /// * reweight = default (c.f. ReweightingConfig::default())
     /// * node_pool_size = 128
     /// * recase = true
+    /// * astar_lookahead = false
     /// * verbose = false
     pub const fn default() -> SpellerConfig {
         SpellerConfig {
@@ -602,6 +683,8 @@ impl SpellerConfig {
             node_pool_size: default_node_pool_size(),
             recase: default_recase(),
             completion_marker: None,
+            astar_lookahead: default_astar_lookahead(),
+            search_dedup: default_search_dedup(),
             verbose: false,
         }
     }
@@ -628,6 +711,22 @@ const fn default_node_pool_size() -> usize {
 }
 
 const fn default_recase() -> bool {
+    true
+}
+
+// Off by default: the giella spellers are weight-pushed to the initial state,
+// which makes distance-to-final identically zero — the precompute (~250 ms and
+// a large transient allocation per transducer) buys nothing there, and
+// divvunspell runs on memory-constrained mobile devices. Enable for transducers
+// that carry weight toward their finals.
+const fn default_astar_lookahead() -> bool {
+    false
+}
+
+// On: it costs one hash of the search state per node and saves re-walking
+// every path into that state. Even a determinised error model repeats a third
+// to three quarters of its pops without it.
+const fn default_search_dedup() -> bool {
     true
 }
 /// FST-based spell checker and morphological analyzer.
@@ -1043,8 +1142,13 @@ where
         let input_lower: Vec<&str> = Graphemes::new(&input_lower_str).collect();
         let input_first: Option<&str> = Graphemes::new(original_input.as_str()).next();
         let mut dl_buf: Vec<usize> = Vec::new();
+        let reweight_ctx = ReweightContext::new(&original_input, mutation, reweight);
 
-        for word in std::iter::once(&original_input).chain(words.iter()) {
+        // `word_variants` echoes the input itself for lower-case words; searching
+        // an identical variant twice can only reproduce the same suggestions.
+        for word in
+            std::iter::once(&original_input).chain(words.iter().filter(|w| **w != original_input))
+        {
             tracing::trace!("suggesting for word {}", word);
             let worker = SpellerWorker::new_mutator_input(
                 self.clone(),
@@ -1052,7 +1156,8 @@ where
                 self.to_input_vec_lexicon(&word),
                 config,
                 output_mode,
-            );
+            )
+            .with_reweight_ctx(reweight_ctx.clone());
             let suggestions = worker.suggest();
 
             match mode {
@@ -1185,7 +1290,8 @@ where
                     self.to_input_vec_lexicon(&lower),
                     config,
                     output_mode,
-                );
+                )
+                .with_reweight_ctx(reweight_ctx.clone());
                 let mut suggestions = worker.suggest();
                 if !suggestions.is_empty() {
                     apply_first_results_reweight(

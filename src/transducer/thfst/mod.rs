@@ -10,9 +10,11 @@
 #![allow(clippy::cast_ptr_alignment)]
 
 use std::path::Path;
+use std::sync::OnceLock;
 use std::{u16, u32};
 
 use crate::constants::TARGET_TABLE;
+use crate::transducer::heuristic::BackwardDistance;
 use crate::transducer::thfst::index_table::IndexTable;
 use crate::transducer::thfst::transition_table::TransitionTable;
 use crate::transducer::{TransducerError, symbol_transition::SymbolTransition};
@@ -71,6 +73,59 @@ where
     index_table: I,
     transition_table: T,
     alphabet: TransducerAlphabet,
+    /// Backward shortest distances, computed on first use by the suggestion
+    /// search and kept for the transducer's lifetime.
+    distances: OnceLock<BackwardDistance>,
+}
+
+impl<I, T> crate::transducer::heuristic::BackwardTables for ThfstTransducer<I, T>
+where
+    I: crate::transducer::IndexTableTrait,
+    T: crate::transducer::TransitionTableTrait,
+{
+    fn index_len(&self) -> u32 {
+        self.index_table.len().0
+    }
+
+    fn trans_len(&self) -> u32 {
+        self.transition_table.len().0
+    }
+
+    fn index_input_symbol(&self, i: u32) -> Option<SymbolNumber> {
+        self.index_table.input_symbol(TransitionTableIndex(i))
+    }
+
+    fn index_target(&self, i: u32) -> Option<TransitionTableIndex> {
+        self.index_table.target(TransitionTableIndex(i))
+    }
+
+    fn index_final_weight(&self, i: u32) -> Option<Weight> {
+        self.index_table.final_weight(TransitionTableIndex(i))
+    }
+
+    fn index_is_final(&self, i: u32) -> bool {
+        self.index_table.is_final(TransitionTableIndex(i))
+    }
+
+    fn trans_input_symbol(&self, i: u32) -> Option<SymbolNumber> {
+        self.transition_table.input_symbol(TransitionTableIndex(i))
+    }
+
+    fn trans_target(&self, i: u32) -> Option<TransitionTableIndex> {
+        self.transition_table.target(TransitionTableIndex(i))
+    }
+
+    fn trans_weight(&self, i: u32) -> Option<Weight> {
+        self.transition_table.weight(TransitionTableIndex(i))
+    }
+
+    fn trans_is_final(&self, i: u32) -> bool {
+        self.transition_table.is_final(TransitionTableIndex(i))
+    }
+
+    fn is_flag_symbol(&self, symbol: SymbolNumber) -> bool {
+        self.alphabet.is_flag(symbol)
+    }
 }
 
 impl<I, T> Transducer for ThfstTransducer<I, T>
@@ -79,6 +134,13 @@ where
     T: crate::transducer::TransitionTableTrait,
 {
     const FILE_EXT: &'static str = "thfst";
+
+    #[inline(always)]
+    fn distance_to_final(&self, i: TransitionTableIndex) -> Weight {
+        self.distances
+            .get_or_init(|| BackwardDistance::compute(self))
+            .get(i)
+    }
 
     #[inline(always)]
     fn is_final(&self, i: TransitionTableIndex) -> bool {
@@ -245,6 +307,7 @@ where
             index_table,
             transition_table,
             alphabet,
+            distances: OnceLock::new(),
         })
     }
 }

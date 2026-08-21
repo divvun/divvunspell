@@ -79,6 +79,8 @@ static CFG: SpellerConfig = SpellerConfig {
     node_pool_size: 128,
     recase: true,
     completion_marker: None,
+    astar_lookahead: false,
+    search_dedup: true,
     verbose: false,
 };
 
