@@ -998,8 +998,9 @@ fn test_deduplication_keeps_best() {
 fn test_weight_tie_lexicographic_order() {
     let s = test_speller();
     let cfg = raw_config();
-    // "ca" → "car"(8) and "cat"(8) both via insertion at same weight.
-    // Ties broken alphabetically: car < cat.
+    // "ca" → "car"(8) and "cat"(8) both via insertion at same weight, and both
+    // cost the lexicon nothing — so the lexicon tie-break cannot separate them
+    // and the order falls through to alphabetical: car < cat.
     let suggs = suggestion_values(&s, "ca", &cfg);
     let car_idx = suggs.iter().position(|(v, _)| v == "car");
     let cat_idx = suggs.iter().position(|(v, _)| v == "cat");
@@ -1010,6 +1011,126 @@ fn test_weight_tie_lexicographic_order() {
             suggs
         );
     }
+}
+
+/// Lexicon for the equal-weight tie-break: "ab" is a word the language model
+/// rates as unlikely (final w=4), "ac" one it rates as ordinary (final w=0).
+///
+/// ```text
+/// Alphabet: [eps, a, b, c]  (symbols 0-3)
+///
+/// (0)--a-->(1)--b-->(2) FINAL w=4   "ab"  (rare)
+///                |
+///                c-->(3) FINAL w=0   "ac"  (common)
+/// ```
+fn build_tie_lexicon(dir: &Path) {
+    // eps=0, a=1, b=2, c=3
+    let symbols = &["@_EPSILON_SYMBOL_@", "a", "b", "c"];
+    let n = symbols.len(); // 4 → 5 entries per state
+
+    let mut idx = Vec::new();
+
+    // State 0 (start) @0
+    write_index_empty(&mut idx); // not final
+    write_index_empty(&mut idx); // no eps
+    write_index_entry(&mut idx, 1, TARGET_TABLE); // a → trans[0]
+    write_empties(&mut idx, 2); // no b/c
+
+    // State 1 (after "a") @5
+    write_index_empty(&mut idx); // not final
+    write_empties(&mut idx, 2); // no eps/a
+    write_index_entry(&mut idx, 2, TARGET_TABLE + 1); // b → trans[1]
+    write_index_entry(&mut idx, 3, TARGET_TABLE + 2); // c → trans[2]
+
+    // State 2 ("ab") FINAL w=4 @10
+    write_index_final(&mut idx, 4.0);
+    write_empties(&mut idx, n);
+
+    // State 3 ("ac") FINAL w=0 @15
+    write_index_final(&mut idx, 0.0);
+    write_empties(&mut idx, n);
+
+    let mut tr = Vec::new();
+    write_trans_entry(&mut tr, 1, 1, 5, 0.0); // [0] a→a → state 1
+    write_trans_entry(&mut tr, 2, 2, 10, 0.0); // [1] b→b → state 2
+    write_trans_entry(&mut tr, 3, 3, 15, 0.0); // [2] c→c → state 3
+
+    write_thfst(dir, &build_alphabet_json(symbols), &idx, &tr);
+}
+
+/// Mutator for the equal-weight tie-break: the two substitutions out of "d"
+/// are priced so that each correction's total comes out the same, with the
+/// error model and the lexicon paying opposite shares of it.
+///
+/// ```text
+/// Alphabet: [eps, a, b, c, d]  (symbols 0-4)
+///
+/// Identity a,b,c,d → self   (w=0)
+/// d→b                       (w=0)
+/// d→c                       (w=4)
+/// ```
+fn build_tie_mutator(dir: &Path) {
+    // eps=0, a=1, b=2, c=3, d=4
+    let symbols = &["@_EPSILON_SYMBOL_@", "a", "b", "c", "d"];
+
+    let mut idx = Vec::new();
+
+    // State 0: start + final, everything self-looping.
+    write_index_final(&mut idx, 0.0);
+    write_index_empty(&mut idx); // no eps
+    write_index_entry(&mut idx, 1, TARGET_TABLE); // a → trans[0]
+    write_index_entry(&mut idx, 2, TARGET_TABLE + 1); // b → trans[1]
+    write_index_entry(&mut idx, 3, TARGET_TABLE + 2); // c → trans[2]
+    write_index_entry(&mut idx, 4, TARGET_TABLE + 3); // d → trans[3..5]
+
+    let mut tr = Vec::new();
+    write_trans_entry(&mut tr, 1, 1, 0, 0.0); // [0] a→a
+    write_trans_entry(&mut tr, 2, 2, 0, 0.0); // [1] b→b
+    write_trans_entry(&mut tr, 3, 3, 0, 0.0); // [2] c→c
+    write_trans_entry(&mut tr, 4, 4, 0, 0.0); // [3] d→d
+    write_trans_entry(&mut tr, 4, 2, 0, 0.0); // [4] d→b, free
+    write_trans_entry(&mut tr, 4, 3, 0, 4.0); // [5] d→c, dear
+
+    write_thfst(dir, &build_alphabet_json(symbols), &idx, &tr);
+}
+
+/// Two corrections at exactly the same total weight are not equally good
+/// answers, and the search already knows which is which: "ad" → "ab" is free
+/// to reach but lands on a word the lexicon charges 4 for, while "ad" → "ac"
+/// costs 4 to reach and lands on an ordinary word. Both total 4; the ordinary
+/// word goes first.
+///
+/// The alphabetical fallback would put "ab" first, so this fails outright if
+/// the lexicon share is dropped anywhere between the search and the sort.
+#[test]
+fn test_weight_tie_prefers_the_likelier_word() {
+    let dir = tempfile::tempdir().expect("temp dir for the tie fixture");
+    let lexicon_dir = dir.path().join("lexicon.thfst");
+    let mutator_dir = dir.path().join("mutator.thfst");
+    std::fs::create_dir_all(&lexicon_dir).expect("create lexicon dir");
+    std::fs::create_dir_all(&mutator_dir).expect("create mutator dir");
+    build_tie_lexicon(&lexicon_dir);
+    build_tie_mutator(&mutator_dir);
+
+    let s = load_speller(&lexicon_dir, &mutator_dir);
+    let suggs = suggestion_values(&s, "ad", &raw_config());
+
+    assert_eq!(
+        suggs,
+        vec![("ac".to_string(), 4.0), ("ab".to_string(), 4.0)],
+        "the tie should go to the word the lexicon rates higher"
+    );
+
+    // Verbose is a debugging flag: it must not reorder the answers.
+    let verbose = SpellerConfig {
+        verbose: true,
+        ..raw_config()
+    };
+    assert_eq!(
+        suggestion_values(&s, "ad", &verbose),
+        suggs,
+        "verbose mode should not change the ordering"
+    );
 }
 
 // ===========================================================================

@@ -1102,16 +1102,21 @@ where
         &self,
         lookups: &HashMap<SmolStr, Weight>,
     ) -> Vec<Suggestion> {
+        // A lexicon-only traversal: the whole weight is the lexicon's, so the
+        // tie-break in `Suggestion::cmp` can never separate two entries here.
         let mut c: Vec<Suggestion>;
         if let Some(s) = &self.config.completion_marker {
             c = lookups
                 .into_iter()
-                .map(|x| Suggestion::new(x.0.clone(), *x.1, Some(!x.0.ends_with(s))))
+                .map(|x| {
+                    Suggestion::new(x.0.clone(), *x.1, Some(!x.0.ends_with(s)))
+                        .with_lexicon_weight(*x.1)
+                })
                 .collect();
         } else {
             c = lookups
                 .into_iter()
-                .map(|x| Suggestion::new(x.0.clone(), *x.1, None))
+                .map(|x| Suggestion::new(x.0.clone(), *x.1, None).with_lexicon_weight(*x.1))
                 .collect();
         }
         c.sort();
@@ -1539,6 +1544,10 @@ where
                         reweight_end: 0.0,
                     },
                 )
+                // Always the path's own lexicon share, never the verbose
+                // figure: the tie-break this feeds must not depend on a
+                // debugging flag.
+                .with_lexicon_weight(*weight - *mutator_weight)
             })
             .collect();
 

@@ -1246,7 +1246,13 @@ where
             mode,
             words,
         } = case;
-        let mut best: HashMap<SmolStr, Weight> = HashMap::new();
+        // Total weight and the lexicon's share of it, keyed by output form. The
+        // two travel together so that when a later case variant improves a
+        // form's weight, the lexicon share follows that winning path instead of
+        // being left behind at whichever path got there first — the share is
+        // the tie-break key in `Suggestion::cmp`, and a stale one would break
+        // ties on evidence from a path that lost.
+        let mut best: HashMap<SmolStr, (Weight, Weight)> = HashMap::new();
         let mut suggestion_data: Option<HashMap<SmolStr, SuggestionData>> = if config.verbose {
             Some(HashMap::new())
         } else {
@@ -1315,9 +1321,11 @@ where
                             penalty_end
                         );
 
+                        let weight = sugg.weight + additional_weight;
+                        let lexicon_weight = sugg.lexicon_weight;
+
                         best.entry(sugg.value.clone())
                             .and_modify(|entry| {
-                                let weight = sugg.weight + additional_weight;
                                 tracing::trace!(
                                     "=> Reweighting: {} {} = {} + {}",
                                     sugg.value,
@@ -1325,8 +1333,8 @@ where
                                     sugg.weight,
                                     additional_weight
                                 );
-                                if entry as &_ > &weight {
-                                    *entry = weight;
+                                if entry.0 > weight {
+                                    *entry = (weight, lexicon_weight);
                                     // Update suggestion data (only when verbose)
                                     if let Some(ref mut data) = suggestion_data {
                                         let (lex_w, mut_w) =
@@ -1349,7 +1357,6 @@ where
                                 }
                             })
                             .or_insert_with(|| {
-                                let weight = sugg.weight + additional_weight;
                                 // Store suggestion data (only when verbose)
                                 if let Some(ref mut data) = suggestion_data {
                                     let (lex_w, mut_w) =
@@ -1369,7 +1376,7 @@ where
                                         },
                                     );
                                 }
-                                weight
+                                (weight, lexicon_weight)
                             });
                     }
                 }
@@ -1436,11 +1443,11 @@ where
             if let Some(s) = &config.completion_marker {
                 out = best
                     .into_iter()
-                    .map(|(k, v)| {
+                    .map(|(k, (weight, lexicon_weight))| {
                         let data = suggestion_data.as_ref().and_then(|map| map.get(&k));
                         Suggestion {
                             value: k.clone(),
-                            weight: v,
+                            weight,
                             completed: Some(!k.ends_with(s)),
                             weight_details: data.map(|d| suggestion::WeightDetails {
                                 lexicon_weight: d.lexicon_weight,
@@ -1449,17 +1456,18 @@ where
                                 reweight_mid: d.reweight_mid,
                                 reweight_end: d.reweight_end,
                             }),
+                            lexicon_weight,
                         }
                     })
                     .collect::<Vec<_>>();
             } else {
                 out = best
                     .into_iter()
-                    .map(|(k, v)| {
+                    .map(|(k, (weight, lexicon_weight))| {
                         let data = suggestion_data.as_ref().and_then(|map| map.get(&k));
                         Suggestion {
                             value: k,
-                            weight: v,
+                            weight,
                             completed: None,
                             weight_details: data.map(|d| suggestion::WeightDetails {
                                 lexicon_weight: d.lexicon_weight,
@@ -1468,6 +1476,7 @@ where
                                 reweight_mid: d.reweight_mid,
                                 reweight_end: d.reweight_end,
                             }),
+                            lexicon_weight,
                         }
                     })
                     .collect::<Vec<_>>();
@@ -1477,21 +1486,23 @@ where
             if let Some(s) = &config.completion_marker {
                 out = best
                     .into_iter()
-                    .map(|(k, v)| Suggestion {
+                    .map(|(k, (weight, lexicon_weight))| Suggestion {
                         value: k.clone(),
-                        weight: v,
+                        weight,
                         completed: Some(!k.ends_with(s)),
                         weight_details: None,
+                        lexicon_weight,
                     })
                     .collect::<Vec<_>>();
             } else {
                 out = best
                     .into_iter()
-                    .map(|(k, v)| Suggestion {
+                    .map(|(k, (weight, lexicon_weight))| Suggestion {
                         value: k,
-                        weight: v,
+                        weight,
                         completed: None,
                         weight_details: None,
+                        lexicon_weight,
                     })
                     .collect::<Vec<_>>();
             }
