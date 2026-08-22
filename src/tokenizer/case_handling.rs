@@ -53,9 +53,21 @@ pub fn lower_first(s: &str) -> SmolStr {
     SmolStr::from(result)
 }
 
+/// Whether a character is bicameral, i.e. carries case at all. Digits,
+/// punctuation and caseless letters are neutral: they are evidence of neither
+/// upper nor lower case.
+#[inline(always)]
+fn is_cased(c: char) -> bool {
+    c.is_uppercase() || c.is_lowercase()
+}
+
 #[derive(Debug, Clone, Copy)]
 enum WordCase {
     AllUpper,
+    /// Every cased character but one is upper case, in a word long enough for
+    /// the odd one out to read as a slip: `RÁðI` for `RÁĐI`, where the user
+    /// reached for a foreign letter instead of the capital they meant.
+    MostlyUpper,
     AllLower,
     Mixed,
     FirstUpper,
@@ -65,7 +77,7 @@ enum WordCase {
 impl From<&str> for WordCase {
     #[inline(always)]
     fn from(value: &str) -> Self {
-        let mut chars = value.chars().filter(|c| c.is_alphabetic());
+        let mut chars = value.chars().filter(|c| is_cased(*c));
 
         let Some(first_char) = chars.next() else {
             return WordCase::None;
@@ -73,25 +85,58 @@ impl From<&str> for WordCase {
 
         let upper_first_char = first_char.is_uppercase();
 
-        let mut has_upper = false;
-        let mut has_lower = !upper_first_char;
+        let mut upper = usize::from(upper_first_char);
+        let mut lower = usize::from(!upper_first_char);
 
         for c in chars {
             if c.is_uppercase() {
-                has_upper = true;
-            } else if c.is_lowercase() {
-                has_lower = true;
+                upper += 1;
+            } else {
+                lower += 1;
             }
         }
 
-        match (upper_first_char, has_upper, has_lower) {
-            (true, true, false) => WordCase::AllUpper,
-            (false, false, true) => WordCase::AllLower,
-            (_, true, true) => WordCase::Mixed,
-            (true, false, true) => WordCase::FirstUpper,
-            _ => WordCase::None,
+        if lower == 0 {
+            // A lone capital states no pattern: "C" is neither first-caps nor
+            // all-caps.
+            return if upper >= 2 {
+                WordCase::AllUpper
+            } else {
+                WordCase::None
+            };
         }
+
+        if upper == 0 {
+            return WordCase::AllLower;
+        }
+
+        if !upper_first_char {
+            return WordCase::Mixed;
+        }
+
+        if upper == 1 {
+            return WordCase::FirstUpper;
+        }
+
+        // One stray lower-case character among at least four cased ones is a
+        // slip in an all-caps word, not deliberate mixed case. The word has to
+        // open with a capital for that reading to hold ("cAT" is still mixed),
+        // and three-character words are excluded: "AaS" is a stylised
+        // abbreviation, not "AAS" mistyped.
+        if lower == 1 && upper + lower >= 4 {
+            return WordCase::MostlyUpper;
+        }
+
+        WordCase::Mixed
     }
+}
+
+/// Whether the first bicameral character of the word is upper case, however
+/// irregular the rest of the word is.
+fn starts_upper_case(word: &str) -> bool {
+    word.chars()
+        .find(|c| is_cased(*c))
+        .is_some_and(char::is_uppercase)
 }
 
 pub fn is_mixed_case(word: &str) -> bool {
@@ -99,6 +144,14 @@ pub fn is_mixed_case(word: &str) -> bool {
 }
 
 pub fn is_all_caps(word: &str) -> bool {
+    matches!(
+        WordCase::from(word),
+        WordCase::AllUpper | WordCase::MostlyUpper
+    )
+}
+
+/// All caps with no allowance for a stray lower-case character.
+fn is_strictly_all_caps(word: &str) -> bool {
     matches!(WordCase::from(word), WordCase::AllUpper)
 }
 
@@ -138,15 +191,22 @@ fn mixed_case_word_variants(word: &str) -> CaseHandler {
         words.push(lower_first(word));
     } else {
         let upper = upper_first(word);
-        // Edge case of "sOMETHING"
-        if !is_all_caps(&upper) {
+        // Edge case of "sOMETHING": the upper variant would read as all caps,
+        // which is the one reading this path must not accept. The test stays
+        // strict — a variant that merely reads as mostly upper is still a
+        // distinct word worth searching.
+        if !is_strictly_all_caps(&upper) {
             words.push(upper);
         }
     }
 
     CaseHandler {
         original_input: word.into(),
-        mutation: if is_first_caps(word) {
+        // Irregular casing still opens with a capital when the user meant it
+        // to: "ŦMuitalusat" is a slip in front of "Muitalusat", so corrections
+        // reached through the lower-case variants are capitalised rather than
+        // handed back bare.
+        mutation: if starts_upper_case(word) {
             CaseMutation::FirstCaps
         } else {
             CaseMutation::None
@@ -242,6 +302,57 @@ mod tests {
             CaseMutation::FirstCaps
         );
         assert_eq!(word_variants("1HEAVVANIT").mutation, CaseMutation::AllCaps);
+    }
+
+    #[test]
+    fn all_caps_with_one_stray_lower_case() {
+        // "RÁðI" is "RÁĐI" typed with a foreign letter that the user's
+        // keyboard only offers in lower case: still an all-caps word.
+        assert_eq!(is_all_caps("RÁðI"), true);
+        assert_eq!(is_mixed_case("RÁðI"), false);
+
+        let variants = word_variants("RÁðI");
+        assert_eq!(variants.mutation, CaseMutation::AllCaps);
+        assert_eq!(variants.mode, CaseMode::MergeAll);
+        assert!(
+            variants.words.iter().any(|w| w == "ráði"),
+            "lower-case variant should be searched: {:?}",
+            variants.words
+        );
+
+        // The allowance is one stray character in a word long enough for it to
+        // read as a slip, and only when the word opens with a capital.
+        assert_eq!(is_all_caps("Ab"), false);
+        assert_eq!(is_all_caps("SGPai"), false);
+        assert_eq!(is_mixed_case("SGPai"), true);
+        assert_eq!(is_all_caps("cAT"), false);
+        assert_eq!(is_mixed_case("cAT"), true);
+    }
+
+    #[test]
+    fn caseless_characters_are_neutral() {
+        // Only bicameral characters carry case; digits, punctuation and
+        // caseless letters state nothing about the word's case.
+        assert_eq!(is_all_caps("ABC-DEF"), true);
+        assert_eq!(is_all_caps("日ABC"), true);
+        assert_eq!(is_first_caps("日Abc"), true);
+        assert_eq!(is_all_caps("123"), false);
+        assert_eq!(is_first_caps("123"), false);
+    }
+
+    #[test]
+    fn irregular_case_keeps_the_opening_capital() {
+        // "ŦMuitalusat" is "Muitalusat" with a stray capital in front: the
+        // correction has to come back capitalised, not bare.
+        let variants = word_variants("ŦMuitalusat");
+        assert_eq!(variants.mode, CaseMode::FirstResults);
+        assert_eq!(variants.mutation, CaseMutation::FirstCaps);
+
+        assert_eq!(word_variants("EOvddidat").mutation, CaseMutation::FirstCaps);
+
+        // An input that opens in lower case keeps its own casing.
+        assert_eq!(word_variants("cAt").mutation, CaseMutation::None);
+        assert_eq!(word_variants("iPhone").mutation, CaseMutation::None);
     }
 
     #[test]
