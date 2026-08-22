@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use lifeguard::{Pool, Recycled};
 
+use super::subset::{MutatorSubsets, SubsetStats};
 use super::{HfstSpeller, OutputMode, SpellerConfig};
 use crate::speller::suggestion::{Suggestion, WeightDetails};
 use crate::transducer::Transducer;
@@ -102,6 +103,9 @@ struct SearchStats {
     signatures_no_mutator: HashSet<(u32, u32, u64)>,
     mutator_states: HashSet<u32>,
     lexicon_states: HashSet<u32>,
+    /// What the on-the-fly determinisation of the error model cost, when it is
+    /// the one being walked.
+    subsets: Option<SubsetStats>,
 }
 
 impl SearchStats {
@@ -143,13 +147,26 @@ impl SearchStats {
 
     fn report(&self, word: &str, queue_len: usize) {
         let hottest = self.seen.values().map(|(_, c)| *c).max().unwrap_or(0);
+        let subsets = match self.subsets {
+            Some(s) => format!(
+                "\tsubsets={}\tsubset_members={}\tsubset_avg_size={:.2}\t\
+                 subset_lookups={}\tsubset_misses={}\tsubset_hit_pct={:.1}",
+                s.subsets,
+                s.members,
+                s.members as f64 / s.subsets.max(1) as f64,
+                s.lookups,
+                s.misses,
+                100.0 * (s.lookups - s.misses) as f64 / s.lookups.max(1) as f64,
+            ),
+            None => String::new(),
+        };
         eprintln!(
             "SEARCHSTATS\tword={word}\tpops={}\tdistinct_triples={}\tdistinct_sigs={}\t\
              sigs_no_mutator={}\tlive_mutator_states={:.2}\t\
              hottest_triple_pops={}\tredundant_pops={}\t\
              redundant_pct={:.1}\tmutator_states={}\tlexicon_states={}\t\
              push_lex_eps={}\tpush_mut_eps={}\tpush_consume={}\tpushes_kept={}\t\
-             max_queue={}\tqueue_left={}\tcorrections={}\tfirst_correction_pop={}",
+             max_queue={}\tqueue_left={}\tcorrections={}\tfirst_correction_pop={}{}",
             self.pops,
             self.seen.len(),
             self.signatures.len(),
@@ -170,6 +187,7 @@ impl SearchStats {
             self.first_correction_pop
                 .map(|p| p.to_string())
                 .unwrap_or_else(|| "-".to_string()),
+            subsets,
         );
     }
 }
@@ -460,123 +478,215 @@ where
         }
     }
 
+    /// Hand `visit` every error-model arc leaving `state` on `input_sym`, as
+    /// `(output symbol, next model state, weight)`.
+    ///
+    /// `state` names a model state when the search walks the model as an NFA
+    /// and an interned subset when it determinises the model on the fly. The
+    /// two agree on everything downstream of this call — an arc is an output
+    /// symbol, a successor and a weight either way — which is what lets the
+    /// product walk below be written once.
+    ///
+    /// False means the subset construction breached a cap; the caller must
+    /// abandon the search and redo it as the NFA walk.
+    #[inline(always)]
+    fn for_each_mutator_arc(
+        &self,
+        subsets: Option<&mut MutatorSubsets>,
+        state: TransitionTableIndex,
+        input_sym: SymbolNumber,
+        mut visit: impl FnMut(SymbolNumber, TransitionTableIndex, Weight),
+    ) -> bool {
+        let mutator = self.speller.mutator();
+
+        let Some(subsets) = subsets else {
+            if !mutator.has_transitions(state.incr(), Some(input_sym)) {
+                return true;
+            }
+            let Some(mut next) = mutator.next(state, input_sym) else {
+                return true;
+            };
+
+            loop {
+                let transition = if input_sym == SymbolNumber::ZERO {
+                    mutator.take_epsilons(next)
+                } else {
+                    mutator.take_non_epsilons(next, input_sym)
+                };
+                let Some(transition) = transition else {
+                    break;
+                };
+
+                if let (Some(symbol), Some(target), Some(weight)) = (
+                    transition.symbol(),
+                    transition.target(),
+                    transition.weight(),
+                ) {
+                    visit(symbol, target, weight);
+                }
+
+                next = next.incr();
+            }
+
+            return true;
+        };
+
+        let Some((start, len)) = subsets.transitions(mutator, state, input_sym) else {
+            return false;
+        };
+
+        for index in start..start + len {
+            let arc = subsets.arc(index);
+            visit(arc.symbol, arc.target, arc.weight);
+        }
+
+        true
+    }
+
+    /// Queue what the lexicon can do with one error-model output symbol.
+    ///
+    /// Shared by the two ways the model produces one: against an epsilon input
+    /// (an insertion) and against a consumed input character.
+    ///
+    /// `input_lexicon_sym` is the input character's lexicon symbol when there
+    /// is an input character being consumed. It names what `@_IDENTITY_@`
+    /// writes and what `@_UNKNOWN_@` may not.
+    #[inline(always)]
+    fn queue_mutator_output<'a>(
+        &self,
+        pool: &'a Pool<TreeNode>,
+        max_weight: Weight,
+        next_node: &TreeNode,
+        sym: SymbolNumber,
+        target: TransitionTableIndex,
+        weight: Weight,
+        input_increment: i16,
+        input_lexicon_sym: Option<SymbolNumber>,
+        output_nodes: &mut Vec<Recycled<'a, TreeNode>>,
+    ) {
+        let mutator = self.speller.mutator();
+        let lexicon = self.speller.lexicon();
+        let alphabet_translator = self.speller.alphabet_translator();
+        let mut_alpha = mutator.alphabet();
+
+        // `@_UNKNOWN_@` on the output tape is not a character to write: it
+        // stands for some symbol outside the model's alphabet, and the lexicon
+        // says which ones are available here.
+        if mut_alpha.unknown() == Some(sym) {
+            self.queue_unknown_output_arcs(
+                pool,
+                max_weight,
+                next_node,
+                target,
+                weight,
+                input_increment,
+                input_lexicon_sym,
+                output_nodes,
+            );
+            return;
+        }
+
+        // `@_IDENTITY_@` on the output tape does name a character: the input
+        // one, unchanged. Encode it in the lexicon alphabet so the lexicon walk
+        // can match explicit arcs for it — without this, out-of-model-alphabet
+        // characters like "Z" in the festschrift model silently dead-end when
+        // the lexicon has no identity arcs but does have an explicit "Z" arc
+        // (lang-sma#160).
+        let trans_sym = match input_lexicon_sym {
+            Some(lexicon_sym) if mut_alpha.identity() == Some(sym) => lexicon_sym,
+            _ => alphabet_translator[sym.0 as usize],
+        };
+
+        let lookup = next_node.lexicon_state.incr();
+
+        if !lexicon.has_transitions(lookup, Some(trans_sym)) {
+            // No regular transitions for this: an input outside the lexicon's
+            // original alphabet may still travel on unknown or identity.
+            if trans_sym >= lexicon.alphabet().initial_symbol_count() {
+                if let Some(unknown) = lexicon.alphabet().unknown()
+                    && lexicon.has_transitions(lookup, Some(unknown))
+                {
+                    self.queue_lexicon_arcs(
+                        pool,
+                        max_weight,
+                        next_node,
+                        unknown,
+                        target,
+                        weight,
+                        input_increment,
+                        output_nodes,
+                    );
+                }
+
+                if let Some(identity) = lexicon.alphabet().identity()
+                    && lexicon.has_transitions(lookup, Some(identity))
+                {
+                    self.queue_lexicon_arcs(
+                        pool,
+                        max_weight,
+                        next_node,
+                        identity,
+                        target,
+                        weight,
+                        input_increment,
+                        output_nodes,
+                    );
+                }
+            }
+
+            return;
+        }
+
+        self.queue_lexicon_arcs(
+            pool,
+            max_weight,
+            next_node,
+            trans_sym,
+            target,
+            weight,
+            input_increment,
+            output_nodes,
+        );
+    }
+
     #[inline(always)]
     fn mutator_epsilons<'a>(
         &self,
         pool: &'a Pool<TreeNode>,
         max_weight: Weight,
         next_node: &TreeNode,
+        subsets: Option<&mut MutatorSubsets>,
         output_nodes: &mut Vec<Recycled<'a, TreeNode>>,
-    ) {
-        let mutator = self.speller.mutator();
-        let lexicon = self.speller.lexicon();
-        let alphabet_translator = self.speller.alphabet_translator();
-
-        if !mutator.has_transitions(next_node.mutator_state.incr(), Some(SymbolNumber::ZERO)) {
-            return;
-        }
-
-        let mut next_m = mutator
-            .next(next_node.mutator_state, SymbolNumber::ZERO)
-            .unwrap();
-
-        while let Some(transition) = mutator.take_epsilons(next_m) {
-            if let Some(SymbolNumber::ZERO) = transition.symbol() {
-                if self.is_under_weight_limit(
-                    max_weight,
-                    next_node.weight() + transition.weight().unwrap(),
-                ) {
-                    let new_node = next_node.update_mutator(pool, transition);
-                    output_nodes.push(new_node);
+    ) -> bool {
+        self.for_each_mutator_arc(
+            subsets,
+            next_node.mutator_state,
+            SymbolNumber::ZERO,
+            |sym, target, weight| {
+                if sym == SymbolNumber::ZERO {
+                    if self.is_under_weight_limit(max_weight, next_node.weight() + weight) {
+                        output_nodes.push(next_node.update_mutator(pool, target, weight));
+                    }
+                    return;
                 }
-
-                next_m = next_m.incr();
-                continue;
-            }
-
-            if let Some(sym) = transition.symbol() {
-                let (Some(target), Some(weight)) = (transition.target(), transition.weight())
-                else {
-                    next_m = next_m.incr();
-                    continue;
-                };
 
                 // An `@_UNKNOWN_@` output against an epsilon input inserts
                 // "some symbol outside the alphabet" — no character in
-                // particular, so the lexicon settles which ones that is.
-                if mutator.alphabet().unknown() == Some(sym) {
-                    self.queue_unknown_output_arcs(
-                        pool,
-                        max_weight,
-                        next_node,
-                        target,
-                        weight,
-                        0,
-                        None,
-                        output_nodes,
-                    );
-                    next_m = next_m.incr();
-                    continue;
-                }
-
-                let trans_sym = alphabet_translator[sym.0 as usize];
-
-                if !lexicon.has_transitions(next_node.lexicon_state.incr(), Some(trans_sym)) {
-                    // we have no regular transitions for this
-                    if trans_sym >= lexicon.alphabet().initial_symbol_count() {
-                        // this input was not originally in the alphabet, so unknown or identity
-                        // may apply
-                        if lexicon.has_transitions(
-                            next_node.lexicon_state.incr(),
-                            lexicon.alphabet().unknown(),
-                        ) {
-                            self.queue_lexicon_arcs(
-                                pool,
-                                max_weight,
-                                &next_node,
-                                lexicon.alphabet().unknown().unwrap(),
-                                transition.target().unwrap(),
-                                transition.weight().unwrap(),
-                                0,
-                                output_nodes,
-                            );
-                        }
-
-                        if lexicon.has_transitions(
-                            next_node.lexicon_state.incr(),
-                            lexicon.alphabet().identity(),
-                        ) {
-                            self.queue_lexicon_arcs(
-                                pool,
-                                max_weight,
-                                &next_node,
-                                lexicon.alphabet().identity().unwrap(),
-                                transition.target().unwrap(),
-                                transition.weight().unwrap(),
-                                0,
-                                output_nodes,
-                            );
-                        }
-                    }
-
-                    next_m = next_m.incr();
-                    continue;
-                }
-
-                self.queue_lexicon_arcs(
+                // particular, and none to exclude either, since no input
+                // character is being consumed here.
+                self.queue_mutator_output(
                     pool,
                     max_weight,
-                    &next_node,
-                    trans_sym,
-                    transition.target().unwrap(),
-                    transition.weight().unwrap(),
+                    next_node,
+                    sym,
+                    target,
+                    weight,
                     0,
+                    None,
                     output_nodes,
                 );
-            }
-
-            next_m = next_m.incr();
-        }
+            },
+        )
     }
 
     #[inline(always)]
@@ -708,130 +818,48 @@ where
         pool: &'a Pool<TreeNode>,
         max_weight: Weight,
         next_node: &TreeNode,
+        subsets: Option<&mut MutatorSubsets>,
         input_sym: SymbolNumber,
         output_nodes: &mut Vec<Recycled<'a, TreeNode>>,
-    ) {
-        let mutator = self.speller.mutator();
-        let lexicon = self.speller.lexicon();
-        let alphabet_translator = self.speller.alphabet_translator();
+    ) -> bool {
+        let input_lexicon_sym = self
+            .lexicon_input
+            .get(next_node.input_state.0 as usize)
+            .copied();
 
-        let mut next_m = mutator.next(next_node.mutator_state, input_sym).unwrap();
-
-        while let Some(transition) = mutator.take_non_epsilons(next_m, input_sym) {
-            let symbol = transition.symbol();
-
-            if let Some(SymbolNumber::ZERO) = symbol {
-                let transition_weight = transition.weight().unwrap();
-                if self.is_under_weight_limit(max_weight, next_node.weight() + transition_weight) {
-                    let new_node = next_node.update(
-                        pool,
-                        SymbolNumber::ZERO,
-                        Some(next_node.input_state.incr(1)),
-                        transition.target().unwrap(),
-                        next_node.lexicon_state,
-                        transition_weight,
-                        transition_weight,
-                    );
-
-                    output_nodes.push(new_node);
-                }
-
-                next_m = next_m.incr();
-                continue;
-            }
-
-            if let Some(sym) = symbol {
-                let (Some(target), Some(weight)) = (transition.target(), transition.weight())
-                else {
-                    next_m = next_m.incr();
-                    continue;
-                };
-
-                let mut_alpha = mutator.alphabet();
-                let input_state_idx = next_node.input_state.0 as usize;
-                let input_lexicon_sym = self.lexicon_input.get(input_state_idx).copied();
-
-                // `@_UNKNOWN_@` on the output tape is not a character to write:
-                // it stands for some symbol outside the mutator's alphabet, and
-                // the lexicon says which ones are available here.
-                if mut_alpha.unknown() == Some(sym) {
-                    self.queue_unknown_output_arcs(
-                        pool,
-                        max_weight,
-                        next_node,
-                        target,
-                        weight,
-                        1,
-                        input_lexicon_sym,
-                        output_nodes,
-                    );
-                    next_m = next_m.incr();
-                    continue;
-                }
-
-                // `@_IDENTITY_@` on the output tape does name a character: the
-                // input one, unchanged. Encode it in the lexicon alphabet (via
-                // `lexicon_input`) so the lexicon walk can match explicit arcs
-                // for it — without this, out-of-mutator-alphabet characters
-                // like "Z" in the festschrift model silently dead-end when the
-                // lexicon has no identity arcs but does have an explicit "Z"
-                // arc (lang-sma#160).
-                let trans_sym = match input_lexicon_sym {
-                    Some(lexicon_sym) if mut_alpha.identity() == Some(sym) => lexicon_sym,
-                    _ => alphabet_translator[sym.0 as usize],
-                };
-
-                if !lexicon.has_transitions(next_node.lexicon_state.incr(), Some(trans_sym)) {
-                    if trans_sym >= lexicon.alphabet().initial_symbol_count() {
-                        if lexicon.has_transitions(
-                            next_node.lexicon_state.incr(),
-                            lexicon.alphabet().unknown(),
-                        ) {
-                            self.queue_lexicon_arcs(
-                                pool,
-                                max_weight,
-                                &next_node,
-                                lexicon.alphabet().unknown().unwrap(),
-                                target,
-                                weight,
-                                1,
-                                output_nodes,
-                            );
-                        }
-                        if lexicon.has_transitions(
-                            next_node.lexicon_state.incr(),
-                            lexicon.alphabet().identity(),
-                        ) {
-                            self.queue_lexicon_arcs(
-                                pool,
-                                max_weight,
-                                &next_node,
-                                lexicon.alphabet().identity().unwrap(),
-                                target,
-                                weight,
-                                1,
-                                output_nodes,
-                            );
-                        }
+        self.for_each_mutator_arc(
+            subsets,
+            next_node.mutator_state,
+            input_sym,
+            |sym, target, weight| {
+                if sym == SymbolNumber::ZERO {
+                    if self.is_under_weight_limit(max_weight, next_node.weight() + weight) {
+                        output_nodes.push(next_node.update(
+                            pool,
+                            SymbolNumber::ZERO,
+                            Some(next_node.input_state.incr(1)),
+                            target,
+                            next_node.lexicon_state,
+                            weight,
+                            weight,
+                        ));
                     }
-                    next_m = next_m.incr();
-                    continue;
+                    return;
                 }
 
-                self.queue_lexicon_arcs(
+                self.queue_mutator_output(
                     pool,
                     max_weight,
-                    &next_node,
-                    trans_sym,
+                    next_node,
+                    sym,
                     target,
                     weight,
                     1,
+                    input_lexicon_sym,
                     output_nodes,
                 );
-
-                next_m = next_m.incr();
-            }
-        }
+            },
+        )
     }
 
     #[inline(always)]
@@ -840,18 +868,18 @@ where
         pool: &'a Pool<TreeNode>,
         max_weight: Weight,
         next_node: &TreeNode,
+        mut subsets: Option<&mut MutatorSubsets>,
         output_nodes: &mut Vec<Recycled<'a, TreeNode>>,
-    ) {
+    ) -> bool {
         let mutator = self.speller.mutator();
         let input_state = next_node.input_state.0 as usize;
 
         if input_state >= self.input.len() {
-            return;
+            return true;
         }
 
         let input_sym = self.input[input_state];
         let alphabet = mutator.alphabet();
-        let lookup = next_node.mutator_state.incr();
 
         // A grapheme the error model has never seen was replaced by the model's
         // UNKNOWN marker in `to_input_vec` (or by epsilon, for a model with no
@@ -879,14 +907,26 @@ where
 
         if input_is_out_of_alphabet
             && let Some(identity) = alphabet.identity()
-            && mutator.has_transitions(lookup, Some(identity))
+            && !self.queue_mutator_arcs(
+                pool,
+                max_weight,
+                next_node,
+                subsets.as_deref_mut(),
+                identity,
+                output_nodes,
+            )
         {
-            self.queue_mutator_arcs(pool, max_weight, next_node, identity, output_nodes);
+            return false;
         }
 
-        if mutator.has_transitions(lookup, Some(input_sym)) {
-            self.queue_mutator_arcs(pool, max_weight, next_node, input_sym, output_nodes);
-        }
+        self.queue_mutator_arcs(
+            pool,
+            max_weight,
+            next_node,
+            subsets,
+            input_sym,
+            output_nodes,
+        )
     }
 
     #[inline(always)]
@@ -1090,13 +1130,18 @@ where
     /// can only make the real cost higher — so this never overestimates, and
     /// ordering, pruning and stopping on `weight + heuristic` all stay sound.
     #[inline(always)]
-    fn heuristic(&self, node: &TreeNode) -> Weight {
+    fn heuristic(&self, subsets: Option<&MutatorSubsets>, node: &TreeNode) -> Weight {
         if !self.config.astar_lookahead {
             return Weight::ZERO;
         }
 
         let lexicon = self.speller.lexicon().distance_to_final(node.lexicon_state);
-        let mutator = self.speller.mutator().distance_to_final(node.mutator_state);
+        let mutator = match subsets {
+            // The cheapest member of the subset bounds the whole of it, which
+            // is what keeps this a lower bound on finishing.
+            Some(subsets) => subsets.distance_to_final(node.mutator_state),
+            None => self.speller.mutator().distance_to_final(node.mutator_state),
+        };
 
         // A state that cannot reach a final state at all poisons the sum: the
         // node is a dead end, sorts last, and gets pruned by the cutoff.
@@ -1108,12 +1153,51 @@ where
     }
 
     #[inline(always)]
-    fn ordered<'a>(&self, node: Recycled<'a, TreeNode>) -> OrderedNode<'a> {
-        let estimate = node.weight() + self.heuristic(&node);
+    fn ordered<'a>(
+        &self,
+        subsets: Option<&MutatorSubsets>,
+        node: Recycled<'a, TreeNode>,
+    ) -> OrderedNode<'a> {
+        let estimate = node.weight() + self.heuristic(subsets, &node);
         OrderedNode { estimate, node }
     }
 
+    /// Search with the error model determinised on the fly, falling back to
+    /// walking it as an NFA if the construction breaches a cap.
+    ///
+    /// The fallback is a whole second search rather than a per-node retreat: a
+    /// node's `mutator_state` means a model state in one walk and a subset in
+    /// the other, so the two cannot be mixed inside one queue. Nothing that
+    /// ships reaches the caps, and paying twice for a transducer that does is
+    /// the right trade against answering it wrongly.
     pub(crate) fn suggest(&self) -> Vec<Suggestion> {
+        if self.config.mutator_subsets
+            && let Some(mut subsets) = self.speller.take_subsets(self.config.astar_lookahead)
+        {
+            match self.search(Some(&mut subsets)) {
+                Some(suggestions) => {
+                    self.speller.give_subsets(subsets);
+                    return suggestions;
+                }
+                // A construction that has breached a cap stays breached, so it
+                // is dropped rather than handed back for the next word to
+                // stumble over.
+                None => {
+                    tracing::debug!(
+                        "subset construction hit a cap; redoing this word as an NFA walk"
+                    );
+                    if *SEARCH_STATS {
+                        eprintln!("SEARCHFALLBACK\tsubsets={}", subsets.stats().subsets);
+                    }
+                }
+            }
+        }
+
+        self.search(None)
+            .expect("the NFA walk has no subset caps to breach")
+    }
+
+    fn search(&self, mut subsets: Option<&mut MutatorSubsets>) -> Option<Vec<Suggestion>> {
         tracing::trace!("Beginning suggest");
 
         let pool = Pool::with_size_and_max(self.config.node_pool_size, self.config.node_pool_size);
@@ -1127,7 +1211,7 @@ where
         queue.extend(
             speller_start_node(&pool, self.state_size() as usize)
                 .into_iter()
-                .map(|node| self.ordered(node)),
+                .map(|node| self.ordered(subsets.as_deref(), node)),
         );
         let mut scratch: Vec<Recycled<TreeNode>> = Vec::with_capacity(256);
         // Key on symbol sequences to avoid string_from_symbols in the hot loop.
@@ -1201,7 +1285,15 @@ where
             // attribute each child to the expansion that produced it.
             self.lexicon_epsilons(&pool, max_weight, &next_node, &mut scratch);
             let lexicon_eps_mark = scratch.len();
-            self.mutator_epsilons(&pool, max_weight, &next_node, &mut scratch);
+            if !self.mutator_epsilons(
+                &pool,
+                max_weight,
+                &next_node,
+                subsets.as_deref_mut(),
+                &mut scratch,
+            ) {
+                return None;
+            }
             let mutator_eps_mark = scratch.len();
             if let Some(s) = stats.as_mut() {
                 s.push_lexicon_epsilons += lexicon_eps_mark as u64;
@@ -1209,8 +1301,16 @@ where
             }
 
             let at_input_end = next_node.input_state.0 as usize == self.input.len();
-            if !at_input_end {
-                self.consume_input(&pool, max_weight, &next_node, &mut scratch);
+            if !at_input_end
+                && !self.consume_input(
+                    &pool,
+                    max_weight,
+                    &next_node,
+                    subsets.as_deref_mut(),
+                    &mut scratch,
+                )
+            {
+                return None;
             }
             if let Some(s) = stats.as_mut() {
                 s.push_consume_input += (scratch.len() - mutator_eps_mark) as u64;
@@ -1220,10 +1320,11 @@ where
             // prices what they still owe, which drops dead ends outright. What
             // survives that is queued only if it reaches a state no cheaper
             // path has already reached.
+            let heuristic_subsets = subsets.as_deref();
             queue.extend(
                 scratch
                     .drain(..)
-                    .map(|node| self.ordered(node))
+                    .map(|node| self.ordered(heuristic_subsets, node))
                     .filter(|queued| self.is_under_weight_limit(max_weight, queued.estimate))
                     .filter(|queued| {
                         closed
@@ -1239,23 +1340,33 @@ where
                 continue;
             }
 
-            if !self.speller.mutator().is_final(next_node.mutator_state)
-                || !self.speller.lexicon().is_final(next_node.lexicon_state)
-            {
+            if !self.speller.lexicon().is_final(next_node.lexicon_state) {
                 continue;
             }
+
+            // A subset is final when any member of it is, at the cheapest
+            // member's price — the same weight the NFA walk would reach by the
+            // cheapest of the paths the subset stands for.
+            let mutator_final = match subsets.as_deref() {
+                Some(subsets) => subsets.final_weight(next_node.mutator_state),
+                None => {
+                    let mutator = self.speller.mutator();
+                    match mutator.is_final(next_node.mutator_state) {
+                        true => mutator.final_weight(next_node.mutator_state),
+                        false => None,
+                    }
+                }
+            };
+            let Some(mutator_final) = mutator_final else {
+                continue;
+            };
 
             let node_weight = next_node.weight();
             let lexicon_final = self
                 .speller
                 .lexicon()
                 .final_weight(next_node.lexicon_state)
-                .unwrap();
-            let mutator_final = self
-                .speller
-                .mutator()
-                .final_weight(next_node.mutator_state)
-                .unwrap();
+                .expect("a final lexicon state has a final weight");
             let weight = node_weight + lexicon_final + mutator_final;
             let mutator_weight = next_node.mutator_weight + mutator_final;
 
@@ -1310,7 +1421,8 @@ where
             "suggest search finished"
         );
 
-        if let Some(s) = stats.as_ref() {
+        if let Some(s) = stats.as_mut() {
+            s.subsets = subsets.as_deref().map(MutatorSubsets::stats);
             let word: SmolStr = self
                 .input
                 .iter()
@@ -1325,7 +1437,7 @@ where
             .map(|(syms, w)| (alphabet.string_from_symbols(&syms), w))
             .collect();
 
-        self.generate_sorted_suggestions(&string_corrections)
+        Some(self.generate_sorted_suggestions(&string_corrections))
     }
 
     // Analyze an output form using only the lexicon to get its weight

@@ -149,16 +149,17 @@ impl TreeNode {
     pub fn update_mutator<'a>(
         &self,
         pool: &'a Pool<TreeNode>,
-        transition: SymbolTransition,
+        target: TransitionTableIndex,
+        weight: Weight,
     ) -> Recycled<'a, TreeNode> {
         let mut node = pool.new();
         node.string.clone_from(&self.string);
         node.input_state = self.input_state;
-        node.mutator_state = transition.target().unwrap();
+        node.mutator_state = target;
         node.lexicon_state = self.lexicon_state;
         node.flag_state.clone_from(&self.flag_state);
-        node.weight = self.weight + transition.weight().unwrap();
-        node.mutator_weight = self.mutator_weight + transition.weight().unwrap();
+        node.weight = self.weight + weight;
+        node.mutator_weight = self.mutator_weight + weight;
         node
     }
 

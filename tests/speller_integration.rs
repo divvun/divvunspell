@@ -3152,6 +3152,180 @@ fn test_search_dedup_agrees_with_path_walk() {
     );
 }
 
+/// Determinising the error model as the search goes merges routes that carry
+/// the same label sequence; it must not change what the search finds.
+fn assert_same_suggestions_subsets(
+    s: &Arc<HfstSpeller<MmapThfstTransducer, MmapThfstTransducer>>,
+    words: &[&str],
+    base: &SpellerConfig,
+    label: &str,
+) {
+    for word in words {
+        let with = SpellerConfig {
+            mutator_subsets: true,
+            ..base.clone()
+        };
+        let without = SpellerConfig {
+            mutator_subsets: false,
+            ..base.clone()
+        };
+
+        let a = suggestion_values(s, word, &with);
+        let b = suggestion_values(s, word, &without);
+
+        assert_eq!(
+            a, b,
+            "{label}: '{word}' differs with and without on-the-fly determinisation:\n  subsets {a:?}\n  NFA {b:?}"
+        );
+    }
+}
+
+/// A merged arc's weight is the minimum over the model routes it stands for, so
+/// a subset walk reaches every correction the NFA walk reaches, at the weight
+/// the NFA walk would have reached it by. The fixtures that matter most are the
+/// compact ones — a union of components behind epsilon hops, the layout that
+/// has several model states alive for one partial correction and therefore the
+/// only one where merging has anything to merge.
+#[test]
+fn test_mutator_subsets_agree_with_nfa_walk() {
+    let words = &[
+        "kat", "cet", "cad", "dog", "ca", "c", "ct", "cart", "cat", "kart", "kaart", "caat",
+        "ccccc", "kät", "cär", "carte", "art", "at", "",
+    ];
+
+    assert_same_suggestions_subsets(&test_speller(), words, &raw_config(), "raw");
+    assert_same_suggestions_subsets(&test_speller(), words, &reweight_config(), "reweight");
+    assert_same_suggestions_subsets(
+        &test_speller(),
+        words,
+        &SpellerConfig {
+            n_best: Some(1),
+            ..raw_config()
+        },
+        "n_best=1",
+    );
+    assert_same_suggestions_subsets(
+        &test_speller(),
+        words,
+        &SpellerConfig {
+            n_best: None,
+            ..raw_config()
+        },
+        "n_best=none",
+    );
+    assert_same_suggestions_subsets(
+        &test_speller(),
+        words,
+        &SpellerConfig {
+            beam: Some(Weight(6.0)),
+            ..raw_config()
+        },
+        "beam",
+    );
+    assert_same_suggestions_subsets(
+        &test_speller(),
+        words,
+        &SpellerConfig {
+            max_weight: Some(Weight(8.0)),
+            ..raw_config()
+        },
+        "max_weight",
+    );
+    assert_same_suggestions_subsets(
+        &test_speller(),
+        words,
+        &SpellerConfig {
+            astar_lookahead: true,
+            ..raw_config()
+        },
+        "astar",
+    );
+    assert_same_suggestions_subsets(
+        &test_speller(),
+        words,
+        &SpellerConfig {
+            search_dedup: false,
+            ..raw_config()
+        },
+        "path walk",
+    );
+
+    let short = &["cat", "car", "cart", "kat", "cet", "cxt", "ct", "cattt"];
+    assert_same_suggestions_subsets(&flag_speller(), short, &raw_config(), "flag");
+    assert_same_suggestions_subsets(&identity_speller(), short, &raw_config(), "identity");
+    assert_same_suggestions_subsets(&eps_speller(), short, &raw_config(), "eps");
+
+    let base = fixtures_dir();
+    let reorder = load_speller(
+        &base.join("reorder-lexicon.thfst"),
+        &base.join("reorder-mutator.thfst"),
+    );
+    assert_same_suggestions_subsets(
+        &reorder,
+        &["abc", "xbc", "abxc", "abx", "ab"],
+        &reweight_config(),
+        "reorder",
+    );
+
+    let wildcards = &["cät", "cär", "cäd", "kät", "cä", "ät", "cat", "cart"];
+    for mutator in [
+        "wildcard-compact-mutator.thfst",
+        "wildcard-expanded-mutator.thfst",
+    ] {
+        assert_same_suggestions_subsets(
+            &wildcard_speller(mutator),
+            wildcards,
+            &raw_config(),
+            mutator,
+        );
+    }
+
+    let unknown_outs = &["cat", "cät", "cöt", "cöä", "ct", "cäät", "ä"];
+    for mutator in [
+        "unknown-out-compact-mutator.thfst",
+        "unknown-out-expanded-mutator.thfst",
+    ] {
+        assert_same_suggestions_subsets(
+            &unknown_out_speller(mutator),
+            unknown_outs,
+            &raw_config(),
+            mutator,
+        );
+    }
+}
+
+/// The two layouts of one relation must still answer alike once the search
+/// determinises the compact one on the fly: the point of the exercise is that
+/// the compact build stops paying for its layout, not that it starts answering
+/// differently from the build it is equivalent to.
+#[test]
+fn test_mutator_subsets_keep_layouts_agreeing() {
+    let cfg = SpellerConfig {
+        mutator_subsets: true,
+        ..raw_config()
+    };
+
+    let compact = wildcard_speller("wildcard-compact-mutator.thfst");
+    let expanded = wildcard_speller("wildcard-expanded-mutator.thfst");
+    for word in &["cät", "cär", "cäd", "kät", "cä", "ät"] {
+        assert_eq!(
+            suggestion_values(&compact, word, &cfg),
+            suggestion_values(&expanded, word, &cfg),
+            "wildcard layouts disagree on '{word}' under on-the-fly determinisation"
+        );
+    }
+
+    let compact = unknown_out_speller("unknown-out-compact-mutator.thfst");
+    let expanded = unknown_out_speller("unknown-out-expanded-mutator.thfst");
+    for word in &["cat", "cät", "cöt", "cöä", "ct", "cäät", "ä"] {
+        assert_eq!(
+            suggestion_values(&compact, word, &cfg),
+            suggestion_values(&expanded, word, &cfg),
+            "unknown-output layouts disagree on '{word}' under on-the-fly determinisation"
+        );
+    }
+}
+
 #[test]
 fn test_heuristic_agrees_on_other_fixtures() {
     let words = &["cat", "car", "cart", "kat", "cet", "cxt", "ct", "cattt"];

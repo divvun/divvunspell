@@ -26,6 +26,7 @@ use crate::types::{SymbolNumber, Weight};
 pub mod error;
 pub mod suggestion;
 
+mod subset;
 mod worker;
 
 /// Calculate Damerau-Levenshtein distance between pre-split grapheme slices.
@@ -659,6 +660,21 @@ pub struct SpellerConfig {
     /// costs, not what it finds. It is here as an escape hatch; leave it on.
     #[serde(default = "default_search_dedup")]
     pub search_dedup: bool,
+    /// whether the suggestion search determinises the error model as it goes
+    ///
+    /// An error model built as a plain union of components offers several
+    /// routes carrying one and the same `input:output` label sequence, so the
+    /// search stands in several model states at once for one partial
+    /// correction and pays the whole product walk once per state. With this on
+    /// it walks interned *subsets* of model states instead — the standard
+    /// weighted subset construction, built lazily and memoised — which merges
+    /// those routes back together. The merged arc weight is the minimum over
+    /// the routes it stands for, so this changes what the search costs, not
+    /// what it finds. A model that was determinised before it shipped produces
+    /// singleton subsets and is unaffected. It is here as an escape hatch;
+    /// leave it on.
+    #[serde(default = "default_mutator_subsets")]
+    pub mutator_subsets: bool,
     /// whether to output detailed weight information (not serialized)
     #[serde(skip)]
     pub verbose: bool,
@@ -685,6 +701,7 @@ impl SpellerConfig {
             completion_marker: None,
             astar_lookahead: default_astar_lookahead(),
             search_dedup: default_search_dedup(),
+            mutator_subsets: default_mutator_subsets(),
             verbose: false,
         }
     }
@@ -727,6 +744,14 @@ const fn default_astar_lookahead() -> bool {
 // every path into that state. Even a determinised error model repeats a third
 // to three quarters of its pops without it.
 const fn default_search_dedup() -> bool {
+    true
+}
+
+// On: a determinised error model produces singleton subsets and pays only a
+// memo lookup per node, and a compact one — the same relation left as a union
+// of components, 19x smaller on disk — stops paying for its own
+// non-determinism.
+const fn default_mutator_subsets() -> bool {
     true
 }
 /// FST-based spell checker and morphological analyzer.
@@ -1058,6 +1083,14 @@ where
         .collect()
 }
 
+/// A determinisation warmed up past this many subsets is dropped rather than
+/// handed back to the pool.
+///
+/// The reachable determinisation of a real error model settles in the low
+/// thousands, so only a transducer whose subsets keep diverging gets here — and
+/// there the memo is not earning the memory it holds.
+const SUBSET_POOL_LIMIT: usize = 1 << 16;
+
 #[derive(Debug)]
 pub struct HfstSpeller<T, U>
 where
@@ -1068,6 +1101,16 @@ where
     lexicon: U,
     alphabet_translator: Vec<SymbolNumber>,
     unknown_output_domain: Vec<SymbolNumber>,
+    /// Error-model determinisations warmed up by earlier searches.
+    ///
+    /// Nothing one holds depends on the word that built it, so determinising is
+    /// work done once for the speller rather than once per word — and the
+    /// reachable determinisation is a few thousand subsets against however many
+    /// words a run checks. A search takes one out and puts it back, which keeps
+    /// every lookup inside the search lock-free: the lock is touched twice per
+    /// word, not once per node. Passing them round a pool rather than sharing
+    /// one is what buys that, at the price of warming up once per thread.
+    subset_pool: parking_lot::Mutex<Vec<subset::MutatorSubsets>>,
 }
 
 impl<T, U> HfstSpeller<T, U>
@@ -1085,7 +1128,34 @@ where
             lexicon,
             alphabet_translator,
             unknown_output_domain,
+            subset_pool: parking_lot::Mutex::new(Vec::new()),
         })
+    }
+
+    /// Borrow a determinisation of the error model, warmed up by an earlier
+    /// search where one is going spare.
+    ///
+    /// `None` when the model is one the construction cannot handle, which the
+    /// caller answers by walking it as an NFA.
+    pub(crate) fn take_subsets(&self, track_distance: bool) -> Option<subset::MutatorSubsets> {
+        let taken = {
+            let mut pool = self.subset_pool.lock();
+            pool.iter()
+                .position(|s| s.tracks_distance() == track_distance)
+                .map(|at| pool.swap_remove(at))
+        };
+
+        match taken {
+            Some(subsets) => Some(subsets),
+            None => subset::MutatorSubsets::new(&self.mutator, track_distance),
+        }
+    }
+
+    /// Hand a determinisation back for the next search to reuse.
+    pub(crate) fn give_subsets(&self, subsets: subset::MutatorSubsets) {
+        if subsets.len() <= SUBSET_POOL_LIMIT {
+            self.subset_pool.lock().push(subsets);
+        }
     }
 
     fn _suggest_with_config(

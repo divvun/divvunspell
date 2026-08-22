@@ -257,6 +257,11 @@ impl FromForeign<*const std::ffi::c_void, SpellerConfig> for SpellerConfigMarsha
             // having spelled the same output changes what the search costs,
             // not what it finds.
             search_dedup: SpellerConfig::default().search_dedup,
+            // Likewise: determinising the error model as the search goes merges
+            // routes carrying the same label sequence at the cheapest of their
+            // weights, which is the weight the search would have reached by
+            // walking them one at a time.
+            mutator_subsets: SpellerConfig::default().mutator_subsets,
             verbose: config.verbose != 0,
         };
 
