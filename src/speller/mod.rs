@@ -675,6 +675,29 @@ pub struct SpellerConfig {
     /// leave it on.
     #[serde(default = "default_mutator_subsets")]
     pub mutator_subsets: bool,
+    /// how many nodes the suggestion search may pop before it settles for what
+    /// it has found
+    ///
+    /// `None`, the default, means unlimited: the search runs until the weight
+    /// cutoff prunes every open node, which is exact and unbounded. A word with
+    /// no correction anywhere near it never fills the n-best heap, so nothing
+    /// tightens the cutoff below `max_weight` and the search sweeps everything
+    /// the two transducers can reach between them. An error model that allows
+    /// three edits turns that into seconds for a single word.
+    ///
+    /// `Some(n)` bounds the *work* rather than the weight. The search is
+    /// best-first, so it spends the budget on the most promising nodes first
+    /// and stopping is an anytime cut: every correction already found is
+    /// cheaper than anything left in the queue, so what a stop costs is the
+    /// dear tail, not the answer. The stop is recorded — a `tracing::debug!`
+    /// line, and a counter in the `DIVVUNSPELL_SEARCH_STATS` report — because a
+    /// truncated search that reports like an exhausted one is a bug that hides
+    /// itself.
+    ///
+    /// The budget is per search, and a word whose casing is ambiguous is
+    /// searched once per case variant.
+    #[serde(default = "default_search_budget")]
+    pub search_budget: Option<u64>,
     /// whether to output detailed weight information (not serialized)
     #[serde(skip)]
     pub verbose: bool,
@@ -689,6 +712,7 @@ impl SpellerConfig {
     /// * node_pool_size = 128
     /// * recase = true
     /// * astar_lookahead = false
+    /// * search_budget = None
     /// * verbose = false
     pub const fn default() -> SpellerConfig {
         SpellerConfig {
@@ -702,6 +726,7 @@ impl SpellerConfig {
             astar_lookahead: default_astar_lookahead(),
             search_dedup: default_search_dedup(),
             mutator_subsets: default_mutator_subsets(),
+            search_budget: default_search_budget(),
             verbose: false,
         }
     }
@@ -753,6 +778,14 @@ const fn default_search_dedup() -> bool {
 // non-determinism.
 const fn default_mutator_subsets() -> bool {
     true
+}
+
+// Off by default: a budget trades exactness for a bound on how long a word may
+// take, and only the caller knows whether it is answering a keystroke or
+// checking a corpus. Unset, the search behaves exactly as it did before there
+// was a budget to set.
+const fn default_search_budget() -> Option<u64> {
+    None
 }
 /// FST-based spell checker and morphological analyzer.
 ///

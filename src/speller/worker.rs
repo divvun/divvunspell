@@ -77,6 +77,33 @@ impl Ord for OrderedNode<'_> {
 static SEARCH_STATS: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var_os("DIVVUNSPELL_SEARCH_STATS").is_some());
 
+/// Why a search stopped with nodes still queued.
+///
+/// Both stops hand back the corrections found so far rather than nothing. The
+/// queue is ordered by `weight + heuristic`, so everything already collected is
+/// cheaper than anything still open: cutting a best-first search short costs
+/// the dearest candidates, never the best one. What such a cut must not be is
+/// quiet — a truncated search that reports like an exhausted one is
+/// indistinguishable from a model that genuinely had nothing more to offer, and
+/// the truncation point moves with the shape of the transducers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SearchStop {
+    /// `SpellerConfig::search_budget` was reached — the caller asked for a
+    /// bound on the work and got it.
+    Budget,
+    /// [`HARD_ITERATION_CAP`] was reached: nothing configured this, and no word
+    /// is expected to.
+    HardCap,
+}
+
+/// Backstop against a search that would otherwise run without end.
+///
+/// This is not a tuning knob — it is far beyond anything a real word reaches,
+/// and a search that hits it has found something pathological in the
+/// transducers rather than merely a hard word. Bounding the work on purpose is
+/// what `SpellerConfig::search_budget` is for.
+const HARD_ITERATION_CAP: u64 = 10_000_000;
+
 #[derive(Default)]
 struct SearchStats {
     pops: u64,
@@ -90,6 +117,11 @@ struct SearchStats {
     max_queue: usize,
     corrections: u64,
     first_correction_pop: Option<u64>,
+    /// Searches cut short by the configured budget, and by the backstop. Either
+    /// being non-zero says the result set is a prefix of the answer rather than
+    /// the answer.
+    budget_stops: u64,
+    hard_cap_stops: u64,
     seen: HashMap<(u32, u32, u32), (Weight, u32)>,
     /// Distinct `(triple, output-so-far)` signatures. A pop whose signature has
     /// been seen before cannot contribute a correction the earlier one could
@@ -145,6 +177,13 @@ impl SearchStats {
         self.lexicon_states.insert(node.lexicon_state.0);
     }
 
+    fn record_stop(&mut self, stop: SearchStop) {
+        match stop {
+            SearchStop::Budget => self.budget_stops += 1,
+            SearchStop::HardCap => self.hard_cap_stops += 1,
+        }
+    }
+
     fn report(&self, word: &str, queue_len: usize) {
         let hottest = self.seen.values().map(|(_, c)| *c).max().unwrap_or(0);
         let subsets = match self.subsets {
@@ -166,7 +205,8 @@ impl SearchStats {
              hottest_triple_pops={}\tredundant_pops={}\t\
              redundant_pct={:.1}\tmutator_states={}\tlexicon_states={}\t\
              push_lex_eps={}\tpush_mut_eps={}\tpush_consume={}\tpushes_kept={}\t\
-             max_queue={}\tqueue_left={}\tcorrections={}\tfirst_correction_pop={}{}",
+             max_queue={}\tqueue_left={}\tcorrections={}\tfirst_correction_pop={}\t\
+             budget_stops={}\thard_cap_stops={}{}",
             self.pops,
             self.seen.len(),
             self.signatures.len(),
@@ -187,6 +227,8 @@ impl SearchStats {
             self.first_correction_pop
                 .map(|p| p.to_string())
                 .unwrap_or_else(|| "-".to_string()),
+            self.budget_stops,
+            self.hard_cap_stops,
             subsets,
         );
     }
@@ -1238,9 +1280,14 @@ where
         let mut weight_heap: BinaryHeap<Weight> = BinaryHeap::with_capacity(n_best.min(64));
         let mut dl_buf: Vec<usize> = Vec::new();
 
-        let mut iteration_count = 0usize;
+        let mut iteration_count = 0u64;
         let mut stats = SEARCH_STATS.then(SearchStats::default);
         let mut closed = self.config.search_dedup.then(Closed::new);
+        // Every node the search takes off the queue is counted, whichever kind
+        // of expansion put it there, so the budget bounds the work the search
+        // does rather than one variety of it.
+        let budget = self.config.search_budget.unwrap_or(u64::MAX);
+        let mut stop: Option<SearchStop> = None;
 
         while let Some(OrderedNode {
             estimate,
@@ -1250,6 +1297,17 @@ where
             iteration_count += 1;
             if let Some(s) = stats.as_mut() {
                 s.record_pop(&next_node);
+            }
+
+            // Checked on the pop rather than on the expansion, so a node the
+            // dedup below discards still costs what it cost to reach and queue.
+            if iteration_count >= budget {
+                stop = Some(SearchStop::Budget);
+                break;
+            }
+            if iteration_count >= HARD_ITERATION_CAP {
+                stop = Some(SearchStop::HardCap);
+                break;
             }
 
             // A cheaper path to this exact state was queued after this node
@@ -1266,18 +1324,6 @@ where
                 None
             };
             let max_weight = self.update_weight_limit(best_weight, nth_best);
-
-            if iteration_count >= 10_000_000 {
-                let name: SmolStr = self
-                    .input
-                    .iter()
-                    .map(|s| &*key_table[s.0 as usize])
-                    .collect();
-                tracing::warn!("{}: iteration count at {}", name, iteration_count);
-                tracing::warn!("Node count: {}", queue.len());
-                tracing::warn!("Node weight: {}", next_node.weight());
-                break;
-            }
 
             if !self.is_under_weight_limit(max_weight, estimate) {
                 // No completion of the most promising open node can come in
@@ -1419,10 +1465,40 @@ where
             }
         }
 
+        // A stop leaves the queue non-empty, so say so: the corrections below
+        // are the ones the search got to, not the ones the model has.
+        if let Some(stop) = stop {
+            let word: SmolStr = self
+                .input
+                .iter()
+                .map(|sym| &*key_table[sym.0 as usize])
+                .collect();
+            match stop {
+                SearchStop::Budget => tracing::debug!(
+                    word = %word,
+                    pops = iteration_count,
+                    queued = queue.len(),
+                    corrections = corrections.len(),
+                    "search budget reached; returning the corrections found so far"
+                ),
+                SearchStop::HardCap => tracing::warn!(
+                    word = %word,
+                    pops = iteration_count,
+                    queued = queue.len(),
+                    corrections = corrections.len(),
+                    "search hit the hard iteration cap; returning the corrections found so far"
+                ),
+            }
+            if let Some(s) = stats.as_mut() {
+                s.record_stop(stop);
+            }
+        }
+
         tracing::debug!(
             heuristic = self.config.astar_lookahead,
             iterations = iteration_count,
             queued = queue.len(),
+            stopped = ?stop,
             "suggest search finished"
         );
 

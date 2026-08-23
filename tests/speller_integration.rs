@@ -3447,6 +3447,160 @@ fn test_mutator_subsets_keep_layouts_agreeing() {
     }
 }
 
+/// A budget the search never spends must be invisible.
+fn assert_budget_matches_unlimited(
+    s: &Arc<HfstSpeller<MmapThfstTransducer, MmapThfstTransducer>>,
+    words: &[&str],
+    base: &SpellerConfig,
+    label: &str,
+) {
+    for word in words {
+        let unlimited = SpellerConfig {
+            search_budget: None,
+            ..base.clone()
+        };
+        let generous = SpellerConfig {
+            search_budget: Some(10_000_000),
+            ..base.clone()
+        };
+
+        let a = suggestion_values(s, word, &unlimited);
+        let b = suggestion_values(s, word, &generous);
+
+        assert_eq!(
+            a, b,
+            "{label}: '{word}' differs under a budget it cannot reach:\n  unlimited {a:?}\n  budgeted {b:?}"
+        );
+    }
+}
+
+/// The default is no budget, and a budget larger than the search is another way
+/// of writing that: nothing about the traversal changes until the count is
+/// actually reached, so the two must agree suggestion for suggestion and weight
+/// for weight. The fixtures run to a few dozen nodes, so every budget here is
+/// unreachable by orders of magnitude.
+#[test]
+fn test_search_budget_unreached_changes_nothing() {
+    let words = &[
+        "kat", "cet", "cad", "dog", "ca", "c", "ct", "cart", "cat", "kart", "kaart", "caat",
+        "ccccc", "kät", "cär", "carte", "art", "at", "",
+    ];
+
+    assert_budget_matches_unlimited(&test_speller(), words, &raw_config(), "raw");
+    assert_budget_matches_unlimited(&test_speller(), words, &reweight_config(), "reweight");
+    assert_budget_matches_unlimited(
+        &test_speller(),
+        words,
+        &SpellerConfig {
+            n_best: Some(1),
+            ..raw_config()
+        },
+        "n_best=1",
+    );
+    assert_budget_matches_unlimited(
+        &test_speller(),
+        words,
+        &SpellerConfig {
+            n_best: None,
+            ..raw_config()
+        },
+        "n_best=none",
+    );
+    assert_budget_matches_unlimited(
+        &test_speller(),
+        words,
+        &SpellerConfig {
+            beam: Some(Weight(6.0)),
+            ..raw_config()
+        },
+        "beam",
+    );
+    assert_budget_matches_unlimited(
+        &test_speller(),
+        words,
+        &SpellerConfig {
+            max_weight: Some(Weight(8.0)),
+            ..raw_config()
+        },
+        "max_weight",
+    );
+
+    let short = &["cat", "car", "cart", "kat", "cet", "cxt", "ct", "cattt"];
+    assert_budget_matches_unlimited(&flag_speller(), short, &raw_config(), "flag");
+    assert_budget_matches_unlimited(&identity_speller(), short, &raw_config(), "identity");
+    assert_budget_matches_unlimited(&eps_speller(), short, &raw_config(), "eps");
+}
+
+/// Spending the budget costs the tail of the search, not its answer.
+///
+/// The queue hands out its cheapest node every time, so a correction collected
+/// before the count ran out is one the unbounded search collects too, and no
+/// dearer there than here. What a stop loses is what was still queued: the
+/// dearest candidates, and the cheaper routes to a correction already in hand.
+#[test]
+fn test_search_budget_truncates_gracefully() {
+    let s = test_speller();
+    // n-best off, so this compares against every correction the search can
+    // reach rather than a ten-item cut of them.
+    let base = SpellerConfig {
+        n_best: None,
+        ..raw_config()
+    };
+    let budgeted = SpellerConfig {
+        search_budget: Some(10),
+        ..base.clone()
+    };
+
+    // These reach their first correction within a handful of pops, where the
+    // whole search runs to a few dozen — so ten stops it well short of the end
+    // and still leaves it with something to say.
+    for word in &["kat", "cat", "cet", "cad", "kart"] {
+        let full = suggestion_values(&s, word, &base);
+        let cut = suggestion_values(&s, word, &budgeted);
+
+        assert!(
+            !cut.is_empty(),
+            "'{word}' returned nothing at all under a budget of ten"
+        );
+        assert!(
+            cut.len() <= full.len(),
+            "'{word}': a budget found more than the full search: {cut:?} vs {full:?}"
+        );
+
+        for (value, weight) in &cut {
+            let found = full.iter().find(|(v, _)| v == value);
+            let Some((_, full_weight)) = found else {
+                panic!(
+                    "'{word}': budgeted suggestion {value:?} is not one the full search finds: {full:?}"
+                );
+            };
+            assert!(
+                *weight >= *full_weight - 1e-6,
+                "'{word}': {value:?} came in cheaper under a budget ({weight}) than in full ({full_weight})"
+            );
+        }
+    }
+}
+
+/// A budget of one stops on the first node off the queue, before anything has
+/// been expanded — the degenerate end of the same path, and it must return an
+/// empty list rather than fall over.
+#[test]
+fn test_search_budget_of_one_returns_nothing() {
+    let s = test_speller();
+    let cfg = SpellerConfig {
+        search_budget: Some(1),
+        ..raw_config()
+    };
+
+    for word in &["kat", "cat", "ccccc", "kaart", ""] {
+        assert!(
+            suggestion_values(&s, word, &cfg).is_empty(),
+            "'{word}' produced suggestions from a search that never expanded a node"
+        );
+    }
+}
+
 #[test]
 fn test_heuristic_agrees_on_other_fixtures() {
     let words = &["cat", "car", "cart", "kat", "cet", "cxt", "ct", "cattt"];

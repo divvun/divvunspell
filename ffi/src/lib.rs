@@ -262,6 +262,10 @@ impl FromForeign<*const std::ffi::c_void, SpellerConfig> for SpellerConfigMarsha
             // weights, which is the weight the search would have reached by
             // walking them one at a time.
             mutator_subsets: SpellerConfig::default().mutator_subsets,
+            // Not one of those three: a budget does change what comes back, so
+            // exposing it means a new field in the C struct and an ABI break.
+            // Until a host asks for one, the boundary keeps the exact search.
+            search_budget: SpellerConfig::default().search_budget,
             verbose: config.verbose != 0,
         };
 

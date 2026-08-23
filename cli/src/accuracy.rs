@@ -82,6 +82,7 @@ static CFG: SpellerConfig = SpellerConfig {
     astar_lookahead: false,
     search_dedup: true,
     mutator_subsets: true,
+    search_budget: None,
     verbose: false,
 };
 
