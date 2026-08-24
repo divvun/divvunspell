@@ -3937,3 +3937,64 @@ fn test_word_split_verbose_weight_details() {
     assert_eq!(details.lexicon_weight, Weight(1.0));
     assert_eq!(split.weight(), Weight(21.0));
 }
+
+// Splitting a compound is a bad-behaviour suggestion pattern, so a split may
+// never outrank a whole word that costs exactly the same.
+//
+// "carcat" corrects to cart@15, car@21, cat@21, care@29, cär@36; at a split
+// weight of 21 the split "car cat" costs 21 too, and both halves are free, so
+// the total, the lexicon share and the alphabet all fail to separate it from
+// "car" and "cat". The alphabet used to put it between them.
+#[test]
+fn test_word_split_loses_every_tie_with_a_whole_word() {
+    let s = test_speller();
+    let cfg = split_config(21.0);
+
+    let suggs = suggestion_values(&s, "carcat", &cfg);
+    assert_sorted(&suggs, "word split tie");
+    assert_eq!(
+        suggs.iter().map(|(v, _)| v.as_str()).collect::<Vec<_>>(),
+        ["cart", "car", "cat", "car cat", "care", "cär"],
+        "the split sorts behind every whole word of its own weight"
+    );
+}
+
+// The tie-break is only a tie-break: a split cheaper than the whole words
+// still leads, and a dearer one still trails.
+#[test]
+fn test_word_split_tie_break_does_not_override_weight() {
+    let s = test_speller();
+
+    assert_eq!(
+        suggestion_words(&s, "carcat", &split_config(14.0))
+            .first()
+            .map(String::as_str),
+        Some("car cat"),
+        "a split cheaper than every correction is still the first answer"
+    );
+
+    assert_eq!(
+        suggestion_words(&s, "carcat", &split_config(22.0))
+            .iter()
+            .position(|v| v == "car cat"),
+        Some(3),
+        "a dearer split still sorts by its weight"
+    );
+}
+
+// The demotion happens before the n-best cut, so a tie at the boundary now
+// keeps the whole word and drops the split.
+#[test]
+fn test_word_split_loses_the_n_best_place_to_a_whole_word() {
+    let s = test_speller();
+    let cfg = SpellerConfig {
+        n_best: Some(3),
+        ..split_config(21.0)
+    };
+
+    assert_eq!(
+        suggestion_words(&s, "carcat", &cfg),
+        ["cart", "car", "cat"],
+        "the split does not take a place from an equal-weight whole word"
+    );
+}

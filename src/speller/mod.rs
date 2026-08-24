@@ -936,7 +936,10 @@ fn merge_word_splits(
 ) {
     for split in splits {
         // A lexicon can spell a space itself — `words.default.txt` holds whole
-        // phrases — so the same string can arrive from both directions.
+        // phrases — so the same string can arrive from both directions. Strictly
+        // cheaper wins, which means an equally-priced phrase the search found
+        // keeps its place and its unmarked status rather than being overwritten
+        // by the split account of the same string.
         match out.iter().position(|s| s.value == split.value) {
             Some(at) if out[at].weight > split.weight => out[at] = split,
             Some(_) => {}
@@ -1392,8 +1395,12 @@ where
     /// A boundary is offered when the lexicon accepts both halves as words in
     /// their own right — a pair of lexicon walks per boundary, no correction
     /// search. The weight is `split_weight` plus the halves' lexicon weights,
-    /// and that sum is also the split's lexicon share, so the tie-break in
-    /// [`Suggestion::cmp`] reads a split as it reads any other suggestion.
+    /// and that sum is also the split's lexicon share.
+    ///
+    /// Every suggestion made here is marked a split, which is what keeps it
+    /// from winning a tie against a whole word: see [`Suggestion::cmp`]. This
+    /// is the only place the mark is applied, so a spaced suggestion the
+    /// search itself found — the lexicon can spell a phrase — is not demoted.
     fn word_split_suggestions(
         self: Arc<Self>,
         word: &str,
@@ -1437,7 +1444,11 @@ where
                     false => Suggestion::new(value, split_weight + lexicon_weight, completed),
                 };
 
-                Some(suggestion.with_lexicon_weight(lexicon_weight))
+                Some(
+                    suggestion
+                        .with_lexicon_weight(lexicon_weight)
+                        .with_word_split(),
+                )
             })
             .collect()
     }
@@ -1757,6 +1768,7 @@ where
                                 reweight_end: d.reweight_end,
                             }),
                             lexicon_weight,
+                            is_split: false,
                         }
                     })
                     .collect::<Vec<_>>();
@@ -1777,6 +1789,7 @@ where
                                 reweight_end: d.reweight_end,
                             }),
                             lexicon_weight,
+                            is_split: false,
                         }
                     })
                     .collect::<Vec<_>>();
@@ -1792,6 +1805,7 @@ where
                         completed: Some(!k.ends_with(s)),
                         weight_details: None,
                         lexicon_weight,
+                        is_split: false,
                     })
                     .collect::<Vec<_>>();
             } else {
@@ -1803,6 +1817,7 @@ where
                         completed: None,
                         weight_details: None,
                         lexicon_weight,
+                        is_split: false,
                     })
                     .collect::<Vec<_>>();
             }

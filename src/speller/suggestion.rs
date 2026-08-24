@@ -36,6 +36,21 @@ pub struct Suggestion {
     /// inert rather than wrong.
     #[serde(skip, default = "no_lexicon_weight")]
     pub(crate) lexicon_weight: Weight,
+    /// Whether this suggestion puts a space back into the input — a word-split
+    /// correction, produced by `HfstSpeller::word_split_suggestions` rather
+    /// than by the error-model search.
+    ///
+    /// Splitting a compound is itself a bad-behaviour pattern: the language
+    /// writes compounds, and offering to break one apart is rarely what the
+    /// writer meant even when the arithmetic makes it look as good as an
+    /// ordinary correction. So a split never wins a tie — see
+    /// [`Suggestion::cmp`].
+    ///
+    /// Carried the same way as `lexicon_weight`: internal, present in every
+    /// mode, and never serialized, so the wire format is unchanged and a
+    /// suggestion read back from it is simply not a split.
+    #[serde(skip)]
+    pub(crate) is_split: bool,
 }
 
 /// Serde default for the skipped [`Suggestion::lexicon_weight`].
@@ -67,6 +82,7 @@ impl Suggestion {
             completed,
             weight_details: None,
             lexicon_weight: Weight::ZERO,
+            is_split: false,
         }
     }
 
@@ -83,6 +99,7 @@ impl Suggestion {
             completed,
             weight_details: Some(details),
             lexicon_weight: Weight::ZERO,
+            is_split: false,
         }
     }
 
@@ -90,6 +107,12 @@ impl Suggestion {
     /// [`Suggestion::cmp`].
     pub(crate) fn with_lexicon_weight(mut self, lexicon_weight: Weight) -> Suggestion {
         self.lexicon_weight = lexicon_weight;
+        self
+    }
+
+    /// Mark this suggestion as a word split, which loses every tie it enters.
+    pub(crate) fn with_word_split(mut self) -> Suggestion {
+        self.is_split = true;
         self
     }
 
@@ -121,14 +144,25 @@ impl PartialOrd for Suggestion {
 }
 
 impl Ord for Suggestion {
-    /// Cheapest total first; exact ties decided by the lexicon.
+    /// Cheapest total first; then whole words before splits; then the lexicon.
     ///
     /// Two corrections can cost the same to reach and still not be equally good
-    /// answers: one of them may be a word the language model rates as far more
-    /// plausible. That figure is computed during the search and was, until now,
-    /// thrown away before the final ordering, leaving equal-weight suggestions
-    /// in whatever order the search produced them. Consulting it costs nothing
-    /// and is language-independent — it is the lexicon's own opinion, whichever
+    /// answers. Two things separate them, in this order.
+    ///
+    /// A word split — putting a space back into what was typed as one word —
+    /// is a suggestion of a different kind, not merely a dearer one. The
+    /// languages this serves compound freely, so a split can be arithmetically
+    /// as cheap as an ordinary correction while being the wrong advice:
+    /// telling a writer to break a compound apart is itself a bad-behaviour
+    /// pattern. At equal total weight the whole word wins, always. The split is
+    /// still offered, just never ahead of a correction that cost the same.
+    ///
+    /// Below that, the lexicon's own share of the weight: one candidate may be
+    /// a word the language model rates as far more plausible. That figure is
+    /// computed during the search and was, until now, thrown away before the
+    /// final ordering, leaving equal-weight suggestions in whatever order the
+    /// search produced them. Consulting it costs nothing and is
+    /// language-independent — it is the lexicon's own opinion, whichever
     /// lexicon is loaded.
     ///
     /// `Weight` orders by `f32::total_cmp`, so this is total and NaN-safe: a
@@ -136,9 +170,13 @@ impl Ord for Suggestion {
     /// inconsistent.
     fn cmp(&self, other: &Self) -> Ordering {
         match self.weight.cmp(&other.weight) {
-            Equal => match self.lexicon_weight.cmp(&other.lexicon_weight) {
-                Equal => self.value.cmp(&other.value),
-                lexicon => lexicon,
+            // `false < true`, so a non-split sorts ahead of a split.
+            Equal => match self.is_split.cmp(&other.is_split) {
+                Equal => match self.lexicon_weight.cmp(&other.lexicon_weight) {
+                    Equal => self.value.cmp(&other.value),
+                    lexicon => lexicon,
+                },
+                split => split,
             },
             weight => weight,
         }
@@ -147,12 +185,13 @@ impl Ord for Suggestion {
 
 impl PartialEq for Suggestion {
     fn eq(&self, other: &Self) -> bool {
-        // Includes the lexicon share so `Eq` stays consistent with `Ord`, which
-        // only reports `Equal` when that agrees too. Nothing outside this crate
-        // can set it, so suggestions built through the public constructors
-        // compare exactly as they always did.
+        // Includes the lexicon share and the split flag so `Eq` stays
+        // consistent with `Ord`, which only reports `Equal` when those agree
+        // too. Nothing outside this crate can set either, so suggestions built
+        // through the public constructors compare exactly as they always did.
         self.value == other.value
             && self.weight == other.weight
+            && self.is_split == other.is_split
             && self.lexicon_weight == other.lexicon_weight
     }
 }
@@ -212,6 +251,96 @@ mod tests {
             Suggestion::new(SmolStr::new("car"), Weight(8.0), None),
         ]);
         assert_eq!(order, ["car", "cat"]);
+    }
+
+    fn split(value: &str, weight: f32, lexicon_weight: f32) -> Suggestion {
+        sugg(value, weight, lexicon_weight).with_word_split()
+    }
+
+    // The directive: at equal total weight the compound wins, whatever the
+    // lexicon thinks of it and whatever the alphabet would have said. Both
+    // orders of construction, so this cannot pass by luck of the input order.
+    #[test]
+    fn a_split_never_outranks_an_equal_weight_whole_word() {
+        assert_eq!(
+            ordered(vec![
+                split("com pound", 20.0, 1.0),
+                sugg("compound", 20.0, 40.0)
+            ]),
+            ["compound", "com pound"]
+        );
+        assert_eq!(
+            ordered(vec![
+                sugg("compound", 20.0, 40.0),
+                split("com pound", 20.0, 1.0)
+            ]),
+            ["compound", "com pound"]
+        );
+        // Even against a whole word the alphabet would have put last.
+        assert_eq!(
+            ordered(vec![split("a b", 20.0, 0.0), sugg("zebra", 20.0, 0.0)]),
+            ["zebra", "a b"]
+        );
+    }
+
+    // Strictly a tie-break: weight still decides when the weights differ, in
+    // both directions. A cheaper split is still the first answer.
+    #[test]
+    fn weight_still_decides_against_a_split() {
+        assert_eq!(
+            ordered(vec![
+                sugg("compound", 25.0, 0.0),
+                split("com pound", 20.0, 0.0)
+            ]),
+            ["com pound", "compound"]
+        );
+        assert_eq!(
+            ordered(vec![
+                sugg("compound", 20.0, 0.0),
+                split("com pound", 25.0, 0.0)
+            ]),
+            ["compound", "com pound"]
+        );
+    }
+
+    // Two splits at the same weight fall through to the ordering that was
+    // already there, rather than to whichever the search produced first.
+    #[test]
+    fn splits_among_themselves_keep_the_lexicon_tie_break() {
+        assert_eq!(
+            ordered(vec![
+                split("aard vark", 8.0, 40.0),
+                split("ze bra", 8.0, 1.0)
+            ]),
+            ["ze bra", "aard vark"]
+        );
+    }
+
+    // A spaced value is not by itself a split: the lexicon can spell a phrase.
+    // Only the flag demotes, so a phrase the search found keeps competing on
+    // the lexicon share as before.
+    #[test]
+    fn a_space_alone_does_not_demote() {
+        assert_eq!(
+            ordered(vec![
+                sugg("dear phrase", 8.0, 1.0),
+                sugg("cheap", 8.0, 40.0)
+            ]),
+            ["dear phrase", "cheap"]
+        );
+    }
+
+    // The wire format is the public one and does not change: a split is
+    // serialized exactly as any other suggestion, and read back as a
+    // non-split, which leaves the demotion inert rather than wrong.
+    #[test]
+    fn the_split_flag_stays_off_the_wire() {
+        let json =
+            serde_json::to_string(&split("com pound", 20.0, 1.0)).expect("a suggestion serializes");
+        assert_eq!(json, r#"{"value":"com pound","weight":20.0}"#);
+
+        let read_back: Suggestion = serde_json::from_str(&json).expect("and reads back");
+        assert!(!read_back.is_split);
     }
 
     // `sort` needs a total order; a NaN weight must not make the comparison
