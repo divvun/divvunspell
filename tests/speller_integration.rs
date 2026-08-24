@@ -3715,3 +3715,225 @@ fn test_heuristic_handles_transition_table_states() {
 
     assert_same_suggestions(&s, &["ab", "a", "abc", "b", "ac"], &raw_config(), "trans");
 }
+
+// ===========================================================================
+// Word splitting
+//
+// The fixture lexicon holds cat, car, cart (final w=1), care and cär, so
+// "carcat" is two of its words run together.
+// ===========================================================================
+
+fn split_config(weight: f32) -> SpellerConfig {
+    SpellerConfig {
+        word_split_weight: Some(Weight(weight)),
+        ..raw_config()
+    }
+}
+
+fn spaced_suggestions(
+    s: &Arc<HfstSpeller<MmapThfstTransducer, MmapThfstTransducer>>,
+    word: &str,
+    config: &SpellerConfig,
+) -> Vec<(String, f32)> {
+    suggestion_values(s, word, config)
+        .into_iter()
+        .filter(|(v, _)| v.contains(' '))
+        .collect()
+}
+
+#[test]
+fn test_word_split_off_by_default() {
+    let s = test_speller();
+
+    assert_eq!(SpellerConfig::default().word_split_weight, None);
+    for cfg in [SpellerConfig::default(), raw_config(), reweight_config()] {
+        assert!(
+            spaced_suggestions(&s, "carcat", &cfg).is_empty(),
+            "no split should be offered unless one is asked for: {:?}",
+            suggestion_values(&s, "carcat", &cfg)
+        );
+    }
+}
+
+#[test]
+fn test_word_split_suggests_two_correct_halves() {
+    let s = test_speller();
+    assert_suggests_at_weight(&s, "carcat", "car cat", 20.0, &split_config(20.0));
+    assert_suggests_at_weight(&s, "catcar", "cat car", 20.0, &split_config(20.0));
+}
+
+// "cart" is final at w=1 where "cat" and "car" are free.
+#[test]
+fn test_word_split_weight_adds_the_halves_lexicon_weights() {
+    let s = test_speller();
+    assert_suggests_at_weight(&s, "cartcat", "cart cat", 21.0, &split_config(20.0));
+    assert_suggests_at_weight(&s, "cartcart", "cart cart", 22.0, &split_config(20.0));
+    assert_suggests_at_weight(&s, "carcat", "car cat", 35.0, &split_config(35.0));
+}
+
+// Of the three interior boundaries of "carcat", one splits it into two words.
+#[test]
+fn test_word_split_only_where_both_halves_are_words() {
+    let s = test_speller();
+    let cfg = split_config(20.0);
+
+    assert_eq!(
+        spaced_suggestions(&s, "carcat", &cfg),
+        [("car cat".to_string(), 20.0)],
+        "only the boundary between the two words should be offered"
+    );
+    assert!(
+        spaced_suggestions(&s, "carcare", &cfg).len() == 1,
+        "car|care is the only pair in carcare"
+    );
+    assert!(
+        spaced_suggestions(&s, "catxcat", &cfg).is_empty(),
+        "a half that is not a word is not a split"
+    );
+    assert!(
+        spaced_suggestions(&s, "cat", &cfg).is_empty(),
+        "too short to split at all"
+    );
+}
+
+// A split takes its place in the order by weight, like anything else.
+#[test]
+fn test_word_split_merges_into_the_n_best_order() {
+    let s = test_speller();
+
+    let cheap = SpellerConfig {
+        n_best: Some(1),
+        ..split_config(1.0)
+    };
+    assert_eq!(
+        suggestion_words(&s, "carcat", &cheap),
+        ["car cat"],
+        "a split cheaper than every correction is the first answer"
+    );
+
+    let dear = split_config(500.0);
+    let suggs = suggestion_values(&s, "carcat", &dear);
+    assert_sorted(&suggs, "word split");
+    assert_eq!(
+        suggs.iter().position(|(v, _)| v == "car cat"),
+        Some(suggs.len() - 1),
+        "a dear split sorts behind the corrections: {:?}",
+        suggs
+    );
+}
+
+// The limits mean what they say, splits included.
+#[test]
+fn test_word_split_obeys_max_weight() {
+    let s = test_speller();
+    let cfg = SpellerConfig {
+        max_weight: Some(Weight(19.0)),
+        ..split_config(20.0)
+    };
+    assert_not_suggests(&s, "carcat", "car cat", &cfg);
+}
+
+// The capital goes back on the half it was typed on; all caps stays all caps.
+#[test]
+fn test_word_split_recases_like_the_input() {
+    let s = test_speller();
+    let cfg = SpellerConfig {
+        recase: true,
+        word_split_weight: Some(Weight(20.0)),
+        ..SpellerConfig::default()
+    };
+
+    assert_suggests(&s, "Carcat", "Car cat", &cfg);
+    assert_suggests(&s, "CARCAT", "CAR CAT", &cfg);
+    assert_suggests(&s, "carcat", "car cat", &cfg);
+}
+
+// Without recasing a capitalised half is not a word, so there is no split.
+#[test]
+fn test_word_split_without_recase() {
+    let s = test_speller();
+    let cfg = SpellerConfig {
+        recase: false,
+        ..split_config(20.0)
+    };
+
+    assert!(spaced_suggestions(&s, "Carcat", &cfg).is_empty());
+    assert_suggests(&s, "carcat", "car cat", &cfg);
+}
+
+// An analysis describes one word, so the tagged paths never see a split.
+#[test]
+fn test_word_split_stays_out_of_analysis_output() {
+    let s = test_speller();
+    let cfg = split_config(20.0);
+
+    let analyses: Vec<String> = s
+        .clone()
+        .analyze_output_with_config("carcat", &cfg)
+        .iter()
+        .map(|s| s.value.to_string())
+        .collect();
+
+    assert!(
+        !analyses.iter().any(|v| v.contains(' ')),
+        "analysis output should carry no splits: {:?}",
+        analyses
+    );
+}
+
+// A split is added to what the search found, never substituted into it.
+#[test]
+fn test_word_split_leaves_the_other_suggestions_alone() {
+    let s = test_speller();
+    let words = &[
+        "carcat", "cartcat", "kat", "cart", "ccccc", "cat", "ct", "carcare", "catcat",
+    ];
+
+    for base in [raw_config(), reweight_config()] {
+        let off = SpellerConfig {
+            n_best: None,
+            ..base
+        };
+        let on = SpellerConfig {
+            word_split_weight: Some(Weight(20.0)),
+            ..off.clone()
+        };
+
+        for word in words {
+            let before = suggestion_values(&s, word, &off);
+            let after: Vec<(String, f32)> = suggestion_values(&s, word, &on)
+                .into_iter()
+                .filter(|(v, _)| !v.contains(' '))
+                .collect();
+
+            assert_eq!(
+                before, after,
+                "'{}': splitting changed the ordinary suggestions",
+                word
+            );
+        }
+    }
+}
+
+// A split has no error-model path, so the charge for the space stands in.
+#[test]
+fn test_word_split_verbose_weight_details() {
+    let s = test_speller();
+    let cfg = SpellerConfig {
+        verbose: true,
+        ..split_config(20.0)
+    };
+
+    let suggs = s.clone().suggest_with_config("cartcat", &cfg);
+    let split = suggs
+        .iter()
+        .find(|s| s.value == "cart cat")
+        .expect("the split should be suggested");
+    let details = split
+        .weight_details()
+        .expect("verbose mode should carry weight details");
+
+    assert_eq!(details.mutator_weight, Weight(20.0));
+    assert_eq!(details.lexicon_weight, Weight(1.0));
+    assert_eq!(split.weight(), Weight(21.0));
+}

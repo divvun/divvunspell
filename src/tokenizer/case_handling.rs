@@ -133,7 +133,7 @@ impl From<&str> for WordCase {
 
 /// Whether the first bicameral character of the word is upper case, however
 /// irregular the rest of the word is.
-fn starts_upper_case(word: &str) -> bool {
+pub(crate) fn starts_upper_case(word: &str) -> bool {
     word.chars()
         .find(|c| is_cased(*c))
         .is_some_and(char::is_uppercase)

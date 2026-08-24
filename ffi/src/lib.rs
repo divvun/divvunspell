@@ -227,6 +227,9 @@ impl FromForeign<*const std::ffi::c_void, SpellerConfig> for SpellerConfigMarsha
                 start_penalty: c.start_penalty,
                 end_penalty: c.end_penalty,
                 mid_penalty: c.mid_penalty,
+                // The C ABI struct is fixed, so callers across it get the
+                // three-zone behaviour — which is the default either way.
+                curve: None,
             })
         };
 
@@ -266,6 +269,8 @@ impl FromForeign<*const std::ffi::c_void, SpellerConfig> for SpellerConfigMarsha
             // exposing it means a new field in the C struct and an ABI break.
             // Until a host asks for one, the boundary keeps the exact search.
             search_budget: SpellerConfig::default().search_budget,
+            // Also an ABI break to expose, and also changes the answers.
+            word_split_weight: SpellerConfig::default().word_split_weight,
             verbose: config.verbose != 0,
         };
 

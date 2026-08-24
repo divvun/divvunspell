@@ -18,8 +18,10 @@ use unic_segment::Graphemes;
 use unic_ucd_category::GeneralCategory;
 
 use self::worker::SpellerWorker;
-use crate::speller::suggestion::Suggestion;
-use crate::tokenizer::case_handling::{CaseHandler, CaseMutation, upper_case, upper_first};
+use crate::speller::suggestion::{Suggestion, WeightDetails};
+use crate::tokenizer::case_handling::{
+    CaseHandler, CaseMutation, starts_upper_case, upper_case, upper_first, word_variants,
+};
 use crate::transducer::Transducer;
 use crate::types::{SymbolNumber, Weight};
 
@@ -118,178 +120,193 @@ fn compute_reweight_penalties(
 
     let is_short = input_lower.len() <= 2 && sugg_lower.len() <= 2;
 
-    let (start_dist, mid_dist, end_dist): (usize, i32, usize) = if input_lower.is_empty()
-        && sugg_lower.is_empty()
-    {
-        (0, 0, 0)
-    } else if is_short {
-        let start_d = if !input_lower.is_empty() && !sugg_lower.is_empty() {
-            if input_lower[0] != sugg_lower[0] {
-                1
+    // Alongside the three distances, the half-open span of input positions the
+    // middle edits actually fall in. The three-zone model does not need it —
+    // every middle edit costs the same there — but a curve has to know how far
+    // into the word the error sat. `None` where no alignment was computed.
+    let (start_dist, mid_dist, end_dist, mid_span): (usize, i32, usize, Option<(usize, usize)>) =
+        if input_lower.is_empty() && sugg_lower.is_empty() {
+            (0, 0, 0, None)
+        } else if is_short {
+            let start_d = if !input_lower.is_empty() && !sugg_lower.is_empty() {
+                if input_lower[0] != sugg_lower[0] {
+                    1
+                } else {
+                    0
+                }
+            } else {
+                input_lower.len().max(sugg_lower.len()).min(1)
+            };
+
+            let end_d = if input_lower.len() > 1 && sugg_lower.len() > 1 {
+                if input_lower[input_lower.len() - 1] != sugg_lower[sugg_lower.len() - 1] {
+                    1
+                } else {
+                    0
+                }
             } else {
                 0
-            }
+            };
+
+            (start_d, -1, end_d, None)
         } else {
-            input_lower.len().max(sugg_lower.len()).min(1)
-        };
+            const OFFSETS: [(usize, usize); 4] = [(0, 0), (0, 1), (1, 0), (1, 1)];
 
-        let end_d = if input_lower.len() > 1 && sugg_lower.len() > 1 {
-            if input_lower[input_lower.len() - 1] != sugg_lower[sugg_lower.len() - 1] {
-                1
-            } else {
-                0
-            }
-        } else {
-            0
-        };
+            let mut best_score = 0;
+            let mut best_alignment = (0, 0, 0, 0, 0, 0, 0, 0, 0);
 
-        (start_d, -1, end_d)
-    } else {
-        const OFFSETS: [(usize, usize); 4] = [(0, 0), (0, 1), (1, 0), (1, 1)];
-
-        let mut best_score = 0;
-        let mut best_alignment = (0, 0, 0, 0, 0, 0, 0, 0, 0);
-
-        for (start_in_off, start_su_off) in &OFFSETS {
-            if *start_in_off >= input_lower.len() || *start_su_off >= sugg_lower.len() {
-                continue;
-            }
-
-            for (end_in_off, end_su_off) in &OFFSETS {
-                if *end_in_off >= input_lower.len() || *end_su_off >= sugg_lower.len() {
+            for (start_in_off, start_su_off) in &OFFSETS {
+                if *start_in_off >= input_lower.len() || *start_su_off >= sugg_lower.len() {
                     continue;
                 }
 
-                let inp = &input_lower[*start_in_off..];
-                let sug = &sugg_lower[*start_su_off..];
+                for (end_in_off, end_su_off) in &OFFSETS {
+                    if *end_in_off >= input_lower.len() || *end_su_off >= sugg_lower.len() {
+                        continue;
+                    }
 
-                let prefix_len = inp
-                    .iter()
-                    .zip(sug.iter())
-                    .take_while(|(a, b)| a == b)
-                    .count();
+                    let inp = &input_lower[*start_in_off..];
+                    let sug = &sugg_lower[*start_su_off..];
 
-                let inp_len = input_lower.len() - start_in_off - end_in_off;
-                let sug_len = sugg_lower.len() - start_su_off - end_su_off;
+                    let prefix_len = inp
+                        .iter()
+                        .zip(sug.iter())
+                        .take_while(|(a, b)| a == b)
+                        .count();
 
-                if inp_len == 0 || sug_len == 0 {
-                    continue;
+                    let inp_len = input_lower.len() - start_in_off - end_in_off;
+                    let sug_len = sugg_lower.len() - start_su_off - end_su_off;
+
+                    if inp_len == 0 || sug_len == 0 {
+                        continue;
+                    }
+
+                    let inp_for_suffix =
+                        &input_lower[*start_in_off..input_lower.len() - end_in_off];
+                    let sug_for_suffix = &sugg_lower[*start_su_off..sugg_lower.len() - end_su_off];
+
+                    let suffix_len = inp_for_suffix
+                        .iter()
+                        .rev()
+                        .zip(sug_for_suffix.iter().rev())
+                        .take_while(|(a, b)| a == b)
+                        .count();
+
+                    let score = prefix_len + suffix_len;
+
+                    if score > best_score {
+                        let start_d = if *start_in_off == 0 && *start_su_off == 0 {
+                            0
+                        } else {
+                            grapheme_damerau_levenshtein(
+                                &input_lower[0..*start_in_off],
+                                &sugg_lower[0..*start_su_off],
+                                dl_buf,
+                            )
+                        };
+
+                        let end_d = if *end_in_off == 0 && *end_su_off == 0 {
+                            0
+                        } else {
+                            grapheme_damerau_levenshtein(
+                                &input_lower[input_lower.len().saturating_sub(*end_in_off)..],
+                                &sugg_lower[sugg_lower.len().saturating_sub(*end_su_off)..],
+                                dl_buf,
+                            )
+                        };
+
+                        best_score = score;
+                        best_alignment = (
+                            *start_in_off,
+                            *start_su_off,
+                            *end_in_off,
+                            *end_su_off,
+                            prefix_len,
+                            suffix_len,
+                            start_d,
+                            end_d,
+                            score,
+                        );
+                    }
                 }
+            }
 
-                let inp_for_suffix = &input_lower[*start_in_off..input_lower.len() - end_in_off];
-                let sug_for_suffix = &sugg_lower[*start_su_off..sugg_lower.len() - end_su_off];
+            let (
+                start_in_off,
+                start_su_off,
+                end_in_off,
+                end_su_off,
+                prefix_len,
+                suffix_len,
+                start_d,
+                end_d,
+                _,
+            ) = best_alignment;
 
-                let suffix_len = inp_for_suffix
-                    .iter()
-                    .rev()
-                    .zip(sug_for_suffix.iter().rev())
-                    .take_while(|(a, b)| a == b)
-                    .count();
+            let min_total_len = (input_lower.len() - start_in_off - end_in_off)
+                .min(sugg_lower.len() - start_su_off - end_su_off);
 
-                let score = prefix_len + suffix_len;
+            let actual_suffix = if prefix_len + suffix_len > min_total_len {
+                min_total_len.saturating_sub(prefix_len)
+            } else {
+                suffix_len
+            };
 
-                if score > best_score {
-                    let start_d = if *start_in_off == 0 && *start_su_off == 0 {
-                        0
-                    } else {
-                        grapheme_damerau_levenshtein(
-                            &input_lower[0..*start_in_off],
-                            &sugg_lower[0..*start_su_off],
-                            dl_buf,
-                        )
-                    };
+            let inp_start_pos = start_in_off + prefix_len;
+            let sug_start_pos = start_su_off + prefix_len;
+            let inp_end_pos = input_lower.len() - end_in_off - actual_suffix;
+            let sug_end_pos = sugg_lower.len() - end_su_off - actual_suffix;
 
-                    let end_d = if *end_in_off == 0 && *end_su_off == 0 {
-                        0
-                    } else {
-                        grapheme_damerau_levenshtein(
-                            &input_lower[input_lower.len().saturating_sub(*end_in_off)..],
-                            &sugg_lower[sugg_lower.len().saturating_sub(*end_su_off)..],
-                            dl_buf,
-                        )
-                    };
+            let inp_remaining = inp_end_pos.saturating_sub(inp_start_pos);
+            let sug_remaining = sug_end_pos.saturating_sub(sug_start_pos);
 
-                    best_score = score;
-                    best_alignment = (
-                        *start_in_off,
-                        *start_su_off,
-                        *end_in_off,
-                        *end_su_off,
-                        prefix_len,
-                        suffix_len,
+            let (mid_d, adjusted_end_d) = if inp_remaining == 0 && sug_remaining == 0 {
+                (0, end_d)
+            } else if (inp_remaining <= 1 && sug_remaining <= 1) && actual_suffix == 0 {
+                let end_change = inp_remaining.max(sug_remaining) > 0;
+                (0, if end_change { 1 } else { end_d })
+            } else if inp_start_pos < inp_end_pos || sug_start_pos < sug_end_pos {
+                let d = grapheme_damerau_levenshtein(
+                    &input_lower[inp_start_pos.min(inp_end_pos)..inp_end_pos.max(inp_start_pos)],
+                    &sugg_lower[sug_start_pos.min(sug_end_pos)..sug_end_pos.max(sug_start_pos)],
+                    dl_buf,
+                ) as i32;
+                (d, end_d)
+            } else {
+                (0, end_d)
+            };
+
+            let span = Some((
+                inp_start_pos.min(inp_end_pos),
+                inp_end_pos.max(inp_start_pos),
+            ));
+
+            if mid_d > 0 {
+                if prefix_len == 0 && actual_suffix > 0 {
+                    let start_changes = 1;
+                    let remaining_mid = (mid_d as usize).saturating_sub(start_changes);
+                    (
+                        start_d + start_changes,
+                        remaining_mid as i32,
+                        adjusted_end_d,
+                        span,
+                    )
+                } else if actual_suffix == 0 && prefix_len > 0 {
+                    let end_changes = 1;
+                    let remaining_mid = (mid_d as usize).saturating_sub(end_changes);
+                    (
                         start_d,
-                        end_d,
-                        score,
-                    );
+                        remaining_mid as i32,
+                        adjusted_end_d + end_changes,
+                        span,
+                    )
+                } else {
+                    (start_d, mid_d, adjusted_end_d, span)
                 }
-            }
-        }
-
-        let (
-            start_in_off,
-            start_su_off,
-            end_in_off,
-            end_su_off,
-            prefix_len,
-            suffix_len,
-            start_d,
-            end_d,
-            _,
-        ) = best_alignment;
-
-        let min_total_len = (input_lower.len() - start_in_off - end_in_off)
-            .min(sugg_lower.len() - start_su_off - end_su_off);
-
-        let actual_suffix = if prefix_len + suffix_len > min_total_len {
-            min_total_len.saturating_sub(prefix_len)
-        } else {
-            suffix_len
-        };
-
-        let inp_start_pos = start_in_off + prefix_len;
-        let sug_start_pos = start_su_off + prefix_len;
-        let inp_end_pos = input_lower.len() - end_in_off - actual_suffix;
-        let sug_end_pos = sugg_lower.len() - end_su_off - actual_suffix;
-
-        let inp_remaining = inp_end_pos.saturating_sub(inp_start_pos);
-        let sug_remaining = sug_end_pos.saturating_sub(sug_start_pos);
-
-        let (mid_d, adjusted_end_d) = if inp_remaining == 0 && sug_remaining == 0 {
-            (0, end_d)
-        } else if (inp_remaining <= 1 && sug_remaining <= 1) && actual_suffix == 0 {
-            let end_change = inp_remaining.max(sug_remaining) > 0;
-            (0, if end_change { 1 } else { end_d })
-        } else if inp_start_pos < inp_end_pos || sug_start_pos < sug_end_pos {
-            let d = grapheme_damerau_levenshtein(
-                &input_lower[inp_start_pos.min(inp_end_pos)..inp_end_pos.max(inp_start_pos)],
-                &sugg_lower[sug_start_pos.min(sug_end_pos)..sug_end_pos.max(sug_start_pos)],
-                dl_buf,
-            ) as i32;
-            (d, end_d)
-        } else {
-            (0, end_d)
-        };
-
-        if mid_d > 0 {
-            if prefix_len == 0 && actual_suffix > 0 {
-                let start_changes = 1;
-                let remaining_mid = (mid_d as usize).saturating_sub(start_changes);
-                (
-                    start_d + start_changes,
-                    remaining_mid as i32,
-                    adjusted_end_d,
-                )
-            } else if actual_suffix == 0 && prefix_len > 0 {
-                let end_changes = 1;
-                let remaining_mid = (mid_d as usize).saturating_sub(end_changes);
-                (start_d, remaining_mid as i32, adjusted_end_d + end_changes)
             } else {
-                (start_d, mid_d, adjusted_end_d)
+                (start_d, mid_d, adjusted_end_d, span)
             }
-        } else {
-            (start_d, mid_d, adjusted_end_d)
-        }
-    };
+        };
 
     // Special case: when input or suggestion has duplicate graphemes at start/end that match
     let (start_dist, mid_dist, end_dist) =
@@ -351,15 +368,33 @@ fn compute_reweight_penalties(
         start_dist
     };
 
+    // The start and end anchors are the curve's own endpoints — `penalty_at(0)`
+    // is `start_penalty` and `penalty_at(1)` is `end_penalty` by construction —
+    // so these two are the same number curve or no curve.
     let penalty_start = if start_dist > 0 {
         reweight.start_penalty
     } else {
         0.0
     };
+    // The middle is where a curve says something the three zones cannot: an
+    // edit just inside the first character is nearly a start error and should
+    // be priced like one, while an edit halfway along is the cheapest place a
+    // word can go wrong. Price the middle edits where they actually landed —
+    // the centre of the span the alignment found them in.
+    let mid_rate = match mid_span {
+        Some((lo, hi)) if !input_lower.is_empty() => {
+            let centre = (lo + hi) as f32 / 2.0 / input_lower.len() as f32;
+            reweight.penalty_at(centre)
+        }
+        // No alignment span: short words, and the middle distance the
+        // duplicate-grapheme adjustment moves in from the edges. Nothing says
+        // where those sat, so they keep the flat middle rate.
+        _ => reweight.mid_penalty,
+    };
     let penalty_mid = if mid_dist < 0 {
         -1.0
     } else {
-        reweight.mid_penalty * mid_dist as f32
+        mid_rate * mid_dist as f32
     };
     let penalty_end = if end_dist > 0 {
         reweight.end_penalty
@@ -587,6 +622,32 @@ pub struct ReweightingConfig {
     pub end_penalty: f32,
     #[serde(default = "default_mid_penalty")]
     pub mid_penalty: f32,
+    /// how sharply the start and end penalties fall away into the word
+    ///
+    /// Without this the three penalties describe three zones with hard edges:
+    /// the first character costs `start_penalty`, the last costs
+    /// `end_penalty`, and everything between costs `mid_penalty`, so an error
+    /// at the second character of a long word is priced identically to one
+    /// dead in the middle. Measured over real misspelling corpora that is not
+    /// what errors do — the error density climbs smoothly out of the first
+    /// character and only reaches its floor around a third of the way in.
+    ///
+    /// With `Some(k)` the same three numbers are read as anchors on a curve
+    ///
+    /// ```text
+    /// penalty(r) = mid + (start - mid) * (1 - r)^k + (end - mid) * r^k
+    /// ```
+    ///
+    /// where `r` is the error's position relative to word length. The anchors
+    /// stay exact — `penalty(0.0) == start_penalty` and
+    /// `penalty(1.0) == end_penalty` — so `k` only decides how quickly the
+    /// interior settles to `mid_penalty`. A large `k` recovers the hard-edged
+    /// zones; fitting the curve to eleven misspelling corpora across four
+    /// language families puts `k` at about 5.
+    ///
+    /// `None`, the default, keeps the three-zone behaviour exactly.
+    #[serde(default)]
+    pub curve: Option<f32>,
 }
 
 impl Default for ReweightingConfig {
@@ -601,7 +662,28 @@ impl ReweightingConfig {
             start_penalty: 10.0,
             end_penalty: 10.0,
             mid_penalty: 5.0,
+            curve: None,
         }
+    }
+
+    /// What an error at relative position `r` in `0.0..=1.0` costs.
+    ///
+    /// With no curve configured every interior position costs `mid_penalty` —
+    /// the flat middle zone the three penalties have always described.
+    fn penalty_at(&self, r: f32) -> f32 {
+        let Some(k) = self.curve else {
+            return self.mid_penalty;
+        };
+        // A non-positive or non-finite exponent has no reading as "how fast
+        // the anchors decay", so it means no curve rather than a penalty that
+        // comes out negative or NaN.
+        if k <= 0.0 || !k.is_finite() {
+            return self.mid_penalty;
+        }
+        let r = r.clamp(0.0, 1.0);
+        self.mid_penalty
+            + (self.start_penalty - self.mid_penalty) * (1.0 - r).powf(k)
+            + (self.end_penalty - self.mid_penalty) * r.powf(k)
     }
 }
 
@@ -698,6 +780,16 @@ pub struct SpellerConfig {
     /// searched once per case variant.
     #[serde(default = "default_search_budget")]
     pub search_budget: Option<u64>,
+    /// what to charge for putting a space back into a run-together word
+    ///
+    /// `Some(w)` offers `left right` wherever the lexicon accepts both halves
+    /// of the input on their own, weighted `w` plus the halves' lexicon
+    /// weights. No path through a lexicon spells a space, so this is the one
+    /// correction the search itself can never reach. `None`, the default,
+    /// switches it off. Halves shorter than two graphemes are not offered, and
+    /// only one split point per word is tried.
+    #[serde(default = "default_word_split_weight")]
+    pub word_split_weight: Option<Weight>,
     /// whether to output detailed weight information (not serialized)
     #[serde(skip)]
     pub verbose: bool,
@@ -727,6 +819,7 @@ impl SpellerConfig {
             search_dedup: default_search_dedup(),
             mutator_subsets: default_mutator_subsets(),
             search_budget: default_search_budget(),
+            word_split_weight: default_word_split_weight(),
             verbose: false,
         }
     }
@@ -787,6 +880,77 @@ const fn default_mutator_subsets() -> bool {
 const fn default_search_budget() -> Option<u64> {
     None
 }
+
+// Off by default: what a space should cost against an ordinary correction
+// depends on the language model behind it.
+const fn default_word_split_weight() -> Option<Weight> {
+    None
+}
+
+/// Neither half of a split may be shorter than this. A lexicon that accepts
+/// single letters as words would otherwise split beside every first letter.
+const MIN_SPLIT_HALF_GRAPHEMES: usize = 2;
+
+/// Every way of cutting `word` in two at a grapheme boundary, halves shorter
+/// than [`MIN_SPLIT_HALF_GRAPHEMES`] excluded.
+fn split_points(word: &str) -> impl Iterator<Item = (&str, &str)> {
+    // Graphemes partition the string, so accumulating their lengths lands
+    // exactly on each boundary.
+    let mut boundaries = Vec::new();
+    let mut offset = 0;
+    for grapheme in Graphemes::new(word) {
+        offset += grapheme.len();
+        boundaries.push(offset);
+    }
+
+    let count = boundaries.len();
+    boundaries
+        .into_iter()
+        .take(count.saturating_sub(MIN_SPLIT_HALF_GRAPHEMES))
+        .skip(MIN_SPLIT_HALF_GRAPHEMES - 1)
+        .map(|at| word.split_at(at))
+}
+
+/// Re-case one half of a split the way the input had that half: the lexicon
+/// answers about the form it knows, usually the lower-case one.
+fn recase_split_half(accepted: SmolStr, typed: &str, mutation: CaseMutation) -> SmolStr {
+    match mutation {
+        CaseMutation::AllCaps => upper_case(&accepted),
+        _ => match starts_upper_case(typed) {
+            true => upper_first(&accepted),
+            false => accepted,
+        },
+    }
+}
+
+/// Fold word-split corrections into the suggestions the search returned, then
+/// re-apply the order and the limits.
+///
+/// `out` is already ordered and cut to `n_best`, so a split can only displace a
+/// suggestion dearer than itself.
+fn merge_word_splits(
+    out: &mut Vec<Suggestion>,
+    splits: Vec<Suggestion>,
+    config: &SpellerConfig,
+    input_lower: &str,
+) {
+    for split in splits {
+        // A lexicon can spell a space itself — `words.default.txt` holds whole
+        // phrases — so the same string can arrive from both directions.
+        match out.iter().position(|s| s.value == split.value) {
+            Some(at) if out[at].weight > split.weight => out[at] = split,
+            Some(_) => {}
+            None => out.push(split),
+        }
+    }
+
+    out.sort();
+    if let Some(n_best) = config.n_best {
+        out.truncate(n_best);
+    }
+    apply_weight_limits(out, config, input_lower);
+}
+
 /// FST-based spell checker and morphological analyzer.
 ///
 /// This trait provides methods for spell checking and morphological analysis
@@ -1197,15 +1361,118 @@ where
         config: &SpellerConfig,
         mode: OutputMode,
     ) -> Vec<Suggestion> {
-        use crate::tokenizer::case_handling::*;
-
         if word.len() == 0 {
             return vec![];
         }
 
+        let case = word_variants(word);
+        let mutation = case.mutation;
+
         // Case handling is not conditional on reweighting: without it, an
         // all-caps input used to produce no suggestions at all.
-        self.suggest_case(word_variants(word), config, config.reweight.as_ref(), mode)
+        let mut out = self
+            .clone()
+            .suggest_case(case, config, config.reweight.as_ref(), mode);
+
+        // Corrections only: an analysis describes one word, and a split is two.
+        if let Some(split_weight) = config.word_split_weight
+            && mode == OutputMode::WithoutTags
+        {
+            let splits = self.word_split_suggestions(word, mutation, split_weight, config);
+            if !splits.is_empty() {
+                merge_word_splits(&mut out, splits, config, &word.to_lowercase());
+            }
+        }
+
+        out
+    }
+
+    /// Corrections that put a space back where two words were run together.
+    ///
+    /// A boundary is offered when the lexicon accepts both halves as words in
+    /// their own right — a pair of lexicon walks per boundary, no correction
+    /// search. The weight is `split_weight` plus the halves' lexicon weights,
+    /// and that sum is also the split's lexicon share, so the tie-break in
+    /// [`Suggestion::cmp`] reads a split as it reads any other suggestion.
+    fn word_split_suggestions(
+        self: Arc<Self>,
+        word: &str,
+        mutation: CaseMutation,
+        split_weight: Weight,
+        config: &SpellerConfig,
+    ) -> Vec<Suggestion> {
+        split_points(word)
+            .filter_map(|(left, right)| {
+                let (left_form, left_weight) =
+                    self.clone().accepted_lexicon_weight(left, config)?;
+                let (right_form, right_weight) =
+                    self.clone().accepted_lexicon_weight(right, config)?;
+
+                let value = SmolStr::from(format!(
+                    "{} {}",
+                    recase_split_half(left_form, left, mutation),
+                    recase_split_half(right_form, right, mutation)
+                ));
+                let lexicon_weight = left_weight + right_weight;
+                let completed = config
+                    .completion_marker
+                    .as_ref()
+                    .map(|marker| !value.ends_with(marker.as_str()));
+
+                let suggestion = match config.verbose {
+                    true => Suggestion::new_with_details(
+                        value,
+                        split_weight + lexicon_weight,
+                        completed,
+                        WeightDetails {
+                            lexicon_weight,
+                            // No mutator path was walked to reach a split, so
+                            // the charge for the space stands in for one.
+                            mutator_weight: split_weight,
+                            reweight_start: 0.0,
+                            reweight_mid: 0.0,
+                            reweight_end: 0.0,
+                        },
+                    ),
+                    false => Suggestion::new(value, split_weight + lexicon_weight, completed),
+                };
+
+                Some(suggestion.with_lexicon_weight(lexicon_weight))
+            })
+            .collect()
+    }
+
+    /// The lexicon's cheapest reading of `word`, and the form it read.
+    ///
+    /// The forms tried are the ones [`Speller::is_correct_with_config`] would
+    /// try — the word as typed, then its case variants — so a half is a word
+    /// here exactly when it is a word there. Cheapest rather than
+    /// first-accepted, so that a word typed with caps lock on is not ranked
+    /// worse than the same word typed plainly; ties keep the typed form.
+    fn accepted_lexicon_weight(
+        self: Arc<Self>,
+        word: &str,
+        config: &SpellerConfig,
+    ) -> Option<(SmolStr, Weight)> {
+        let variants = match config.recase {
+            true => word_variants(word).words,
+            false => vec![],
+        };
+
+        std::iter::once(SmolStr::from(word))
+            // `word_variants` echoes a lower-case input back at itself.
+            .chain(variants.into_iter().filter(|w| w.as_str() != word))
+            .filter_map(|variant| {
+                let worker = SpellerWorker::new_lexicon_input(
+                    self.clone(),
+                    self.to_input_vec_lexicon(&variant),
+                    config,
+                    OutputMode::WithoutTags,
+                );
+
+                worker.accepting_weight().map(|weight| (variant, weight))
+            })
+            .min_by_key(|(_, weight)| *weight)
     }
 
     /// get the error model automaton
@@ -1638,6 +1905,107 @@ mod reweight_tests {
         assert_eq!(p.additional_weight, Weight(0.0));
     }
 
+    // The curve is an interpolation *between the configured penalties*, so its
+    // endpoints have to be those penalties exactly — otherwise turning it on
+    // would silently retune the two anchors an operator did configure.
+    #[test]
+    fn curve_endpoints_are_the_configured_penalties() {
+        let reweight = ReweightingConfig {
+            start_penalty: 10.0,
+            end_penalty: 7.0,
+            mid_penalty: 5.0,
+            curve: Some(5.0),
+        };
+
+        assert_eq!(reweight.penalty_at(0.0), 10.0);
+        assert_eq!(reweight.penalty_at(1.0), 7.0);
+    }
+
+    // Without a curve every interior position costs the same: the flat middle
+    // zone. This is the property that makes the field safe to default to
+    // `None` — an unconfigured speller prices exactly as it always did.
+    #[test]
+    fn no_curve_means_a_flat_middle() {
+        let reweight = ReweightingConfig::default_const();
+        assert!(reweight.curve.is_none());
+
+        for i in 0..=10 {
+            assert_eq!(reweight.penalty_at(i as f32 / 10.0), reweight.mid_penalty);
+        }
+    }
+
+    // An exponent that cannot be read as a decay rate must not produce a
+    // negative or NaN penalty; it means "no curve".
+    #[test]
+    fn nonsensical_curve_exponent_falls_back_to_flat() {
+        for k in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            let reweight = ReweightingConfig {
+                curve: Some(k),
+                ..ReweightingConfig::default_const()
+            };
+            assert_eq!(reweight.penalty_at(0.5), reweight.mid_penalty);
+        }
+    }
+
+    // The point of the whole exercise: two corrections that the three-zone
+    // model prices identically — one middle edit each, same word length — are
+    // told apart once the middle is a curve, because one of them sits a single
+    // character in from the start and the other sits halfway along.
+    #[test]
+    fn curve_prices_an_edit_by_how_far_into_the_word_it_fell() {
+        let flat = ReweightingConfig::default_const();
+        let curved = ReweightingConfig {
+            curve: Some(5.0),
+            ..ReweightingConfig::default_const()
+        };
+        let input_lower = graphemes("abcdefghij");
+        let mut dl = Vec::new();
+
+        let mut price = |sugg: &str, r: &ReweightingConfig| {
+            compute_reweight_penalties(&input_lower, Some("a"), sugg, None, Some(r), &mut dl).mid
+        };
+
+        // Three zones: both are "one middle edit", so both cost the same.
+        assert_eq!(price("axcdefghij", &flat), price("abcdexghij", &flat));
+
+        // With a curve the near-start edit costs strictly more, and both still
+        // cost at least the middle penalty they would have cost before.
+        let ns = price("axcdefghij", &curved);
+        let ce = price("abcdexghij", &curved);
+        assert!(ns > ce, "near-start {ns} should exceed central {ce}");
+        assert!(ce >= flat.mid_penalty, "central {ce} fell below the floor");
+        assert!(
+            ns < curved.start_penalty,
+            "near-start {ns} should stay under the start anchor"
+        );
+    }
+
+    // The authored-correction bypass keys on `mid_penalty` — the configured
+    // number, not whatever the curve charges at some position. A curve must
+    // not move that threshold, or entries in `words.default.txt` would start
+    // being reweighted depending on where in the word they differ.
+    #[test]
+    fn curve_does_not_move_the_authored_correction_threshold() {
+        let curved = ReweightingConfig {
+            curve: Some(5.0),
+            ..ReweightingConfig::default_const()
+        };
+        let input_lower = graphemes("nuvvidspeller");
+        let mut dl = Vec::new();
+
+        let p = compute_reweight_penalties(
+            &input_lower,
+            Some("n"),
+            "Divvun speller for Northern Sami",
+            Some(Weight(1.0)),
+            Some(&curved),
+            &mut dl,
+        );
+
+        assert_eq!(p.additional_weight, Weight(0.0));
+        assert_eq!((p.start, p.mid, p.end), (0.0, 0.0, 0.0));
+    }
+
     // No case difference at the first letter => no extra penalty.
     #[test]
     fn identical_first_letter_case_no_penalty() {
@@ -1708,5 +2076,168 @@ mod reweight_tests {
             "non-variant beyond the beam should be dropped"
         );
         assert!(out.iter().any(|s| s.value() == "girnoa"));
+    }
+}
+
+#[cfg(test)]
+mod word_split_tests {
+    use super::*;
+
+    fn points(word: &str) -> Vec<(String, String)> {
+        split_points(word)
+            .map(|(l, r)| (l.to_string(), r.to_string()))
+            .collect()
+    }
+
+    // Every interior boundary, and no others.
+    #[test]
+    fn split_points_cover_the_interior_boundaries() {
+        assert_eq!(
+            points("carcat"),
+            [
+                ("ca".to_string(), "rcat".to_string()),
+                ("car".to_string(), "cat".to_string()),
+                ("carc".to_string(), "at".to_string()),
+            ]
+        );
+    }
+
+    // A one-grapheme half is never offered.
+    #[test]
+    fn split_points_refuse_a_one_grapheme_half() {
+        assert_eq!(
+            points("cats"),
+            [("ca".to_string(), "ts".to_string())],
+            "four graphemes leave exactly the middle boundary"
+        );
+        assert!(points("cat").is_empty());
+        assert!(points("ca").is_empty());
+        assert!(points("c").is_empty());
+        assert!(points("").is_empty());
+    }
+
+    // A combining sequence is one grapheme and cannot be cut through.
+    #[test]
+    fn split_points_are_grapheme_boundaries() {
+        // "ǫ́" is o-with-ogonek plus a combining acute: one grapheme, 4 bytes.
+        let word = "ǫ́ǫ́ǫ́ǫ́";
+        assert_eq!(word.len(), 16);
+        for (left, right) in split_points(word) {
+            assert!(
+                word.starts_with(left) && word.ends_with(right),
+                "halves must be slices of the input"
+            );
+            assert_eq!(left.len() % 4, 0, "cut through a grapheme: {:?}", left);
+        }
+        assert_eq!(split_points(word).count(), 1);
+    }
+
+    // The capital goes back on the half it was typed on, and only there.
+    #[test]
+    fn recasing_a_half_follows_the_typed_case() {
+        assert_eq!(
+            recase_split_half(SmolStr::new("olu"), "Olu", CaseMutation::FirstCaps),
+            "Olu"
+        );
+        assert_eq!(
+            recase_split_half(
+                SmolStr::new("lávdegoddi"),
+                "lávdegoddi",
+                CaseMutation::FirstCaps
+            ),
+            "lávdegoddi"
+        );
+        assert_eq!(
+            recase_split_half(SmolStr::new("olu"), "OLU", CaseMutation::AllCaps),
+            "OLU"
+        );
+        assert_eq!(
+            recase_split_half(SmolStr::new("olu"), "olu", CaseMutation::None),
+            "olu"
+        );
+        // A capitalised half keeps its capital under CaseMutation::None.
+        assert_eq!(
+            recase_split_half(SmolStr::new("girji"), "Girji", CaseMutation::None),
+            "Girji"
+        );
+    }
+
+    fn sugg(value: &str, weight: f32) -> Suggestion {
+        Suggestion::new(SmolStr::new(value), Weight(weight), None)
+    }
+
+    // The n-best cut is taken after the split is placed, not before.
+    #[test]
+    fn merged_splits_take_their_place_in_the_order() {
+        let mut out = vec![sugg("carts", 5.0), sugg("cards", 30.0)];
+        let config = SpellerConfig {
+            n_best: Some(2),
+            ..SpellerConfig::default()
+        };
+
+        merge_word_splits(&mut out, vec![sugg("car ts", 20.0)], &config, "carts");
+
+        assert_eq!(
+            out.iter().map(Suggestion::value).collect::<Vec<_>>(),
+            ["carts", "car ts"],
+            "the split displaces the dearer correction"
+        );
+    }
+
+    // Reached both ways, the cheaper account is kept.
+    #[test]
+    fn a_split_that_duplicates_a_correction_keeps_the_cheaper() {
+        let config = SpellerConfig::default();
+
+        let mut cheaper_split = vec![sugg("car ts", 30.0)];
+        merge_word_splits(
+            &mut cheaper_split,
+            vec![sugg("car ts", 20.0)],
+            &config,
+            "carts",
+        );
+        assert_eq!(cheaper_split.len(), 1);
+        assert_eq!(cheaper_split[0].weight(), Weight(20.0));
+
+        let mut dearer_split = vec![sugg("car ts", 10.0)];
+        merge_word_splits(
+            &mut dearer_split,
+            vec![sugg("car ts", 20.0)],
+            &config,
+            "carts",
+        );
+        assert_eq!(dearer_split.len(), 1);
+        assert_eq!(dearer_split[0].weight(), Weight(10.0));
+    }
+
+    // A split is not exempt from `max_weight`.
+    #[test]
+    fn a_split_beyond_max_weight_is_dropped() {
+        let mut out = vec![sugg("carts", 5.0)];
+        let config = SpellerConfig {
+            max_weight: Some(Weight(15.0)),
+            ..SpellerConfig::default()
+        };
+
+        merge_word_splits(&mut out, vec![sugg("car ts", 20.0)], &config, "carts");
+
+        assert_eq!(
+            out.iter().map(Suggestion::value).collect::<Vec<_>>(),
+            ["carts"]
+        );
+    }
+
+    // Off unless asked for, under the name the config file uses.
+    #[test]
+    fn word_split_weight_defaults_to_off() {
+        assert_eq!(SpellerConfig::default().word_split_weight, None);
+
+        let parsed: SpellerConfig = serde_json::from_str(r#"{"n-best": 10}"#)
+            .expect("a config without the field is still a config");
+        assert_eq!(parsed.word_split_weight, None);
+
+        let parsed: SpellerConfig = serde_json::from_str(r#"{"word-split-weight": 35.0}"#)
+            .expect("the field parses as a plain number");
+        assert_eq!(parsed.word_split_weight, Some(Weight(35.0)));
     }
 }

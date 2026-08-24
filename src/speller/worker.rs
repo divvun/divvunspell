@@ -1108,6 +1108,41 @@ where
         false
     }
 
+    /// The cheapest lexicon-only path that accepts the whole input.
+    ///
+    /// [`is_correct`](Self::is_correct) with the weight kept, and without
+    /// [`analyze`](Self::analyze)'s output forms. A rejection costs the same as
+    /// `is_correct`, since either way the walk has to be exhausted to know.
+    pub(crate) fn accepting_weight(&self) -> Option<Weight> {
+        tracing::trace!("accepting_weight");
+        let pool = Pool::with_size_and_max(0, 0);
+        let mut nodes = speller_start_node(&pool, self.state_size());
+        let mut best: Option<Weight> = None;
+
+        while let Some(next_node) = nodes.pop() {
+            if next_node.input_state.0 as usize == self.input.len()
+                && self.speller.lexicon().is_final(next_node.lexicon_state)
+            {
+                let weight = next_node.weight()
+                    + self
+                        .speller
+                        .lexicon()
+                        .final_weight(next_node.lexicon_state)
+                        .expect("a final lexicon state has a final weight");
+
+                best = match best {
+                    Some(best) if best <= weight => Some(best),
+                    _ => Some(weight),
+                };
+            }
+
+            self.lexicon_epsilons(&pool, Weight::INFINITE, &next_node, &mut nodes);
+            self.lexicon_consume(&pool, Weight::INFINITE, &next_node, &mut nodes);
+        }
+
+        best
+    }
+
     pub(crate) fn analyze(&self) -> Vec<Suggestion> {
         tracing::trace!("Beginning analyze");
         let pool = Pool::with_size_and_max(0, 0);
