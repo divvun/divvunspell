@@ -92,6 +92,7 @@ fn load_words(
     max_words: Option<usize>,
 ) -> anyhow::Result<Vec<(String, Option<String>)>> {
     let mut rdr = csv::ReaderBuilder::new()
+        .quoting(false)
         .comment(Some(b'#'))
         .delimiter(b'\t')
         .has_headers(false)
