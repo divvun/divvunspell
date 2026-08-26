@@ -211,7 +211,7 @@ divvunspell accuracy -c config.json typos.tsv language.zhfst
   - **`end-penalty`** (default: `10.0`): Penalty for errors at the end of the word
   - **`mid-penalty`** (default: `5.0`): Penalty for errors in the middle of the word
 - **`node-pool-size`** (default: `128`): Size of node pool for parallelization
-- **`recase`** (default: `true`): Whether to try fixing capitalization before other suggestions
+- **`recase`** (default: `true`): Preserve first/all-caps input when searching lower-case lexicon forms, and offer exact title-case or all-caps lexicon matches for lower-case misspellings. This affects suggestions only; a lower-cased proper noun remains incorrectly spelled
 - **`completion-marker`** (default: `null`): Marker used when suggesting incomplete word parts. Set to `null` to disable
 - **`search-budget`** (default: `null`): How many nodes the suggestion search may examine per word before it returns what it has found so far. `null` searches until the weight limits prune everything, which is exact but unbounded — a word with no correction near it can take seconds against a large error model. A number bounds the work instead: the search is best-first, so it spends the budget on the most promising candidates and a stop costs the dear tail of the results
 
