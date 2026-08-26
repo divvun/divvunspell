@@ -1593,6 +1593,7 @@ where
         boundary_weight: Weight,
         config: &SpellerConfig,
     ) -> Vec<Suggestion> {
+        let mutation = word_variants(word).mutation;
         let input_lower_str = word.to_lowercase();
         let input_lower: Vec<&str> = Graphemes::new(&input_lower_str).collect();
         let input_first = Graphemes::new(word).next();
@@ -1600,8 +1601,23 @@ where
 
         boundary_variants(word)
             .into_iter()
-            .filter_map(|value| {
-                let lexicon_weight = self.clone().exact_lexicon_weight(&value, config)?;
+            .filter_map(|typed_value| {
+                // Prefer the spelling exactly as probed. Abbreviation
+                // inflections such as `NSR:a` intentionally mix upper- and
+                // lower-case; choosing a cheaper lower-case lexicon variant
+                // first and then applying AllCaps would turn it into `NSR:A`.
+                let (value, lexicon_weight) =
+                    match self.clone().exact_lexicon_weight(&typed_value, config) {
+                        Some(weight) => (typed_value, weight),
+                        None => {
+                            let (accepted_value, weight) =
+                                self.clone().accepted_lexicon_weight(&typed_value, config)?;
+                            (
+                                recase_split_half(accepted_value, &typed_value, mutation),
+                                weight,
+                            )
+                        }
+                    };
                 let penalties = compute_reweight_penalties(
                     &input_lower,
                     input_first,
