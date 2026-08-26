@@ -357,7 +357,19 @@ fn boundary_speller() -> Arc<HfstSpeller<MmapThfstTransducer, MmapThfstTransduce
     std::fs::create_dir_all(&lexicon_dir).expect("create boundary lexicon dir");
     std::fs::create_dir_all(&mutator_dir).expect("create boundary mutator dir");
 
-    let symbols = &["@_EPSILON_SYMBOL_@", "a", "b", "-", ":", " ", ",", "."];
+    let symbols = &[
+        "@_EPSILON_SYMBOL_@",
+        "a",
+        "b",
+        "-",
+        ":",
+        " ",
+        ",",
+        ".",
+        "A",
+        "B",
+        "C",
+    ];
     build_trie_lexicon(
         &lexicon_dir,
         symbols,
@@ -367,6 +379,7 @@ fn boundary_speller() -> Arc<HfstSpeller<MmapThfstTransducer, MmapThfstTransduce
             ("a b", 2.0),
             ("ab-", 3.0),
             ("ab", 4.0),
+            ("ABC:a", 5.0),
         ],
     );
     build_boundary_identity_mutator(&mutator_dir, symbols);
@@ -3981,6 +3994,26 @@ fn test_boundary_edit_inserts_each_supported_separator() {
             ("ab-".to_string(), 13.0),
         ]
     );
+}
+
+#[test]
+fn test_boundary_edit_recases_a_lowercase_lexicon_form_like_the_input() {
+    let s = boundary_speller();
+    let config = SpellerConfig {
+        recase: true,
+        ..boundary_config(10.0)
+    };
+    assert_suggests_at_weight(&s, "Ab", "A-b", 10.0, &config);
+}
+
+#[test]
+fn test_boundary_edit_preserves_an_exact_mixed_case_abbreviation() {
+    let s = boundary_speller();
+    let config = SpellerConfig {
+        recase: true,
+        ..boundary_config(10.0)
+    };
+    assert_suggests_at_weight(&s, "ABCa", "ABC:a", 15.0, &config);
 }
 
 #[test]
