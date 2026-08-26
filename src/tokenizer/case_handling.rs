@@ -61,6 +61,35 @@ fn is_cased(c: char) -> bool {
     c.is_uppercase() || c.is_lowercase()
 }
 
+/// Acronym compounds and inflections deliberately change case after their
+/// separator (`ILO-s`, `NSR:a`). Counting that lower-case suffix as a typo
+/// would turn the whole suggestion into upper case (`ILO:AS`).
+fn is_upper_acronym_with_lower_suffix(value: &str) -> bool {
+    let Some(separator) = value.rfind(['-', ':']) else {
+        return false;
+    };
+    let (prefix, suffix) = value.split_at(separator);
+    let suffix = &suffix[1..];
+
+    let mut prefix_count = 0;
+    for c in prefix.chars().filter(|c| is_cased(*c)) {
+        prefix_count += 1;
+        if !c.is_uppercase() {
+            return false;
+        }
+    }
+
+    let mut suffix_count = 0;
+    for c in suffix.chars().filter(|c| is_cased(*c)) {
+        suffix_count += 1;
+        if !c.is_lowercase() {
+            return false;
+        }
+    }
+
+    prefix_count >= 2 && suffix_count >= 1
+}
+
 #[derive(Debug, Clone, Copy)]
 enum WordCase {
     AllUpper,
@@ -77,6 +106,10 @@ enum WordCase {
 impl From<&str> for WordCase {
     #[inline(always)]
     fn from(value: &str) -> Self {
+        if is_upper_acronym_with_lower_suffix(value) {
+            return WordCase::Mixed;
+        }
+
         let mut chars = value.chars().filter(|c| is_cased(*c));
 
         let Some(first_char) = chars.next() else {
@@ -327,6 +360,19 @@ mod tests {
         assert_eq!(is_mixed_case("SGPai"), true);
         assert_eq!(is_all_caps("cAT"), false);
         assert_eq!(is_mixed_case("cAT"), true);
+    }
+
+    #[test]
+    fn acronym_suffix_is_deliberate_mixed_case() {
+        for word in ["ILO-s", "NSR:a", "ABC-def"] {
+            assert!(is_mixed_case(word), "{word}");
+            let variants = word_variants(word);
+            assert_eq!(variants.mutation, CaseMutation::FirstCaps, "{word}");
+            assert_eq!(variants.mode, CaseMode::FirstResults, "{word}");
+        }
+
+        assert!(is_all_caps("RÁðI"));
+        assert!(is_all_caps("ABC-DEF"));
     }
 
     #[test]
