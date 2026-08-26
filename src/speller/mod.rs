@@ -10,7 +10,7 @@
 use std::f32;
 use std::sync::Arc;
 
-use hashbrown::HashMap;
+use hashbrown::{HashMap, HashSet};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
@@ -792,6 +792,14 @@ pub struct SpellerConfig {
     /// only one split point per word is tried.
     #[serde(default = "default_word_split_weight")]
     pub word_split_weight: Option<Weight>,
+    /// what to charge for an exact lexicon form one separator edit away
+    ///
+    /// `Some(w)` probes the lexicon directly after inserting, deleting, or
+    /// replacing one non-leading separator. This recovers punctuation and
+    /// compound-boundary corrections that an error model may deliberately
+    /// exclude from its alphabet. `None`, the default, switches it off.
+    #[serde(default = "default_boundary_edit_weight")]
+    pub boundary_edit_weight: Option<Weight>,
     /// whether to output detailed weight information (not serialized)
     #[serde(skip)]
     pub verbose: bool,
@@ -807,6 +815,8 @@ impl SpellerConfig {
     /// * recase = true
     /// * astar_lookahead = false
     /// * search_budget = None
+    /// * word_split_weight = None
+    /// * boundary_edit_weight = None
     /// * verbose = false
     pub const fn default() -> SpellerConfig {
         SpellerConfig {
@@ -822,6 +832,7 @@ impl SpellerConfig {
             mutator_subsets: default_mutator_subsets(),
             search_budget: default_search_budget(),
             word_split_weight: default_word_split_weight(),
+            boundary_edit_weight: default_boundary_edit_weight(),
             verbose: false,
         }
     }
@@ -887,6 +898,95 @@ const fn default_search_budget() -> Option<u64> {
 // depends on the language model behind it.
 const fn default_word_split_weight() -> Option<Weight> {
     None
+}
+
+const fn default_boundary_edit_weight() -> Option<Weight> {
+    None
+}
+
+/// Separators worth offering when one is missing. Commas and sentence
+/// punctuation are deletion/replacement sources below, but are not inserted
+/// into the middle of otherwise ordinary words.
+const INSERTABLE_BOUNDARIES: [&str; 3] = ["-", ":", " "];
+
+fn is_boundary_grapheme(grapheme: &str) -> bool {
+    matches!(
+        grapheme,
+        "-" | ":" | " " | "," | "." | "–" | "—" | "'" | "’"
+    )
+}
+
+fn replace_range(word: &str, start: usize, end: usize, replacement: &str) -> SmolStr {
+    let mut out = String::with_capacity(word.len() + replacement.len());
+    out.push_str(&word[..start]);
+    out.push_str(replacement);
+    out.push_str(&word[end..]);
+    SmolStr::from(out)
+}
+
+/// Exact strings one separator edit away from `word`.
+///
+/// Besides a single insertion/deletion/replacement, a contiguous punctuation
+/// run may be deleted as one unit. Tokenisers commonly hand a speller a whole
+/// trailing `...`; requiring three independent edits just to remove one run
+/// makes the underlying one-letter correction unreachable.
+fn boundary_variants(word: &str) -> Vec<SmolStr> {
+    let mut graphemes = Vec::new();
+    let mut offset = 0;
+    for grapheme in Graphemes::new(word) {
+        let start = offset;
+        offset += grapheme.len();
+        graphemes.push((start, offset, grapheme));
+    }
+
+    let mut variants = HashSet::new();
+
+    // No leading separator probes: a leading dash/apostrophe belongs to
+    // tokenisation, while the useful abbreviation and compound boundaries are
+    // internal or final.
+    for at in 1..=graphemes.len() {
+        let left_is_boundary = is_boundary_grapheme(graphemes[at - 1].2);
+        let right_is_boundary = graphemes
+            .get(at)
+            .is_some_and(|(_, _, grapheme)| is_boundary_grapheme(grapheme));
+        if left_is_boundary || right_is_boundary {
+            continue;
+        }
+
+        let byte = graphemes[at - 1].1;
+        for boundary in INSERTABLE_BOUNDARIES {
+            variants.insert(replace_range(word, byte, byte, boundary));
+        }
+    }
+
+    let mut at = 0;
+    while at < graphemes.len() {
+        let (start, end, grapheme) = graphemes[at];
+        if !is_boundary_grapheme(grapheme) {
+            at += 1;
+            continue;
+        }
+
+        variants.insert(replace_range(word, start, end, ""));
+        for boundary in INSERTABLE_BOUNDARIES {
+            if boundary != grapheme {
+                variants.insert(replace_range(word, start, end, boundary));
+            }
+        }
+
+        let mut run_end = at + 1;
+        while run_end < graphemes.len() && is_boundary_grapheme(graphemes[run_end].2) {
+            run_end += 1;
+        }
+        if run_end > at + 1 {
+            variants.insert(replace_range(word, start, graphemes[run_end - 1].1, ""));
+        }
+        at = run_end;
+    }
+
+    let mut variants: Vec<_> = variants.into_iter().collect();
+    variants.sort();
+    variants
 }
 
 /// Neither half of a split may be shorter than this. A lexicon that accepts
@@ -1388,6 +1488,21 @@ where
             }
         }
 
+        // A separator can be absent from the error-model alphabet altogether,
+        // and compound suppression weights can keep an otherwise exact
+        // lexicon path outside the normal search. Probe only when the caller
+        // assigns this correction class a weight.
+        if let Some(boundary_weight) = config.boundary_edit_weight
+            && mode == OutputMode::WithoutTags
+        {
+            let candidates = self
+                .clone()
+                .boundary_suggestions(word, boundary_weight, config);
+            if !candidates.is_empty() {
+                merge_extra_suggestions(&mut out, candidates, config, &word.to_lowercase());
+            }
+        }
+
         // Corrections only: an analysis describes one word, and a split is two.
         if let Some(split_weight) = config.word_split_weight
             && mode == OutputMode::WithoutTags
@@ -1463,6 +1578,66 @@ where
                 };
 
                 Some(suggestion.with_lexicon_weight(lexicon_weight))
+            })
+            .collect()
+    }
+
+    /// Exact lexicon forms obtained by one separator edit.
+    ///
+    /// Like direct casing, this is suggestion-only and bypasses the error
+    /// model. The configured raw charge and ordinary positional reweighting
+    /// keep the result comparable with searched candidates.
+    fn boundary_suggestions(
+        self: Arc<Self>,
+        word: &str,
+        boundary_weight: Weight,
+        config: &SpellerConfig,
+    ) -> Vec<Suggestion> {
+        let input_lower_str = word.to_lowercase();
+        let input_lower: Vec<&str> = Graphemes::new(&input_lower_str).collect();
+        let input_first = Graphemes::new(word).next();
+        let mut dl_buf = Vec::new();
+
+        boundary_variants(word)
+            .into_iter()
+            .filter_map(|value| {
+                let lexicon_weight = self.clone().exact_lexicon_weight(&value, config)?;
+                let penalties = compute_reweight_penalties(
+                    &input_lower,
+                    input_first,
+                    &value,
+                    Some(boundary_weight),
+                    config.reweight.as_ref(),
+                    &mut dl_buf,
+                );
+                let completed = config
+                    .completion_marker
+                    .as_ref()
+                    .map(|marker| !value.ends_with(marker.as_str()));
+                let total_weight = lexicon_weight + boundary_weight + penalties.additional_weight;
+
+                let suggestion = match config.verbose {
+                    true => Suggestion::new_with_details(
+                        value,
+                        total_weight,
+                        completed,
+                        WeightDetails {
+                            lexicon_weight,
+                            mutator_weight: boundary_weight,
+                            reweight_start: penalties.start,
+                            reweight_mid: penalties.mid,
+                            reweight_end: penalties.end,
+                        },
+                    ),
+                    false => Suggestion::new(value, total_weight, completed),
+                }
+                .with_lexicon_weight(lexicon_weight);
+
+                Some(if suggestion.value().contains(' ') && !word.contains(' ') {
+                    suggestion.with_word_split()
+                } else {
+                    suggestion
+                })
             })
             .collect()
     }
@@ -2180,6 +2355,52 @@ mod reweight_tests {
             "non-variant beyond the beam should be dropped"
         );
         assert!(out.iter().any(|s| s.value() == "girnoa"));
+    }
+}
+
+#[cfg(test)]
+mod boundary_variant_tests {
+    use super::*;
+
+    fn variants(word: &str) -> Vec<String> {
+        boundary_variants(word)
+            .into_iter()
+            .map(String::from)
+            .collect()
+    }
+
+    #[test]
+    fn inserts_internal_and_final_boundaries_but_not_leading_ones() {
+        let candidates = variants("NSRa");
+        assert!(candidates.contains(&"NSR:a".to_string()));
+        assert!(candidates.contains(&"NSR-a".to_string()));
+        assert!(candidates.contains(&"NSR a".to_string()));
+        assert!(candidates.contains(&"NSRa-".to_string()));
+        assert!(!candidates.contains(&"-NSRa".to_string()));
+    }
+
+    #[test]
+    fn deletes_and_replaces_existing_boundaries() {
+        let candidates = variants("IKT-a");
+        assert!(candidates.contains(&"IKTa".to_string()));
+        assert!(candidates.contains(&"IKT:a".to_string()));
+        assert!(candidates.contains(&"IKT a".to_string()));
+    }
+
+    #[test]
+    fn deletes_a_contiguous_punctuation_run_as_one_edit() {
+        let candidates = variants("luojt...");
+        assert!(candidates.contains(&"luojt".to_string()));
+
+        let candidates = variants("oarjjel,-");
+        assert!(candidates.contains(&"oarjjel".to_string()));
+    }
+
+    #[test]
+    fn never_cuts_through_a_grapheme_cluster() {
+        let candidates = variants("ǫ́a");
+        assert!(candidates.contains(&"ǫ́-a".to_string()));
+        assert!(!candidates.iter().any(|candidate| candidate == "ǫ-́a"));
     }
 }
 

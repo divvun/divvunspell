@@ -197,7 +197,8 @@ divvunspell accuracy -c config.json typos.tsv language.zhfst
   "node-pool-size": 128,
   "recase": true,
   "completion-marker": null,
-  "search-budget": null
+  "search-budget": null,
+  "boundary-edit-weight": null
 }
 ```
 
@@ -214,6 +215,7 @@ divvunspell accuracy -c config.json typos.tsv language.zhfst
 - **`recase`** (default: `true`): Preserve first/all-caps input when searching lower-case lexicon forms, and offer exact title-case or all-caps lexicon matches for lower-case misspellings. This affects suggestions only; a lower-cased proper noun remains incorrectly spelled
 - **`completion-marker`** (default: `null`): Marker used when suggesting incomplete word parts. Set to `null` to disable
 - **`search-budget`** (default: `null`): How many nodes the suggestion search may examine per word before it returns what it has found so far. `null` searches until the weight limits prune everything, which is exact but unbounded — a word with no correction near it can take seconds against a large error model. A number bounds the work instead: the search is best-first, so it spends the budget on the most promising candidates and a stop costs the dear tail of the results
+- **`boundary-edit-weight`** (default: `null`): When set, directly probe exact lexicon forms one inserted, deleted, or replaced non-leading separator away and charge this weight. This covers punctuation and compound boundaries that are outside the error model; `null` disables the probes
 
 **Input format** (`typos.tsv`): Tab-separated values with typo in first column, expected correction in second:
 
