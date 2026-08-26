@@ -268,6 +268,111 @@ fn build_case_lexicon(dir: &Path) {
     write_thfst(dir, &build_alphabet_json(symbols), &idx, &tr);
 }
 
+/// Build a deterministic trie acceptor for small integration fixtures.
+fn build_trie_lexicon(dir: &Path, symbols: &[&str], words: &[(&str, f32)]) {
+    #[derive(Default)]
+    struct TrieState {
+        edges: std::collections::BTreeMap<u16, usize>,
+        final_weight: Option<f32>,
+    }
+
+    let symbol_numbers: HashMap<&str, u16> = symbols
+        .iter()
+        .enumerate()
+        .map(|(number, symbol)| (*symbol, number as u16))
+        .collect();
+    let mut states = vec![TrieState::default()];
+
+    for (word, weight) in words {
+        let mut state = 0;
+        for character in word.chars() {
+            let spelling = character.to_string();
+            let symbol = *symbol_numbers
+                .get(spelling.as_str())
+                .unwrap_or_else(|| panic!("fixture alphabet lacks {spelling:?}"));
+            let next = match states[state].edges.get(&symbol) {
+                Some(next) => *next,
+                None => {
+                    let next = states.len();
+                    states.push(TrieState::default());
+                    states[state].edges.insert(symbol, next);
+                    next
+                }
+            };
+            state = next;
+        }
+        assert!(states[state].final_weight.replace(*weight).is_none());
+    }
+
+    let state_width = symbols.len() + 1;
+    let mut idx = Vec::new();
+    let mut arcs = Vec::new();
+    for state in &states {
+        match state.final_weight {
+            Some(weight) => write_index_final(&mut idx, weight),
+            None => write_index_empty(&mut idx),
+        }
+        for symbol in 0..symbols.len() as u16 {
+            match state.edges.get(&symbol) {
+                Some(target) => {
+                    write_index_entry(&mut idx, symbol, TARGET_TABLE + arcs.len() as u32);
+                    arcs.push((symbol, *target));
+                }
+                None => write_index_empty(&mut idx),
+            }
+        }
+    }
+
+    let mut tr = Vec::new();
+    for (symbol, target) in arcs {
+        write_trans_entry(&mut tr, symbol, symbol, (target * state_width) as u32, 0.0);
+    }
+
+    write_thfst(dir, &build_alphabet_json(symbols), &idx, &tr);
+}
+
+/// Identity-only error model: separators cannot be inserted, deleted, or
+/// replaced through the normal suggestion search.
+fn build_boundary_identity_mutator(dir: &Path, symbols: &[&str]) {
+    let mut idx = Vec::new();
+    write_index_final(&mut idx, 0.0);
+    write_index_empty(&mut idx); // no epsilon arc
+    for symbol in 1..symbols.len() as u16 {
+        write_index_entry(&mut idx, symbol, TARGET_TABLE + symbol as u32 - 1);
+    }
+
+    let mut tr = Vec::new();
+    for symbol in 1..symbols.len() as u16 {
+        write_trans_entry(&mut tr, symbol, symbol, 0, 0.0);
+    }
+
+    write_thfst(dir, &build_alphabet_json(symbols), &idx, &tr);
+}
+
+fn boundary_speller() -> Arc<HfstSpeller<MmapThfstTransducer, MmapThfstTransducer>> {
+    let dir = tempfile::tempdir().expect("temp dir for boundary fixture");
+    let root = dir.keep();
+    let lexicon_dir = root.join("lexicon.thfst");
+    let mutator_dir = root.join("mutator.thfst");
+    std::fs::create_dir_all(&lexicon_dir).expect("create boundary lexicon dir");
+    std::fs::create_dir_all(&mutator_dir).expect("create boundary mutator dir");
+
+    let symbols = &["@_EPSILON_SYMBOL_@", "a", "b", "-", ":", " ", ",", "."];
+    build_trie_lexicon(
+        &lexicon_dir,
+        symbols,
+        &[
+            ("a-b", 0.0),
+            ("a:b", 1.0),
+            ("a b", 2.0),
+            ("ab-", 3.0),
+            ("ab", 4.0),
+        ],
+    );
+    build_boundary_identity_mutator(&mutator_dir, symbols);
+    load_speller(&lexicon_dir, &mutator_dir)
+}
+
 /// Mutator: identity + substitutions + deletions + insertions.
 ///
 /// ```text
@@ -3839,6 +3944,100 @@ fn test_heuristic_handles_transition_table_states() {
     assert_eq!(t.distance_to_final(TransitionTableIndex(5)).0, 3.0);
 
     assert_same_suggestions(&s, &["ab", "a", "abc", "b", "ac"], &raw_config(), "trans");
+}
+
+// ===========================================================================
+// Direct separator edits
+// ===========================================================================
+
+fn boundary_config(weight: f32) -> SpellerConfig {
+    SpellerConfig {
+        boundary_edit_weight: Some(Weight(weight)),
+        ..raw_config()
+    }
+}
+
+#[test]
+fn test_boundary_edits_are_off_by_default() {
+    let s = boundary_speller();
+
+    assert_eq!(SpellerConfig::default().boundary_edit_weight, None);
+    let words = suggestion_words(&s, "ab", &raw_config());
+    assert_eq!(words, ["ab"]);
+}
+
+#[test]
+fn test_boundary_edit_inserts_each_supported_separator() {
+    let s = boundary_speller();
+    let suggs = suggestion_values(&s, "ab", &boundary_config(10.0));
+
+    assert_eq!(
+        suggs,
+        [
+            ("ab".to_string(), 4.0),
+            ("a-b".to_string(), 10.0),
+            ("a:b".to_string(), 11.0),
+            ("a b".to_string(), 12.0),
+            ("ab-".to_string(), 13.0),
+        ]
+    );
+}
+
+#[test]
+fn test_boundary_edit_deletes_and_replaces_a_separator() {
+    let s = boundary_speller();
+    let suggs = suggestion_values(&s, "a,b", &boundary_config(10.0));
+
+    assert_eq!(
+        suggs,
+        [
+            ("a-b".to_string(), 10.0),
+            ("a:b".to_string(), 11.0),
+            ("a b".to_string(), 12.0),
+            ("ab".to_string(), 14.0),
+        ]
+    );
+}
+
+#[test]
+fn test_boundary_edit_deletes_a_punctuation_run() {
+    let s = boundary_speller();
+    assert_suggests_at_weight(&s, "a...b", "ab", 14.0, &boundary_config(10.0));
+}
+
+#[test]
+fn test_boundary_edit_obeys_limits_and_populates_verbose_details() {
+    let s = boundary_speller();
+    let config = SpellerConfig {
+        max_weight: Some(Weight(10.5)),
+        verbose: true,
+        ..boundary_config(10.0)
+    };
+    let suggestions = s.clone().suggest_with_config("a,b", &config);
+
+    assert_eq!(suggestions.len(), 1);
+    assert_eq!(suggestions[0].value(), "a-b");
+    assert_eq!(suggestions[0].weight(), Weight(10.0));
+    let details = suggestions[0].weight_details().expect("verbose details");
+    assert_eq!(details.lexicon_weight, Weight(0.0));
+    assert_eq!(details.mutator_weight, Weight(10.0));
+    assert_eq!(details.reweight_start, 0.0);
+    assert_eq!(details.reweight_mid, 0.0);
+    assert_eq!(details.reweight_end, 0.0);
+}
+
+#[test]
+fn test_boundary_edits_do_not_change_correctness_or_analysis_output() {
+    let s = boundary_speller();
+    let config = boundary_config(10.0);
+
+    assert!(!s.clone().is_correct_with_config("a,b", &config));
+    assert!(
+        s.clone()
+            .analyze_output_with_config("a,b", &config)
+            .is_empty(),
+        "surface-form probes must stay out of tagged analysis output"
+    );
 }
 
 // ===========================================================================
