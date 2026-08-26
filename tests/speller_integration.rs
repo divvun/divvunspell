@@ -213,6 +213,61 @@ fn build_lexicon(dir: &Path) {
     write_thfst(dir, &build_alphabet_json(symbols), &idx, &tr);
 }
 
+/// Lexicon accepting only `Cat` (w=2) and `CAT` (w=4).
+///
+/// The paired mutator has no upper-case symbols, so lower-case `cat` cannot
+/// reach either word through the error-model search. This isolates the direct
+/// suggestion-only case probes.
+fn build_case_lexicon(dir: &Path) {
+    // eps=0, c=1, a=2, t=3, C=4, A=5, T=6
+    let symbols = &["@_EPSILON_SYMBOL_@", "c", "a", "t", "C", "A", "T"];
+    let n = symbols.len();
+
+    let mut idx = Vec::new();
+
+    // State 0 (start) @0: C -> state 1.
+    write_index_empty(&mut idx);
+    write_empties(&mut idx, 4); // eps, c, a, t
+    write_index_entry(&mut idx, 4, TARGET_TABLE); // C
+    write_empties(&mut idx, 2); // A, T
+
+    // State 1 (after C) @8: a -> state 2, A -> state 4.
+    write_index_empty(&mut idx);
+    write_empties(&mut idx, 2); // eps, c
+    write_index_entry(&mut idx, 2, TARGET_TABLE + 1); // a
+    write_empties(&mut idx, 2); // t, C
+    write_index_entry(&mut idx, 5, TARGET_TABLE + 2); // A
+    write_index_empty(&mut idx); // T
+
+    // State 2 (after Ca) @16: t -> state 3.
+    write_index_empty(&mut idx);
+    write_empties(&mut idx, 3); // eps, c, a
+    write_index_entry(&mut idx, 3, TARGET_TABLE + 3); // t
+    write_empties(&mut idx, 3); // C, A, T
+
+    // State 3 (`Cat`) @24: final w=2.
+    write_index_final(&mut idx, 2.0);
+    write_empties(&mut idx, n);
+
+    // State 4 (after CA) @32: T -> state 5.
+    write_index_empty(&mut idx);
+    write_empties(&mut idx, 6); // eps, c, a, t, C, A
+    write_index_entry(&mut idx, 6, TARGET_TABLE + 4); // T
+
+    // State 5 (`CAT`) @40: final w=4.
+    write_index_final(&mut idx, 4.0);
+    write_empties(&mut idx, n);
+
+    let mut tr = Vec::new();
+    write_trans_entry(&mut tr, 4, 4, 8, 0.0); // C
+    write_trans_entry(&mut tr, 2, 2, 16, 0.0); // Ca
+    write_trans_entry(&mut tr, 5, 5, 32, 0.0); // CA
+    write_trans_entry(&mut tr, 3, 3, 24, 0.0); // Cat
+    write_trans_entry(&mut tr, 6, 6, 40, 0.0); // CAT
+
+    write_thfst(dir, &build_alphabet_json(symbols), &idx, &tr);
+}
+
 /// Mutator: identity + substitutions + deletions + insertions.
 ///
 /// ```text
@@ -2756,6 +2811,76 @@ fn test_case_handling_without_reweighting() {
         suggs.iter().any(|(v, _)| v == "Cat"),
         "first-caps input should still be corrected: {suggs:?}"
     );
+}
+
+#[test]
+fn test_lowercase_input_suggests_exact_lexicon_case_variants() {
+    let dir = tempfile::tempdir().expect("temp dir for the casing fixture");
+    let lexicon_dir = dir.path().join("lexicon.thfst");
+    let mutator_dir = dir.path().join("mutator.thfst");
+    std::fs::create_dir_all(&lexicon_dir).expect("create lexicon dir");
+    std::fs::create_dir_all(&mutator_dir).expect("create mutator dir");
+    build_case_lexicon(&lexicon_dir);
+    build_mutator(&mutator_dir);
+
+    let s = load_speller(&lexicon_dir, &mutator_dir);
+    let config = SpellerConfig {
+        reweight: None,
+        ..SpellerConfig::default()
+    };
+
+    assert!(
+        !s.clone().is_correct_with_config("cat", &config),
+        "suggestion-only probes must not make lowercase proper nouns correct"
+    );
+    assert_eq!(
+        suggestion_values(&s, "cat", &config),
+        vec![("Cat".to_string(), 12.0), ("CAT".to_string(), 14.0)]
+    );
+    assert!(
+        s.clone()
+            .analyze_output_with_config("cat", &config)
+            .is_empty(),
+        "surface-form case candidates must stay out of tagged analysis output"
+    );
+
+    let no_recase = SpellerConfig {
+        recase: false,
+        ..config
+    };
+    assert!(
+        suggestion_values(&s, "cat", &no_recase).is_empty(),
+        "--no-recase must disable direct case candidates"
+    );
+}
+
+#[test]
+fn test_direct_case_candidate_has_reweight_details() {
+    let dir = tempfile::tempdir().expect("temp dir for the casing fixture");
+    let lexicon_dir = dir.path().join("lexicon.thfst");
+    let mutator_dir = dir.path().join("mutator.thfst");
+    std::fs::create_dir_all(&lexicon_dir).expect("create lexicon dir");
+    std::fs::create_dir_all(&mutator_dir).expect("create mutator dir");
+    build_case_lexicon(&lexicon_dir);
+    build_mutator(&mutator_dir);
+
+    let s = load_speller(&lexicon_dir, &mutator_dir);
+    let config = SpellerConfig {
+        n_best: Some(1),
+        verbose: true,
+        ..SpellerConfig::default()
+    };
+    let suggestions = s.clone().suggest_with_config("cat", &config);
+
+    assert_eq!(suggestions.len(), 1);
+    assert_eq!(suggestions[0].value(), "Cat");
+    assert_eq!(suggestions[0].weight(), Weight(22.0));
+    let details = suggestions[0].weight_details().expect("verbose details");
+    assert_eq!(details.lexicon_weight, Weight(2.0));
+    assert_eq!(details.mutator_weight, Weight(10.0));
+    assert_eq!(details.reweight_start, 10.0);
+    assert_eq!(details.reweight_mid, 0.0);
+    assert_eq!(details.reweight_end, 0.0);
 }
 
 // `max_weight` is enforced during the search, on weights that have not been

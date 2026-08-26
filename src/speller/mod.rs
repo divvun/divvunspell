@@ -11,6 +11,7 @@ use std::f32;
 use std::sync::Arc;
 
 use hashbrown::HashMap;
+use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 use unic_emoji_char::is_emoji;
@@ -20,7 +21,8 @@ use unic_ucd_category::GeneralCategory;
 use self::worker::SpellerWorker;
 use crate::speller::suggestion::{Suggestion, WeightDetails};
 use crate::tokenizer::case_handling::{
-    CaseHandler, CaseMutation, starts_upper_case, upper_case, upper_first, word_variants,
+    CaseHandler, CaseMutation, is_all_lower, starts_upper_case, upper_case, upper_first,
+    word_variants,
 };
 use crate::transducer::Transducer;
 use crate::types::{SymbolNumber, Weight};
@@ -923,27 +925,25 @@ fn recase_split_half(accepted: SmolStr, typed: &str, mutation: CaseMutation) -> 
     }
 }
 
-/// Fold word-split corrections into the suggestions the search returned, then
-/// re-apply the order and the limits.
+/// Fold corrections produced outside the error-model search into its
+/// suggestions, then re-apply the order and limits.
 ///
-/// `out` is already ordered and cut to `n_best`, so a split can only displace a
-/// suggestion dearer than itself.
-fn merge_word_splits(
+/// `out` is already ordered and cut to `n_best`, so an added candidate can only
+/// displace a suggestion dearer than itself.
+fn merge_extra_suggestions(
     out: &mut Vec<Suggestion>,
-    splits: Vec<Suggestion>,
+    additions: Vec<Suggestion>,
     config: &SpellerConfig,
     input_lower: &str,
 ) {
-    for split in splits {
-        // A lexicon can spell a space itself — `words.default.txt` holds whole
-        // phrases — so the same string can arrive from both directions. Strictly
-        // cheaper wins, which means an equally-priced phrase the search found
-        // keeps its place and its unmarked status rather than being overwritten
-        // by the split account of the same string.
-        match out.iter().position(|s| s.value == split.value) {
-            Some(at) if out[at].weight > split.weight => out[at] = split,
+    for addition in additions {
+        // The same string can arrive from the search and an external producer.
+        // Strictly cheaper wins; on a tie the searched suggestion keeps its
+        // path details and, for a phrase, its unmarked whole-word status.
+        match out.iter().position(|s| s.value == addition.value) {
+            Some(at) if out[at].weight > addition.weight => out[at] = addition,
             Some(_) => {}
-            None => out.push(split),
+            None => out.push(addition),
         }
     }
 
@@ -1377,17 +1377,94 @@ where
             .clone()
             .suggest_case(case, config, config.reweight.as_ref(), mode);
 
+        // A lower-cased proper noun is still misspelled, but its exact
+        // title-case or all-caps lexicon form is a useful correction. Keep this
+        // suggestion-only: analyses must preserve tags, and correctness must
+        // not start accepting the lower-cased form.
+        if config.recase && mode == OutputMode::WithoutTags && is_all_lower(word) {
+            let candidates = self.clone().case_suggestions(word, config);
+            if !candidates.is_empty() {
+                merge_extra_suggestions(&mut out, candidates, config, &word.to_lowercase());
+            }
+        }
+
         // Corrections only: an analysis describes one word, and a split is two.
         if let Some(split_weight) = config.word_split_weight
             && mode == OutputMode::WithoutTags
         {
             let splits = self.word_split_suggestions(word, mutation, split_weight, config);
             if !splits.is_empty() {
-                merge_word_splits(&mut out, splits, config, &word.to_lowercase());
+                merge_extra_suggestions(&mut out, splits, config, &word.to_lowercase());
             }
         }
 
         out
+    }
+
+    /// Exact title-case and all-caps lexicon matches for lower-case input.
+    ///
+    /// These candidates bypass the error model because a model is not required
+    /// to contain Unicode case arcs. The normal positional reweighting prices
+    /// the case change, so they remain comparable with searched suggestions.
+    fn case_suggestions(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
+        let input_lower_str = word.to_lowercase();
+        let input_lower: Vec<&str> = Graphemes::new(&input_lower_str).collect();
+        let input_first = Graphemes::new(word).next();
+        let mut dl_buf = Vec::new();
+        // A direct lexicon walk bypasses the error model, but correcting case
+        // is still an edit. Charge twice the configured middle surcharge; the
+        // default is 10, matching an ordinary one-grapheme substitution in the
+        // standard error model. Retain that default raw charge when positional
+        // reweighting itself is disabled.
+        let case_weight = Weight(
+            config
+                .reweight
+                .as_ref()
+                .map_or(ReweightingConfig::default_const().mid_penalty, |reweight| {
+                    reweight.mid_penalty
+                })
+                * 2.0,
+        );
+
+        [upper_first(word), upper_case(word)]
+            .into_iter()
+            .unique()
+            .filter(|variant| variant.as_str() != word)
+            .filter_map(|value| {
+                let lexicon_weight = self.clone().exact_lexicon_weight(&value, config)?;
+                let penalties = compute_reweight_penalties(
+                    &input_lower,
+                    input_first,
+                    &value,
+                    Some(case_weight),
+                    config.reweight.as_ref(),
+                    &mut dl_buf,
+                );
+                let completed = config
+                    .completion_marker
+                    .as_ref()
+                    .map(|marker| !value.ends_with(marker.as_str()));
+                let total_weight = lexicon_weight + case_weight + penalties.additional_weight;
+
+                let suggestion = match config.verbose {
+                    true => Suggestion::new_with_details(
+                        value,
+                        total_weight,
+                        completed,
+                        WeightDetails {
+                            lexicon_weight,
+                            mutator_weight: case_weight,
+                            reweight_start: penalties.start,
+                            reweight_mid: penalties.mid,
+                            reweight_end: penalties.end,
+                        },
+                    ),
+                    false => Suggestion::new(value, total_weight, completed),
+                };
+
+                Some(suggestion.with_lexicon_weight(lexicon_weight))
+            })
+            .collect()
     }
 
     /// Corrections that put a space back where two words were run together.
@@ -1484,6 +1561,18 @@ where
                 worker.accepting_weight().map(|weight| (variant, weight))
             })
             .min_by_key(|(_, weight)| *weight)
+    }
+
+    /// The cheapest lexicon-only path accepting `word` exactly as written.
+    fn exact_lexicon_weight(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Option<Weight> {
+        let worker = SpellerWorker::new_lexicon_input(
+            self.clone(),
+            self.to_input_vec_lexicon(word),
+            config,
+            OutputMode::WithoutTags,
+        );
+
+        worker.accepting_weight()
     }
 
     /// get the error model automaton
@@ -2190,7 +2279,7 @@ mod word_split_tests {
             ..SpellerConfig::default()
         };
 
-        merge_word_splits(&mut out, vec![sugg("car ts", 20.0)], &config, "carts");
+        merge_extra_suggestions(&mut out, vec![sugg("car ts", 20.0)], &config, "carts");
 
         assert_eq!(
             out.iter().map(Suggestion::value).collect::<Vec<_>>(),
@@ -2205,7 +2294,7 @@ mod word_split_tests {
         let config = SpellerConfig::default();
 
         let mut cheaper_split = vec![sugg("car ts", 30.0)];
-        merge_word_splits(
+        merge_extra_suggestions(
             &mut cheaper_split,
             vec![sugg("car ts", 20.0)],
             &config,
@@ -2215,7 +2304,7 @@ mod word_split_tests {
         assert_eq!(cheaper_split[0].weight(), Weight(20.0));
 
         let mut dearer_split = vec![sugg("car ts", 10.0)];
-        merge_word_splits(
+        merge_extra_suggestions(
             &mut dearer_split,
             vec![sugg("car ts", 20.0)],
             &config,
@@ -2234,7 +2323,7 @@ mod word_split_tests {
             ..SpellerConfig::default()
         };
 
-        merge_word_splits(&mut out, vec![sugg("car ts", 20.0)], &config, "carts");
+        merge_extra_suggestions(&mut out, vec![sugg("car ts", 20.0)], &config, "carts");
 
         assert_eq!(
             out.iter().map(Suggestion::value).collect::<Vec<_>>(),

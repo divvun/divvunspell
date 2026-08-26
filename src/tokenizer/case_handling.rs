@@ -150,6 +150,12 @@ pub fn is_all_caps(word: &str) -> bool {
     )
 }
 
+/// Whether every cased character is lower case, with at least one cased
+/// character present. Caseless punctuation and digits are neutral.
+pub(crate) fn is_all_lower(word: &str) -> bool {
+    matches!(WordCase::from(word), WordCase::AllLower)
+}
+
 /// All caps with no allowance for a stray lower-case character.
 fn is_strictly_all_caps(word: &str) -> bool {
     matches!(WordCase::from(word), WordCase::AllUpper)
@@ -336,6 +342,9 @@ mod tests {
         assert_eq!(is_all_caps("ABC-DEF"), true);
         assert_eq!(is_all_caps("日ABC"), true);
         assert_eq!(is_first_caps("日Abc"), true);
+        assert!(is_all_lower("日abc-123"));
+        assert!(!is_all_lower("日Abc-123"));
+        assert!(!is_all_lower("日-123"));
         assert_eq!(is_all_caps("123"), false);
         assert_eq!(is_first_caps("123"), false);
     }
