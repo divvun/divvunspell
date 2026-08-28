@@ -577,10 +577,22 @@ fn apply_weight_limits(out: &mut Vec<Suggestion>, config: &SpellerConfig, input_
     }
 
     out.retain(|s| {
-        let within = beam_threshold.is_none_or(|threshold| s.weight() <= threshold)
-            && config.max_weight.is_none_or(|max| s.weight() <= max);
+        // The case-only exemption protects a correction differing from the
+        // input by case alone -- `amerik` -> `Amerik` -- from the beam, which
+        // is relative to the best candidate and can prune it for being the
+        // only thing found.
+        //
+        // It must not extend to max_weight. That is an absolute barrier, and a
+        // lexicon uses it to mark forms never-suggest: GiellaLT prices
+        // +Use/SpellNoSugg and its siblings in the thousands precisely so they
+        // fall outside it. Exempting case variants let those forms back in
+        // through the side door -- South Sámi offers `ennh` -> `ENNH` at
+        // weight 10025 against a ceiling of 10000, and since they sort last,
+        // no recall measurement ever noticed.
+        let under_ceiling = config.max_weight.is_none_or(|max| s.weight() <= max);
+        let within_beam = beam_threshold.is_none_or(|threshold| s.weight() <= threshold);
 
-        within || s.value().to_lowercase() == input_lower
+        under_ceiling && (within_beam || s.value().to_lowercase() == input_lower)
     });
 }
 
@@ -2592,5 +2604,63 @@ mod word_split_tests {
         let parsed: SpellerConfig = serde_json::from_str(r#"{"word-split-weight": 35.0}"#)
             .expect("the field parses as a plain number");
         assert_eq!(parsed.word_split_weight, Some(Weight(35.0)));
+    }
+}
+
+#[cfg(test)]
+mod weight_limit_tests {
+    use super::*;
+
+    fn sugg(value: &str, weight: f32) -> Suggestion {
+        Suggestion::new(value.into(), Weight(weight), None)
+    }
+
+    fn config(max_weight: Option<f32>, beam: Option<f32>) -> SpellerConfig {
+        let mut c = SpellerConfig::default();
+        c.max_weight = max_weight.map(Weight);
+        c.beam = beam.map(Weight);
+        c
+    }
+
+    /// A never-suggest form must not reach the user through the case-only
+    /// exemption.
+    ///
+    /// GiellaLT marks a form never-suggest by pricing its tags in the
+    /// thousands, against a max-weight ceiling that filters them out. The
+    /// exemption used to override that ceiling, so any such form differing
+    /// from the input by case alone came back: South Sámi offered
+    /// `ennh` -> `ENNH` at 10025 against a ceiling of 10000, and because those
+    /// forms sort last no recall measurement noticed.
+    #[test]
+    fn case_only_exemption_does_not_bypass_max_weight() {
+        let mut out = vec![sugg("ennh", 30.0), sugg("ENNH", 10025.0)];
+        apply_weight_limits(&mut out, &config(Some(10000.0), None), "ennh");
+        assert_eq!(
+            out.iter().map(|s| s.value()).collect::<Vec<_>>(),
+            ["ennh"],
+            "a case variant above max_weight must be dropped"
+        );
+    }
+
+    /// ...but the exemption still has to do its job against the beam, which is
+    /// relative to the best candidate and would otherwise prune a legitimate
+    /// recapitalisation for being the only thing found (#65).
+    #[test]
+    fn case_only_exemption_still_survives_the_beam() {
+        let mut out = vec![sugg("amerihkká", 10.0), sugg("Amerik", 400.0)];
+        apply_weight_limits(&mut out, &config(Some(10000.0), Some(20.0)), "amerik");
+        assert!(
+            out.iter().any(|s| s.value() == "Amerik"),
+            "a case variant under max_weight must survive the beam, got {:?}",
+            out.iter().map(|s| s.value()).collect::<Vec<_>>()
+        );
+    }
+
+    /// A non-case candidate gets no exemption from either limit.
+    #[test]
+    fn ordinary_candidates_obey_both_limits() {
+        let mut out = vec![sugg("cat", 10.0), sugg("dog", 400.0), sugg("cow", 20000.0)];
+        apply_weight_limits(&mut out, &config(Some(10000.0), Some(20.0)), "cat");
+        assert_eq!(out.iter().map(|s| s.value()).collect::<Vec<_>>(), ["cat"]);
     }
 }
