@@ -619,10 +619,13 @@ pub(crate) enum OutputMode {
 #[serde(rename_all = "kebab-case")]
 pub struct ReweightingConfig {
     #[serde(default = "default_start_penalty")]
+    #[serde(alias = "start_penalty")]
     pub start_penalty: f32,
     #[serde(default = "default_end_penalty")]
+    #[serde(alias = "end_penalty")]
     pub end_penalty: f32,
     #[serde(default = "default_mid_penalty")]
+    #[serde(alias = "mid_penalty")]
     pub mid_penalty: f32,
     /// how sharply the start and end penalties fall away into the word
     ///
@@ -707,9 +710,11 @@ const fn default_mid_penalty() -> f32 {
 pub struct SpellerConfig {
     /// upper limit for suggestions given
     #[serde(default = "default_n_best")]
+    #[serde(alias = "n_best")]
     pub n_best: Option<usize>,
     /// upper limit for weight of any suggestion
     #[serde(default = "default_max_weight")]
+    #[serde(alias = "max_weight")]
     pub max_weight: Option<Weight>,
     /// weight distance between best suggestion and worst
     #[serde(default = "default_beam")]
@@ -719,12 +724,14 @@ pub struct SpellerConfig {
     pub reweight: Option<ReweightingConfig>,
     /// some parallel stuff?
     #[serde(default = "default_node_pool_size")]
+    #[serde(alias = "node_pool_size")]
     pub node_pool_size: usize,
     /// whether we try to recase mispelt word before other suggestions
     #[serde(default = "default_recase")]
     pub recase: bool,
     /// used when suggesting unfinished word parts
     #[serde(default)]
+    #[serde(alias = "completion_marker")]
     pub completion_marker: Option<String>,
     /// whether the suggestion search orders itself by the A* heuristic
     ///
@@ -732,6 +739,7 @@ pub struct SpellerConfig {
     /// search runs, not what it finds. It is here as an escape hatch, and so a
     /// test can assert the two orders agree; leave it on.
     #[serde(default = "default_astar_lookahead")]
+    #[serde(alias = "astar_lookahead")]
     pub astar_lookahead: bool,
     /// whether the suggestion search walks states rather than paths
     ///
@@ -743,6 +751,7 @@ pub struct SpellerConfig {
     /// interchangeable, so keeping only the cheapest changes what the search
     /// costs, not what it finds. It is here as an escape hatch; leave it on.
     #[serde(default = "default_search_dedup")]
+    #[serde(alias = "search_dedup")]
     pub search_dedup: bool,
     /// whether the suggestion search determinises the error model as it goes
     ///
@@ -758,6 +767,7 @@ pub struct SpellerConfig {
     /// singleton subsets and is unaffected. It is here as an escape hatch;
     /// leave it on.
     #[serde(default = "default_mutator_subsets")]
+    #[serde(alias = "mutator_subsets")]
     pub mutator_subsets: bool,
     /// how many nodes the suggestion search may pop before it settles for what
     /// it has found
@@ -781,6 +791,7 @@ pub struct SpellerConfig {
     /// The budget is per search, and a word whose casing is ambiguous is
     /// searched once per case variant.
     #[serde(default = "default_search_budget")]
+    #[serde(alias = "search_budget")]
     pub search_budget: Option<u64>,
     /// what to charge for putting a space back into a run-together word
     ///
@@ -791,6 +802,7 @@ pub struct SpellerConfig {
     /// switches it off. Halves shorter than two graphemes are not offered, and
     /// only one split point per word is tried.
     #[serde(default = "default_word_split_weight")]
+    #[serde(alias = "word_split_weight")]
     pub word_split_weight: Option<Weight>,
     /// what to charge for an exact lexicon form one separator edit away
     ///
