@@ -146,9 +146,130 @@ struct Report<'a> {
     metadata: Option<&'a divvun_fst::archive::meta::SpellerMetadata>,
     config: &'a SpellerConfig,
     summary: Summary,
+    set_summary: SetSummary,
     results: Vec<AccuracyResult<'a>>,
     start_timestamp: Time,
     total_time: Time,
+}
+
+/// Accuracy scored over correction *sets* rather than one row per pair.
+///
+/// A test list keyed by (misspelling, correction) pairs charges a misspelling
+/// with two valid corrections twice, and only one of them can hold rank 1 --
+/// so one of the two rows is lost however good the speller is. Grouping by
+/// misspelling asks the question the pair-wise metric cannot: did the speller
+/// put *the whole correction set* where it belongs?
+///
+/// Each field reduces to its `Summary` counterpart when every misspelling has a
+/// single correction, so the two agree on lists without ambiguity.
+#[derive(Serialize, Default, Debug, Clone)]
+struct SetSummary {
+    /// Distinct misspellings scored -- the denominator here, as against
+    /// `Summary::total_words`, which counts pairs.
+    total_inputs: u32,
+    /// Misspellings whose corrections are exactly the top `k` suggestions, for
+    /// `k` corrections. Equivalent to top-1 when `k` is 1.
+    exact_set: u32,
+    /// Misspellings with every correction inside the first `max(5, k)`.
+    top_five_set: u32,
+    /// Misspellings with every correction suggested at all.
+    any_set: u32,
+    /// Of `total_inputs`, how many carry more than one correction.
+    ambiguous_inputs: u32,
+    /// Pair-wise top-1 rows that no speller can win, because the misspellings
+    /// they belong to have more corrections than there are rank-1 slots.
+    unwinnable_pairs: u32,
+}
+
+impl std::fmt::Display for SetSummary {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        let percent =
+            |v: u32| -> String { format!("{:.2}%", v as f32 / self.total_inputs as f32 * 100f32) };
+
+        write!(
+            f,
+            "[set #1] {} [set ^5] {} [set any] {} [ambiguous] {} of {}",
+            percent(self.exact_set),
+            percent(self.top_five_set),
+            percent(self.any_set),
+            self.ambiguous_inputs,
+            self.total_inputs
+        )
+    }
+}
+
+impl SetSummary {
+    fn new(results: &[AccuracyResult<'_>]) -> SetSummary {
+        // Preserve first-seen order so the report is stable across runs.
+        let mut order: Vec<&str> = Vec::new();
+        let mut by_input: std::collections::HashMap<&str, Vec<&AccuracyResult<'_>>> =
+            std::collections::HashMap::new();
+
+        for result in results {
+            // Rows with no correction are false-accept probes, and a row the
+            // speller accepted outright never produced a suggestion list to
+            // score. Neither says anything about ranking.
+            if result.expected.is_none() || result.false_accept {
+                continue;
+            }
+            by_input.entry(result.input).or_insert_with(|| {
+                order.push(result.input);
+                Vec::new()
+            });
+            if let Some(group) = by_input.get_mut(result.input) {
+                group.push(result);
+            }
+        }
+
+        let mut summary = SetSummary::default();
+
+        for input in order {
+            let Some(group) = by_input.get(input) else {
+                continue;
+            };
+
+            // The same (input, correction) pair can be listed more than once;
+            // it is one correction either way.
+            let mut corrections: Vec<&str> = group.iter().filter_map(|r| r.expected).collect();
+            corrections.sort_unstable();
+            corrections.dedup();
+            let k = corrections.len();
+
+            summary.total_inputs += 1;
+            if k > 1 {
+                summary.ambiguous_inputs += 1;
+                summary.unwinnable_pairs += (k - 1) as u32;
+            }
+
+            // Every row in a group shares an input, so they share a suggestion
+            // list; take the longest in case a row was cut short.
+            let Some(suggestions) = group.iter().map(|r| &r.suggestions).max_by_key(|s| s.len())
+            else {
+                continue;
+            };
+
+            let positions: Vec<Option<usize>> = corrections
+                .iter()
+                .map(|c| suggestions.iter().position(|s| &s.value == c))
+                .collect();
+
+            if positions.iter().any(|p| p.is_none()) {
+                continue;
+            }
+
+            summary.any_set += 1;
+
+            let deepest = positions.iter().flatten().max().copied().unwrap_or(0);
+            if deepest < std::cmp::max(5, k) {
+                summary.top_five_set += 1;
+            }
+            if deepest < k {
+                summary.exact_set += 1;
+            }
+        }
+
+        summary
+    }
 }
 
 #[derive(Serialize, Default, Debug, Clone)]
@@ -423,12 +544,18 @@ pub fn run(args: AccuracyArgs) -> anyhow::Result<()> {
     let summary = Summary::new(&results);
     println!("{}", summary);
 
+    let set_summary = SetSummary::new(&results);
+    if set_summary.ambiguous_inputs > 0 {
+        println!("{}", set_summary);
+    }
+
     if let Some(path) = args.json_output {
         let output = std::fs::File::create(path)?;
         let report = Report {
             metadata: archive.metadata(),
             config: &cfg,
             summary: summary.clone(),
+            set_summary,
             results,
             start_timestamp,
             total_time,
@@ -487,5 +614,131 @@ pub fn run(args: AccuracyArgs) -> anyhow::Result<()> {
             }
         }
         None => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod set_summary_tests {
+    use super::*;
+
+    fn result<'a>(input: &'a str, expected: &'a str, suggestions: &[&str]) -> AccuracyResult<'a> {
+        let suggestions: Vec<Suggestion> = suggestions
+            .iter()
+            .enumerate()
+            .map(|(i, v)| Suggestion::new((*v).into(), Weight(i as f32), None))
+            .collect();
+        let position = suggestions.iter().position(|s| s.value == expected);
+
+        AccuracyResult {
+            input,
+            expected: Some(expected),
+            distance: 1,
+            suggestions,
+            position,
+            time: Time::default(),
+            false_accept: false,
+        }
+    }
+
+    #[test]
+    fn reduces_to_pairwise_scoring_when_no_input_is_ambiguous() {
+        let results = [
+            result("aa", "ab", &["ab", "ac"]),
+            result("ba", "bz", &["bb", "bz"]),
+        ];
+        let summary = SetSummary::new(&results);
+
+        assert_eq!(summary.total_inputs, 2);
+        assert_eq!(summary.ambiguous_inputs, 0);
+        assert_eq!(summary.unwinnable_pairs, 0);
+        // One gold leads, the other is second: exactly the pair-wise verdict.
+        assert_eq!(summary.exact_set, 1);
+        assert_eq!(summary.top_five_set, 2);
+        assert_eq!(summary.any_set, 2);
+    }
+
+    #[test]
+    fn both_corrections_leading_counts_as_an_exact_set() {
+        // The case the pair-wise metric cannot express: two valid corrections,
+        // both offered first. One of its two rows is a guaranteed top-1 loss.
+        let results = [
+            result("x", "xa", &["xa", "xb", "xc"]),
+            result("x", "xb", &["xa", "xb", "xc"]),
+        ];
+        let summary = SetSummary::new(&results);
+
+        assert_eq!(summary.total_inputs, 1);
+        assert_eq!(summary.ambiguous_inputs, 1);
+        assert_eq!(summary.unwinnable_pairs, 1);
+        assert_eq!(summary.exact_set, 1);
+        assert_eq!(summary.top_five_set, 1);
+        assert_eq!(summary.any_set, 1);
+    }
+
+    #[test]
+    fn a_correction_outside_the_leading_k_is_not_an_exact_set() {
+        let results = [
+            result("x", "xa", &["xa", "xz", "xb"]),
+            result("x", "xb", &["xa", "xz", "xb"]),
+        ];
+        let summary = SetSummary::new(&results);
+
+        assert_eq!(summary.exact_set, 0);
+        assert_eq!(summary.top_five_set, 1);
+        assert_eq!(summary.any_set, 1);
+    }
+
+    #[test]
+    fn a_missing_correction_disqualifies_the_whole_set() {
+        let results = [
+            result("x", "xa", &["xa", "xb"]),
+            result("x", "xq", &["xa", "xb"]),
+        ];
+        let summary = SetSummary::new(&results);
+
+        assert_eq!(summary.any_set, 0);
+        assert_eq!(summary.top_five_set, 0);
+        assert_eq!(summary.exact_set, 0);
+    }
+
+    #[test]
+    fn the_top_five_window_widens_for_more_than_five_corrections() {
+        let suggestions = ["c0", "c1", "c2", "c3", "c4", "c5"];
+        let results: Vec<AccuracyResult<'_>> = suggestions
+            .iter()
+            .map(|c| result("x", c, &suggestions))
+            .collect();
+        let summary = SetSummary::new(&results);
+
+        // Six corrections cannot fit in five slots; the window is max(5, k).
+        assert_eq!(summary.total_inputs, 1);
+        assert_eq!(summary.unwinnable_pairs, 5);
+        assert_eq!(summary.top_five_set, 1);
+        assert_eq!(summary.exact_set, 1);
+    }
+
+    #[test]
+    fn duplicate_rows_are_one_correction() {
+        let results = [
+            result("x", "xa", &["xa", "xb"]),
+            result("x", "xa", &["xa", "xb"]),
+        ];
+        let summary = SetSummary::new(&results);
+
+        assert_eq!(summary.total_inputs, 1);
+        assert_eq!(summary.ambiguous_inputs, 0);
+        assert_eq!(summary.unwinnable_pairs, 0);
+        assert_eq!(summary.exact_set, 1);
+    }
+
+    #[test]
+    fn false_accepts_and_probes_are_not_scored() {
+        let mut accepted = result("x", "xa", &[]);
+        accepted.false_accept = true;
+        let mut probe = result("y", "ya", &["ya"]);
+        probe.expected = None;
+
+        let summary = SetSummary::new(&[accepted, probe]);
+        assert_eq!(summary.total_inputs, 0);
     }
 }
