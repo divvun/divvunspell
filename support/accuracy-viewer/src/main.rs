@@ -501,21 +501,134 @@ fn theme_label(theme: &str) -> &'static str {
 // Data fetch
 // ===========================================================================
 
-async fn fetch_report() -> Result<Report, String> {
-    let resp = gloo_net::http::Request::get("report.json")
+/// `window.__DOCS_DATA_BASE__`, when the theme layout sets it: the repo's
+/// `generated/docs-data` branch served via `raw.githubusercontent.com` (see
+/// jekyll-theme-giellalt's `_layouts/typosreport.html`). Falls back to `""`
+/// (same-origin relative fetch) for local `trunk serve` testing, mirroring
+/// the former Svelte bundle's `(window.__DOCS_DATA_BASE__||"")`.
+fn docs_data_base() -> String {
+    web_sys::window()
+        .and_then(|w| {
+            js_sys::Reflect::get(&w, &wasm_bindgen::JsValue::from_str("__DOCS_DATA_BASE__")).ok()
+        })
+        .and_then(|v| v.as_string())
+        .unwrap_or_default()
+}
+
+/// `speller-accuracy.json`, or `speller-accuracy-<tag>.json` for a variant
+/// (dialect/area/orthography/writing system — see `fetch_variants` below).
+async fn fetch_report(variant: Option<&str>) -> Result<Report, String> {
+    let file = match variant {
+        Some(tag) => format!("speller-accuracy-{tag}.json"),
+        None => "speller-accuracy.json".to_string(),
+    };
+    let url = format!("{}{file}", docs_data_base());
+    let resp = gloo_net::http::Request::get(&url)
         .send()
         .await
-        .map_err(|e| format!("Failed to load report.json: {e}"))?;
+        .map_err(|e| format!("Failed to load {url}: {e}"))?;
     if !resp.ok() {
         return Err(format!(
-            "Failed to load report.json: {} {}",
+            "Failed to load {url}: {} {}",
             resp.status(),
             resp.status_text()
         ));
     }
     resp.json::<Report>()
         .await
-        .map_err(|e| format!("Failed to parse report.json: {e}"))
+        .map_err(|e| format!("Failed to parse {url}: {e}"))
+}
+
+// ===========================================================================
+// Variant selection (dialects / areas / orthographies / writing systems)
+// ===========================================================================
+
+/// One `<option>` in the variant selector. `tag: None` is the always-present
+/// "Default" entry (`report.json`); `Some(code)` fetches `report-<code>.json`.
+#[derive(Clone, PartialEq)]
+struct VariantOption {
+    tag: Option<String>,
+    label: String,
+}
+
+#[derive(Deserialize)]
+struct VariantEntry {
+    code: String,
+}
+
+/// Mirrors giella-core's `fst-variants.json` shape: up to four independent
+/// groups of variants, any of which may be absent.
+#[derive(Deserialize, Default)]
+struct VariantsFile {
+    #[serde(default)]
+    areas: Option<Vec<VariantEntry>>,
+    #[serde(default)]
+    dialects: Option<Vec<VariantEntry>>,
+    #[serde(default)]
+    orthographies: Option<Vec<VariantEntry>>,
+    #[serde(default)]
+    writing_systems: Option<Vec<VariantEntry>>,
+}
+
+/// Fetches `fst-variants.json` and flattens it into a `Default` option plus
+/// one option per variant, in areas/dialects/orthographies/writing_systems
+/// order. Best-effort: any failure (missing file, bad JSON — most repos have
+/// no variants at all) just yields `[Default]`, same as the Svelte bundle.
+async fn fetch_variants() -> Vec<VariantOption> {
+    let default_only = vec![VariantOption {
+        tag: None,
+        label: "Default".to_string(),
+    }];
+
+    let url = format!("{}fst-variants.json", docs_data_base());
+    let Ok(resp) = gloo_net::http::Request::get(&url).send().await else {
+        return default_only;
+    };
+    if !resp.ok() {
+        return default_only;
+    }
+    let Ok(vf) = resp.json::<VariantsFile>().await else {
+        return default_only;
+    };
+
+    let mut out = default_only;
+    for group in [vf.areas, vf.dialects, vf.orthographies, vf.writing_systems]
+        .into_iter()
+        .flatten()
+    {
+        for entry in group {
+            out.push(VariantOption {
+                tag: Some(entry.code.clone()),
+                label: entry.code,
+            });
+        }
+    }
+    out
+}
+
+/// The `?variant=` query param on the current page, if any.
+fn variant_from_url() -> Option<String> {
+    let window = web_sys::window()?;
+    let href = window.location().href().ok()?;
+    let url = web_sys::Url::new(&href).ok()?;
+    url.search_params().get("variant")
+}
+
+/// Reflects the selected variant into the URL (`?variant=<tag>`, or removed
+/// for the default) via `history.pushState`, so the page is linkable/
+/// reloadable without a network round trip — mirrors the Svelte bundle.
+fn set_variant_in_url(tag: Option<&str>) {
+    let Some(window) = web_sys::window() else { return };
+    let Ok(href) = window.location().href() else { return };
+    let Ok(url) = web_sys::Url::new(&href) else { return };
+    let params = url.search_params();
+    match tag {
+        Some(t) => params.set("variant", t),
+        None => params.delete("variant"),
+    }
+    if let Ok(history) = window.history() {
+        let _ = history.push_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&url.href()));
+    }
 }
 
 // ===========================================================================
@@ -807,26 +920,79 @@ fn sort_mode_label(mode: Option<&str>) -> &'static str {
     }
 }
 
+/// Loads `variant`'s report into the shared signals — used both for the
+/// initial fetch and every variant-selector change. Reflects the choice into
+/// the URL on success so the page is linkable/reloadable.
+async fn load_variant(
+    variant: Option<String>,
+    mut report: Signal<Option<Report>>,
+    mut results: Signal<Vec<AccuracyResult>>,
+    mut original_results: Signal<Vec<AccuracyResult>>,
+    mut load_error: Signal<Option<String>>,
+    mut current_variant: Signal<Option<String>>,
+) {
+    report.set(None);
+    load_error.set(None);
+    match fetch_report(variant.as_deref()).await {
+        Ok(rep) => {
+            original_results.set(rep.results.clone());
+            results.set(rep.results.clone());
+            report.set(Some(rep));
+            current_variant.set(variant.clone());
+            set_variant_in_url(variant.as_deref());
+        }
+        Err(e) => load_error.set(Some(e)),
+    }
+}
+
 #[component]
 fn App() -> Element {
-    let mut report = use_signal(|| None::<Report>);
+    let report = use_signal(|| None::<Report>);
     let mut results = use_signal(Vec::<AccuracyResult>::new);
-    let mut original_results = use_signal(Vec::<AccuracyResult>::new);
-    let mut load_error = use_signal(|| None::<String>);
+    let original_results = use_signal(Vec::<AccuracyResult>::new);
+    let load_error = use_signal(|| None::<String>);
     let mut sort_mode = use_signal(|| None::<String>);
     let mut theme = use_signal(saved_theme);
-
-    // Fetch the report once on mount.
-    use_future(move || async move {
-        match fetch_report().await {
-            Ok(rep) => {
-                original_results.set(rep.results.clone());
-                results.set(rep.results.clone());
-                report.set(Some(rep));
-            }
-            Err(e) => load_error.set(Some(e)),
-        }
+    let mut variants = use_signal(|| {
+        vec![VariantOption {
+            tag: None,
+            label: "Default".to_string(),
+        }]
     });
+    let current_variant = use_signal(|| None::<String>);
+
+    // Discover variants (if any), then fetch the report once on mount — the
+    // ?variant= URL param is honoured only if it names a variant that
+    // actually exists, same as the Svelte bundle.
+    use_future(move || async move {
+        let vs = fetch_variants().await;
+        variants.set(vs.clone());
+        let requested = variant_from_url();
+        let effective =
+            requested.filter(|t| vs.iter().any(|v| v.tag.as_deref() == Some(t.as_str())));
+        load_variant(
+            effective,
+            report,
+            results,
+            original_results,
+            load_error,
+            current_variant,
+        )
+        .await;
+    });
+
+    let select_variant = move |evt: dioxus::events::FormEvent| {
+        let value = evt.value();
+        let tag = if value.is_empty() { None } else { Some(value) };
+        spawn(load_variant(
+            tag,
+            report,
+            results,
+            original_results,
+            load_error,
+            current_variant,
+        ));
+    };
 
     // One-time theme setup: apply the saved theme and react to OS theme changes
     // while in "auto" mode.
@@ -862,6 +1028,8 @@ fn App() -> Element {
     let err = load_error();
     let rows = results.read().clone();
     let mode = sort_mode();
+    let variant_list = variants();
+    let active_variant = current_variant();
 
     rsx! {
         button {
@@ -871,6 +1039,24 @@ fn App() -> Element {
             title: "Switch between light, dark, and auto theme modes",
             span { "{theme_icon(&theme_val)}" }
             span { "{theme_label(&theme_val)}" }
+        }
+
+        if variant_list.len() > 1 {
+            div { class: "variant-selector",
+                label { r#for: "variant-select", "Variant:" }
+                select {
+                    id: "variant-select",
+                    onchange: select_variant,
+                    for v in variant_list.iter() {
+                        option {
+                            key: "{v.tag.clone().unwrap_or_default()}",
+                            value: "{v.tag.clone().unwrap_or_default()}",
+                            selected: active_variant == v.tag,
+                            "{v.label}"
+                        }
+                    }
+                }
+            }
         }
 
         div { class: "container",
@@ -883,34 +1069,43 @@ fn App() -> Element {
                     h2 { "Error Loading Report" }
                     p { "{e}" }
                     p {
-                        strong { "For GitHub Pages usage:" }
+                        strong { "For giellalt lang- repos:" }
                     }
                     ul {
                         li {
-                            "Run "
-                            code { "make check" }
-                            " in your language repository, with "
-                            strong { "spellcheckers" }
-                            " enabled"
+                            "Enable "
+                            code { "spellers" }
+                            " in "
+                            code { ".build-config.yml" }
+                            " so CI generates "
+                            code { "speller-accuracy.json" }
                         }
                         li {
-                            "Verify that "
-                            code { "docs/typosreport/report.json" }
-                            " was generated or updated"
+                            "Check that the repo's "
+                            code { "generated/docs-data" }
+                            " branch has a "
+                            code { "speller-accuracy.json" }
+                            " from a recent build (published by "
+                            code { "divvun-actions run lang-docs-publish" }
+                            ")"
                         }
                         li {
-                            "Commit and push the "
-                            code { "report.json" }
-                            " file to your repository"
+                            "This page loads it from "
+                            code { "raw.githubusercontent.com" }
+                            " via "
+                            code { "window.__DOCS_DATA_BASE__" }
+                            ", set by the theme's "
+                            code { "typosreport" }
+                            " layout"
                         }
                     }
                     p {
                         strong { "For local testing:" }
                     }
                     p { "Generate a report file:" }
-                    pre { "divvunspell accuracy -o report.json typos.tsv language.zhfst" }
+                    pre { "divvunspell accuracy -o speller-accuracy.json typos.tsv language.zhfst" }
                     p {
-                        "Then copy the report.json file next to the built "
+                        "Then copy the speller-accuracy.json file next to the built "
                         code { "index.html" }
                         " (the Trunk "
                         code { "dist/" }
