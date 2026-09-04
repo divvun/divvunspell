@@ -17,4 +17,4 @@ for f in accuracy-viewer.js accuracy-viewer_bg.wasm styles.css global.css; do
 done
 echo "  dist/snippets/   (whole directory — accuracy-viewer.js imports these relative to itself)"
 echo
-echo "dist/index.html and dist/report.json (if present) are local-dev-only; don't copy those."
+echo "dist/index.html and dist/speller-accuracy.json (if present) are local-dev-only; don't copy those."

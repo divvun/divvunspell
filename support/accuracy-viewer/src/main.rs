@@ -515,12 +515,12 @@ fn docs_data_base() -> String {
         .unwrap_or_default()
 }
 
-/// `report.json`, or `report-<tag>.json` for a variant (dialect/area/
-/// orthography/writing system — see `fetch_variants` below).
+/// `speller-accuracy.json`, or `speller-accuracy-<tag>.json` for a variant
+/// (dialect/area/orthography/writing system — see `fetch_variants` below).
 async fn fetch_report(variant: Option<&str>) -> Result<Report, String> {
     let file = match variant {
-        Some(tag) => format!("report-{tag}.json"),
-        None => "report.json".to_string(),
+        Some(tag) => format!("speller-accuracy-{tag}.json"),
+        None => "speller-accuracy.json".to_string(),
     };
     let url = format!("{}{file}", docs_data_base());
     let resp = gloo_net::http::Request::get(&url)
@@ -1078,13 +1078,13 @@ fn App() -> Element {
                             " in "
                             code { ".build-config.yml" }
                             " so CI generates "
-                            code { "report.json" }
+                            code { "speller-accuracy.json" }
                         }
                         li {
                             "Check that the repo's "
                             code { "generated/docs-data" }
                             " branch has a "
-                            code { "report.json" }
+                            code { "speller-accuracy.json" }
                             " from a recent build (published by "
                             code { "divvun-actions run lang-docs-publish" }
                             ")"
@@ -1103,9 +1103,9 @@ fn App() -> Element {
                         strong { "For local testing:" }
                     }
                     p { "Generate a report file:" }
-                    pre { "divvunspell accuracy -o report.json typos.tsv language.zhfst" }
+                    pre { "divvunspell accuracy -o speller-accuracy.json typos.tsv language.zhfst" }
                     p {
-                        "Then copy the report.json file next to the built "
+                        "Then copy the speller-accuracy.json file next to the built "
                         code { "index.html" }
                         " (the Trunk "
                         code { "dist/" }
