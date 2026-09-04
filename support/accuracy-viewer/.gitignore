@@ -1,5 +1,5 @@
 .DS_Store
 /target
 /dist
-# Local report under test (place report.json next to the served files)
-/report.json
+# Local report under test (place speller-accuracy.json next to the served files)
+/speller-accuracy.json
