@@ -1,0 +1,7 @@
+# Stable (non-content-hashed) output filenames: the built accuracy-viewer.js /
+# accuracy-viewer_bg.wasm / styles.css / global.css are committed by hand into
+# jekyll-theme-giellalt's assets/typosreport/, referenced by fixed paths from
+# _layouts/typosreport.html. Hashed filenames would mean editing that layout
+# on every rebuild.
+[build]
+filehash = false
