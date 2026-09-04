@@ -46,16 +46,27 @@ it there after `trunk build`. The app fetches `report.json` relative to the page
 trunk build --release
 ```
 
-The static site is emitted to `dist/`. Copy your `report.json` into `dist/` and
-serve/publish the directory.
+Emits stable (non-hashed — see `Trunk.toml`) filenames to `dist/`. For local
+testing, copy a `report.json` into `dist/` and serve/publish the directory.
 
-### GitHub Pages
+### Deploying to jekyll-theme-giellalt
 
-When serving from a project subpath (e.g. `https://<org>.github.io/<repo>/`),
-build with a matching public URL so asset links resolve:
+This app isn't deployed standalone — every `lang-*` repo's docs site pulls it
+in via [`giellalt/jekyll-theme-giellalt`](https://github.com/giellalt/jekyll-theme-giellalt)'s
+`typosreport` layout, which supplies `window.__DOCS_DATA_BASE__` (the repo's
+`generated/docs-data` branch, where CI publishes `report.json`) and the wasm
+bootstrap script.
+
+There's no CI wiring this up — the built output is a checked-in artifact in
+the theme repo, same as the old Svelte bundle it replaced. After changing
+this app:
 
 ```bash
-trunk build --release --public-url /<repo>/
+./build.sh
 ```
 
-Then publish `dist/` (with `report.json` inside it) to the Pages branch/directory.
+then copy the paths it prints into a checkout of jekyll-theme-giellalt at
+`assets/typosreport/` (replacing what's there — this includes the whole
+`snippets/` directory, which `accuracy-viewer.js` imports relative to
+itself), and commit there. `index.html` and `dist/report.json` are for local
+`trunk serve`/`trunk build` testing only — don't copy those in.
