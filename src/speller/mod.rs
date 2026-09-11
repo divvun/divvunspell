@@ -829,6 +829,10 @@ pub struct SpellerConfig {
     pub verbose: bool,
 }
 
+/// The configuration a call that supplies none falls back to, when the speller
+/// carries no bundled config of its own.
+static DEFAULT_CONFIG: SpellerConfig = SpellerConfig::default();
+
 impl SpellerConfig {
     /// create a default configuration with following values:
     /// * n_best = 10
@@ -1247,12 +1251,12 @@ where
 
     #[inline]
     fn is_correct(self: Arc<Self>, word: &str) -> bool {
-        self.is_correct_with_config(word, &SpellerConfig::default())
+        Arc::clone(&self).is_correct_with_config(word, self.default_config())
     }
 
     #[inline]
     fn suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
-        self.suggest_with_config(word, &SpellerConfig::default())
+        Arc::clone(&self).suggest_with_config(word, self.default_config())
     }
 
     fn suggest_with_config(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Vec<Suggestion> {
@@ -1281,7 +1285,12 @@ where
 
     #[inline]
     fn analyze_input(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
-        self.analyze_input_with_config(word, &SpellerConfig::default())
+        Arc::clone(&self).analyze_input_with_config(word, self.default_config())
+    }
+
+    #[inline]
+    fn get_lexicon_weight(self: Arc<Self>, word: &str) -> Weight {
+        Arc::clone(&self).get_lexicon_weight_with_config(word, self.default_config())
     }
 
     fn get_lexicon_weight_with_config(
@@ -1320,7 +1329,7 @@ where
 
     #[inline]
     fn analyze_output(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
-        self.analyze_output_with_config(word, &SpellerConfig::default())
+        Arc::clone(&self).analyze_output_with_config(word, self.default_config())
     }
 
     fn analyze_suggest_with_config(
@@ -1350,7 +1359,7 @@ where
 
     #[inline]
     fn analyze_suggest(self: Arc<Self>, word: &str) -> Vec<Suggestion> {
-        self.analyze_suggest_with_config(word, &SpellerConfig::default())
+        Arc::clone(&self).analyze_suggest_with_config(word, self.default_config())
     }
 
     fn generate_with_config(
@@ -1425,6 +1434,11 @@ where
     lexicon: U,
     alphabet_translator: Vec<SymbolNumber>,
     unknown_output_domain: Vec<SymbolNumber>,
+    /// The configuration the archive this speller came out of shipped with, if
+    /// any. Every call that supplies no config of its own runs with it instead
+    /// of the built-in defaults — the tuned numbers a language's maintainers
+    /// measured are otherwise dead weight in a client that never names them.
+    bundled_config: Option<SpellerConfig>,
     /// Error-model determinisations warmed up by earlier searches.
     ///
     /// Nothing one holds depends on the word that built it, so determinising is
@@ -1443,7 +1457,19 @@ where
     U: Transducer,
 {
     /// create new speller from two automata
-    pub fn new(mutator: T, mut lexicon: U) -> Arc<HfstSpeller<T, U>> {
+    pub fn new(mutator: T, lexicon: U) -> Arc<HfstSpeller<T, U>> {
+        Self::new_with_bundled_config(mutator, lexicon, None)
+    }
+
+    /// create new speller from two automata and the config its archive bundled
+    ///
+    /// Calls that name a config of their own still use that one; the bundled
+    /// config only replaces the built-in defaults. See [`Self::default_config`].
+    pub fn new_with_bundled_config(
+        mutator: T,
+        mut lexicon: U,
+        bundled_config: Option<SpellerConfig>,
+    ) -> Arc<HfstSpeller<T, U>> {
         let alphabet_translator = lexicon.alphabet_mut().create_translator_from(&mutator);
         let unknown_output_domain = build_unknown_output_domain(&lexicon, &alphabet_translator);
 
@@ -1452,8 +1478,20 @@ where
             lexicon,
             alphabet_translator,
             unknown_output_domain,
+            bundled_config,
             subset_pool: parking_lot::Mutex::new(Vec::new()),
         })
+    }
+
+    /// The config the speller's archive bundled, if it bundled one.
+    pub fn bundled_config(&self) -> Option<&SpellerConfig> {
+        self.bundled_config.as_ref()
+    }
+
+    /// The config a call that supplies none runs with: the bundled one where
+    /// the archive shipped one, else the built-in defaults.
+    pub fn default_config(&self) -> &SpellerConfig {
+        self.bundled_config.as_ref().unwrap_or(&DEFAULT_CONFIG)
     }
 
     /// Borrow a determinisation of the error model, warmed up by an earlier

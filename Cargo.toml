@@ -77,6 +77,10 @@ globwalk.workspace = true
 tracing.workspace = true
 mmap-io = "0.9.4"
 
+[dev-dependencies]
+# Tests build a BHFST from the THFST fixtures to exercise archive loading.
+box-format = { workspace = true, features = ["writer"] }
+
 [features]
 compression = ["zip/deflate"]
 

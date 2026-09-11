@@ -145,11 +145,41 @@ struct AccuracyResult<'a> {
 struct Report<'a> {
     metadata: Option<&'a divvun_fst::archive::meta::SpellerMetadata>,
     config: &'a SpellerConfig,
+    config_source: &'a ConfigSource,
     summary: Summary,
     set_summary: SetSummary,
     results: Vec<AccuracyResult<'a>>,
     start_timestamp: Time,
     total_time: Time,
+}
+
+/// Where the run's `config` came from.
+///
+/// Every number a run reports is a number *under some configuration*, and the
+/// archive now carries one of its own — so a report that names only the values
+/// leaves the reader guessing whether they were the speller's or the tool's.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum ConfigSource {
+    /// No config anywhere: the tool's built-in defaults.
+    Defaults,
+    /// The archive's own bundled config.
+    Bundled,
+    /// A config file named with `-c`.
+    File {
+        /// path as given on the command line
+        path: PathBuf,
+    },
+}
+
+impl std::fmt::Display for ConfigSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
+        match self {
+            ConfigSource::Defaults => write!(f, "built-in defaults"),
+            ConfigSource::Bundled => write!(f, "bundled in the archive"),
+            ConfigSource::File { path } => write!(f, "file {}", path.display()),
+        }
+    }
 }
 
 /// Accuracy scored over correction *sets* rather than one row per pair.
@@ -444,22 +474,28 @@ pub struct AccuracyArgs {
 }
 
 pub fn run(args: AccuracyArgs) -> anyhow::Result<()> {
-    let mut cfg: SpellerConfig = match args.config {
-        Some(path) => {
-            let file = std::fs::File::open(path)?;
-            serde_json::from_reader(file)?
-        }
-        None => CFG.clone(),
-    };
-
-    cfg.verbose = args.verbose;
-
     let archive = match args.archive {
         Some(path) => archive::open(Path::new(&path))?,
         None => {
             anyhow::bail!("No archive path provided; aborting.");
         }
     };
+
+    // Precedence, whole-struct: a config named on the command line wins
+    // outright, then the archive's own, then the built-in defaults.
+    let (mut cfg, config_source): (SpellerConfig, ConfigSource) = match args.config {
+        Some(path) => {
+            let file = std::fs::File::open(&path)?;
+            (serde_json::from_reader(file)?, ConfigSource::File { path })
+        }
+        None => match archive.bundled_config() {
+            Some(config) => (config.clone(), ConfigSource::Bundled),
+            None => (CFG.clone(), ConfigSource::Defaults),
+        },
+    };
+
+    cfg.verbose = args.verbose;
+    println!("Config: {}", config_source);
 
     let words = match args.words {
         Some(path) => load_words(&path, args.max_words)?,
@@ -554,6 +590,7 @@ pub fn run(args: AccuracyArgs) -> anyhow::Result<()> {
         let report = Report {
             metadata: archive.metadata(),
             config: &cfg,
+            config_source: &config_source,
             summary: summary.clone(),
             set_summary,
             results,

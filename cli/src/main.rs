@@ -434,7 +434,11 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
     let speller = if let Some(archive_path) = args.archive_path {
         let archive = load_archive(&archive_path)
             .with_context(|| format!("failed to load archive '{}'", archive_path.display()))?;
-        // 2. config from metadata
+        // 2. config bundled in the archive, which stands in for the defaults
+        if let Some(config) = archive.bundled_config() {
+            suggest_cfg = config.clone();
+        }
+        // 3. config from metadata
         if let Some(metadata) = archive.metadata() {
             if let Some(continuation) = metadata.acceptor().continuation() {
                 suggest_cfg.completion_marker = Some(continuation.to_string());
@@ -461,13 +465,13 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
             "either a BHFST or ZHFST archive must be provided via --archive, or both --lexicon and --mutator"
         );
     };
-    // 3. config from explicit config file
+    // 4. config from explicit config file
     if let Some(config_path) = args.config {
         let config_file = std::fs::File::open(config_path)?;
         let config: SpellerConfig = serde_json::from_reader(config_file)?;
         suggest_cfg = config;
     }
-    // 4. config from other command line stuff
+    // 5. config from other command line stuff
     if args.disable_reweight {
         suggest_cfg.reweight = None;
     }

@@ -217,6 +217,13 @@ divvunspell accuracy -c config.json typos.tsv language.zhfst
 - **`search-budget`** (default: `null`): How many nodes the suggestion search may examine per word before it returns what it has found so far. `null` searches until the weight limits prune everything, which is exact but unbounded — a word with no correction near it can take seconds against a large error model. A number bounds the work instead: the search is best-first, so it spends the budget on the most promising candidates and a stop costs the dear tail of the results
 - **`boundary-edit-weight`** (default: `null`): When set, directly probe exact lexicon forms one inserted, deleted, or replaced non-leading separator away and charge this weight. This covers punctuation and compound boundaries that are outside the error model; `null` disables the probes
 
+**Bundling the configuration in an archive:** an archive can carry its own copy of exactly this JSON, so that every client loading it runs with the parameters the speller was tuned against rather than the library defaults:
+
+- **ZHFST**: a zip member named `speller-config.json`. It is not referenced from `index.xml`; readers that know nothing about it pass over it and carry on
+- **BHFST**: a `spellerConfig` key in `meta.json`, holding the same object
+
+Precedence is whole-struct, with no merging of individual fields: a config the caller supplies (`-c`, or `suggest_with_config`) wins outright, then the archive's bundled config, then the built-in defaults. A malformed bundled config is logged and ignored in favour of the defaults, so a typo in one cannot brick spelling. `divvunspell accuracy` names the source it used, both on stdout and as `config_source` in the JSON report.
+
 **Input format** (`typos.tsv`): Tab-separated values with typo in first column, expected correction in second:
 
 ```

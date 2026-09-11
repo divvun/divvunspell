@@ -209,6 +209,35 @@ impl ToForeign<SpellerConfig, *const std::ffi::c_void> for SpellerConfigMarshale
     }
 }
 
+/// Marshals a config pointer that may be null.
+///
+/// A null pointer means "whatever this speller's own default is" — the config
+/// its archive bundled, or the built-in defaults — which only the speller can
+/// answer, so the null case is passed through as `None` rather than resolved
+/// here.
+pub struct OptionalSpellerConfigMarshaler;
+
+impl cffi::InputType for OptionalSpellerConfigMarshaler {
+    type Foreign = *const std::ffi::c_void;
+    type ForeignTraitObject = ();
+}
+
+impl FromForeign<*const std::ffi::c_void, Option<SpellerConfig>>
+    for OptionalSpellerConfigMarshaler
+{
+    type Error = Infallible;
+
+    unsafe fn from_foreign(
+        ptr: *const std::ffi::c_void,
+    ) -> Result<Option<SpellerConfig>, Self::Error> {
+        if ptr.is_null() {
+            return Ok(None);
+        }
+
+        unsafe { SpellerConfigMarshaler::from_foreign(ptr) }.map(Some)
+    }
+}
+
 impl FromForeign<*const std::ffi::c_void, SpellerConfig> for SpellerConfigMarshaler {
     type Error = Infallible;
 
@@ -307,9 +336,14 @@ pub extern "C" fn DFST_Speller_suggestWithConfig(
         dyn Speller + Sync + Send,
     >,
     #[marshal(cffi::StrMarshaler)] word: &str,
-    #[marshal(SpellerConfigMarshaler)] config: SpellerConfig,
+    #[marshal(OptionalSpellerConfigMarshaler)] config: Option<SpellerConfig>,
 ) -> Vec<Suggestion> {
-    speller.suggest_with_config(word, &config)
+    // A null config is not "the built-in defaults" but "no opinion": the
+    // speller then runs on whatever its archive bundled.
+    match config {
+        Some(config) => speller.suggest_with_config(word, &config),
+        None => speller.suggest(word),
+    }
 }
 
 #[cffi::marshal]

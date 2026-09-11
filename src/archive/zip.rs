@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 use super::error::SpellerArchiveError;
 use super::meta::SpellerMetadata;
-use super::{MmapRef, SpellerArchive, TempMmap};
-use crate::speller::{HfstSpeller, Speller};
+use super::{BUNDLED_CONFIG_MEMBER, MmapRef, SpellerArchive, TempMmap, parse_bundled_config};
+use crate::speller::{HfstSpeller, Speller, SpellerConfig};
 use crate::transducer::hfst::HfstTransducer;
 
 /// Type alias for HFST-based speller loaded from a zip archive.
@@ -66,6 +66,37 @@ fn mmap_by_name<R: Read + Seek>(
     }
 }
 
+/// Read the archive's bundled [`SpellerConfig`] from
+/// [`BUNDLED_CONFIG_MEMBER`], if it carries one.
+///
+/// Every failure short of a sound config is a `None` with a warning: an archive
+/// without the member is the ordinary case, and one whose member cannot be read
+/// or parsed still has a perfectly good speller in it.
+pub(crate) fn read_bundled_config<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    path: &std::path::Path,
+) -> Option<SpellerConfig> {
+    if !archive
+        .file_names()
+        .any(|name| name == BUNDLED_CONFIG_MEMBER)
+    {
+        return None;
+    }
+
+    let mut buf = Vec::new();
+    let read = archive
+        .by_name(BUNDLED_CONFIG_MEMBER)
+        .map_err(|e| e.to_string())
+        .and_then(|mut member| member.read_to_end(&mut buf).map_err(|e| e.to_string()));
+
+    if let Err(source) = read {
+        super::warn_malformed_config(path, &source);
+        return None;
+    }
+
+    parse_bundled_config(&buf, path)
+}
+
 impl ZipSpellerArchive {
     /// Get a reference to the HFST speller.
     ///
@@ -109,6 +140,8 @@ impl SpellerArchive for ZipSpellerArchive {
             }
         })?;
 
+        let bundled_config = read_bundled_config(&mut archive, file_path);
+
         let acceptor_id = metadata.acceptor().id().to_string();
         let errmodel_id = metadata.errmodel().id().to_string();
 
@@ -145,7 +178,7 @@ impl SpellerArchive for ZipSpellerArchive {
                 source,
             })?;
 
-        let speller = HfstSpeller::new(errmodel, acceptor);
+        let speller = HfstSpeller::new_with_bundled_config(errmodel, acceptor, bundled_config);
 
         Ok(ZipSpellerArchive { metadata, speller })
     }
@@ -156,5 +189,73 @@ impl SpellerArchive for ZipSpellerArchive {
 
     fn metadata(&self) -> Option<&SpellerMetadata> {
         Some(&self.metadata)
+    }
+
+    fn bundled_config(&self) -> Option<&SpellerConfig> {
+        self.speller.bundled_config()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ::zip::write::{SimpleFileOptions, ZipWriter};
+    use std::io::Cursor;
+
+    /// A zip in memory holding exactly the named members.
+    fn zip_with(members: &[(&str, &str)]) -> Cursor<Vec<u8>> {
+        let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        for (name, contents) in members {
+            writer.start_file(*name, options).expect("start member");
+            writer.write_all(contents.as_bytes()).expect("write member");
+        }
+        writer.finish().expect("finish zip")
+    }
+
+    fn read_config(members: &[(&str, &str)]) -> Option<SpellerConfig> {
+        let mut archive = ZipArchive::new(zip_with(members)).expect("open zip");
+        read_bundled_config(&mut archive, std::path::Path::new("test.zhfst"))
+    }
+
+    #[test]
+    fn an_archive_without_the_member_bundles_nothing() {
+        assert!(read_config(&[("index.xml", "<hfstspeller/>")]).is_none());
+    }
+
+    #[test]
+    fn the_member_is_read_as_a_speller_config() {
+        let config = read_config(&[
+            ("index.xml", "<hfstspeller/>"),
+            (
+                BUNDLED_CONFIG_MEMBER,
+                r#"{"n-best": 100, "beam": 14, "reweight": {"start-penalty": 3, "mid-penalty": 1, "end-penalty": 1}}"#,
+            ),
+        ])
+        .expect("bundled config");
+
+        assert_eq!(config.n_best, Some(100));
+        assert_eq!(config.beam, Some(crate::types::Weight(14.0)));
+        let reweight = config.reweight.expect("reweight");
+        assert_eq!(reweight.start_penalty, 3.0);
+        assert_eq!(reweight.mid_penalty, 1.0);
+        assert_eq!(reweight.end_penalty, 1.0);
+        // Unnamed fields keep their defaults rather than being zeroed.
+        assert_eq!(config.max_weight, SpellerConfig::default().max_weight);
+    }
+
+    #[test]
+    fn snake_case_keys_are_accepted_too() {
+        let config =
+            read_config(&[(BUNDLED_CONFIG_MEMBER, r#"{"n_best": 42}"#)]).expect("bundled config");
+        assert_eq!(config.n_best, Some(42));
+    }
+
+    #[test]
+    fn a_malformed_member_falls_back_to_defaults() {
+        // Neither a broken document nor a well-formed one with a nonsense value
+        // may take the speller down with it.
+        assert!(read_config(&[(BUNDLED_CONFIG_MEMBER, "{ not json")]).is_none());
+        assert!(read_config(&[(BUNDLED_CONFIG_MEMBER, r#"{"n-best": "ten"}"#)]).is_none());
     }
 }
