@@ -61,6 +61,12 @@ struct AccuracyResult {
     position: Option<usize>,
     time: Time,
     false_accept: bool,
+    /// Stable row identity, independent of `input` (which is not guaranteed
+    /// unique — the same typo can appear more than once in a corpus) and of
+    /// sort order. Assigned after deserializing; must be used as the
+    /// `ResultRow` key so Dioxus's keyed diffing survives re-sorts.
+    #[serde(skip, default)]
+    id: usize,
 }
 
 #[derive(Deserialize, Clone, PartialEq)]
@@ -534,9 +540,14 @@ async fn fetch_report(variant: Option<&str>) -> Result<Report, String> {
             resp.status_text()
         ));
     }
-    resp.json::<Report>()
+    let mut report = resp
+        .json::<Report>()
         .await
-        .map_err(|e| format!("Failed to parse {url}: {e}"))
+        .map_err(|e| format!("Failed to parse {url}: {e}"))?;
+    for (i, r) in report.results.iter_mut().enumerate() {
+        r.id = i;
+    }
+    Ok(report)
 }
 
 // ===========================================================================
@@ -930,6 +941,7 @@ async fn load_variant(
     mut original_results: Signal<Vec<AccuracyResult>>,
     mut load_error: Signal<Option<String>>,
     mut current_variant: Signal<Option<String>>,
+    mut sort_mode: Signal<Option<String>>,
 ) {
     report.set(None);
     load_error.set(None);
@@ -939,6 +951,7 @@ async fn load_variant(
             results.set(rep.results.clone());
             report.set(Some(rep));
             current_variant.set(variant.clone());
+            sort_mode.set(None);
             set_variant_in_url(variant.as_deref());
         }
         Err(e) => load_error.set(Some(e)),
@@ -977,6 +990,7 @@ fn App() -> Element {
             original_results,
             load_error,
             current_variant,
+            sort_mode,
         )
         .await;
     });
@@ -991,6 +1005,7 @@ fn App() -> Element {
             original_results,
             load_error,
             current_variant,
+            sort_mode,
         ));
     };
 
@@ -1183,7 +1198,7 @@ fn App() -> Element {
                     }
                     tbody {
                         for result in rows.iter() {
-                            ResultRow { key: "{result.input}", result: result.clone() }
+                            ResultRow { key: "{result.id}", result: result.clone() }
                         }
                     }
                 }
