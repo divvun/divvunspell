@@ -49,10 +49,26 @@ trunk build --release
 Emits stable (non-hashed — see `Trunk.toml`) filenames to `dist/`. For local
 testing, copy a `speller-accuracy.json` into `dist/` and serve/publish the directory.
 
+### Standalone (e.g. GitHub Pages)
+
+The app has no hard dependency on jekyll-theme-giellalt: `dist/` from `trunk
+build --release` is a self-contained static site (its own `index.html` and
+wasm bootstrap script), and `docs_data_base()` falls back to a same-origin
+relative fetch when `window.__DOCS_DATA_BASE__` isn't set. When serving from
+a project subpath (e.g. `https://<org>.github.io/<repo>/`), build with a
+matching public URL so asset links resolve:
+
+```bash
+trunk build --release --public-url /<repo>/
+```
+
+Then publish `dist/` (with `speller-accuracy.json` inside it) to the Pages
+branch/directory.
+
 ### Deploying to jekyll-theme-giellalt
 
-This app isn't deployed standalone — every `lang-*` repo's docs site pulls it
-in via [`giellalt/jekyll-theme-giellalt`](https://github.com/giellalt/jekyll-theme-giellalt)'s
+For `lang-*` repos' docs sites specifically, this app is instead deployed via
+[`giellalt/jekyll-theme-giellalt`](https://github.com/giellalt/jekyll-theme-giellalt)'s
 `typosreport` layout, which supplies `window.__DOCS_DATA_BASE__` (the repo's
 `generated/docs-data` branch, where CI publishes `speller-accuracy.json`) and the wasm
 bootstrap script.
