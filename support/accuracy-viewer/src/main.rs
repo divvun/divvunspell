@@ -1146,7 +1146,9 @@ fn App() -> Element {
                             results.write().reverse();
                             sort_mode.set(Some("time:desc".to_string()));
                         } else {
-                            results.write().sort_by(|a, b| b.time.cmp(&a.time));
+                            results
+                                .write()
+                                .sort_by(|a, b| b.time.cmp(&a.time).then(a.id.cmp(&b.id)));
                             sort_mode.set(Some("time:asc".to_string()));
                         }
                     },
@@ -1158,7 +1160,7 @@ fn App() -> Element {
                             results.write().reverse();
                             sort_mode.set(Some("position:desc".to_string()));
                         } else {
-                            results.write().sort_by_key(position_key);
+                            results.write().sort_by_key(|r| (position_key(r), r.id));
                             sort_mode.set(Some("position:asc".to_string()));
                         }
                     },
@@ -1170,7 +1172,7 @@ fn App() -> Element {
                             results.write().reverse();
                             sort_mode.set(Some("distance:desc".to_string()));
                         } else {
-                            results.write().sort_by_key(|r| r.distance);
+                            results.write().sort_by_key(|r| (r.distance, r.id));
                             sort_mode.set(Some("distance:asc".to_string()));
                         }
                     },
@@ -1182,7 +1184,7 @@ fn App() -> Element {
                             results.write().reverse();
                             sort_mode.set(Some("classification:desc".to_string()));
                         } else {
-                            results.write().sort_by_key(class_order);
+                            results.write().sort_by_key(|r| (class_order(r), r.id));
                             sort_mode.set(Some("classification:asc".to_string()));
                         }
                     },
