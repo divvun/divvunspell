@@ -567,7 +567,7 @@ struct VariantEntry {
     code: String,
 }
 
-/// Mirrors giella-core's `fst-variants.json` shape: up to four independent
+/// Mirrors giella-core's `pkg-variants.json` shape: up to four independent
 /// groups of variants, any of which may be absent.
 #[derive(Deserialize, Default)]
 struct VariantsFile {
@@ -581,7 +581,7 @@ struct VariantsFile {
     writing_systems: Option<Vec<VariantEntry>>,
 }
 
-/// Fetches `fst-variants.json` and flattens it into a `Default` option plus
+/// Fetches `pkg-variants.json` and flattens it into a `Default` option plus
 /// one option per variant, in areas/dialects/orthographies/writing_systems
 /// order. Best-effort: any failure (missing file, bad JSON — most repos have
 /// no variants at all) just yields `[Default]`, same as the Svelte bundle.
@@ -591,7 +591,7 @@ async fn fetch_variants() -> Vec<VariantOption> {
         label: "Default".to_string(),
     }];
 
-    let url = format!("{}fst-variants.json", docs_data_base());
+    let url = format!("{}pkg-variants.json", docs_data_base());
     let Ok(resp) = gloo_net::http::Request::get(&url).send().await else {
         return default_only;
     };
