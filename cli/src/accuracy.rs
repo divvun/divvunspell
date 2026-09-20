@@ -1,8 +1,9 @@
 use divvun_fst::types::Weight;
 use jiff::Zoned;
 use std::{
-    io::Write,
+    io::{IsTerminal, Write},
     path::Path,
+    sync::atomic::{AtomicU64, Ordering},
     time::{Instant, SystemTime},
 };
 
@@ -10,7 +11,7 @@ use clap::Parser;
 use divvun_fst::archive;
 use divvun_fst::speller::suggestion::Suggestion;
 use divvun_fst::speller::{ReweightingConfig, SpellerConfig};
-use indicatif::{ParallelProgressIterator, ProgressBar, ProgressStyle};
+use indicatif::{ParallelProgressIterator, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::Serialize;
 use std::path::PathBuf;
@@ -504,12 +505,25 @@ pub fn run(args: AccuracyArgs) -> anyhow::Result<()> {
         }
     };
 
-    let pb = ProgressBar::new(words.len() as u64);
-    pb.set_style(
-        ProgressStyle::default_bar()
-            .template("{pos}/{len} [{percent}%] {wide_bar} {elapsed_precise}")
-            .unwrap(),
-    );
+    let total = words.len() as u64;
+    // Interactive terminals get a live bar; CI logs get plain, append-only
+    // progress lines since they can't handle in-place redraws.
+    let plain_progress = std::env::var_os("CI").is_some() || !std::io::stderr().is_terminal();
+
+    let pb = if plain_progress {
+        ProgressBar::with_draw_target(Some(total), ProgressDrawTarget::hidden())
+    } else {
+        let pb = ProgressBar::new(total);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{pos}/{len} [{percent}%] {wide_bar} {elapsed_precise}")
+                .unwrap(),
+        );
+        pb
+    };
+
+    let progress_step = (total / 20).max(1);
+    let progress_counter = AtomicU64::new(0);
 
     let start_time = Instant::now();
     let results = words
@@ -551,6 +565,22 @@ pub fn run(args: AccuracyArgs) -> anyhow::Result<()> {
                 Some(exp) => grapheme_damerau_levenshtein(input, exp),
                 None => 0,
             };
+
+            if plain_progress {
+                let done = progress_counter.fetch_add(1, Ordering::Relaxed) + 1;
+                if done % progress_step == 0 || done == total {
+                    let elapsed = start_time.elapsed().as_secs();
+                    eprintln!(
+                        "{}/{} [{}%] {:02}:{:02}:{:02}",
+                        done,
+                        total,
+                        done * 100 / total,
+                        elapsed / 3600,
+                        (elapsed % 3600) / 60,
+                        elapsed % 60
+                    );
+                }
+            }
 
             AccuracyResult {
                 input,
