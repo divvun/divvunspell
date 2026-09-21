@@ -12,7 +12,7 @@ name = "divvunspell"
 path = "src/main.rs"
 
 [features]
-accuracy = ["dep:csv", "dep:rayon", "dep:indicatif", "dep:jiff", "dep:unic-segment"]
+accuracy = ["dep:csv", "dep:indicatif", "dep:jiff", "dep:unic-segment"]
 
 [dependencies]
 divvun-fst = { features = ["compression"], path = ".." }
@@ -24,8 +24,9 @@ box-format.workspace = true
 clap.workspace = true
 anyhow.workspace = true
 
+rayon = "1.10"
+
 csv = { version = "1.3", optional = true }
-rayon = { version = "1.10", optional = true }
 indicatif = { version = "0.17", features = ["rayon"], optional = true }
 jiff = { version = "0.2", optional = true }
 unic-segment = { version = "0.9", optional = true }
