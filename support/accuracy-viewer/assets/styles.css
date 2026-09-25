@@ -346,6 +346,91 @@ h2 {
 	box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
 }
 
+/* Results table: filters, paging, collapsed suggestion lists */
+.table tbody tr {
+	/* Rows scrolled out of view skip layout and paint. */
+	content-visibility: auto;
+	contain-intrinsic-size: auto 200px;
+}
+
+.filter-bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5em 1.2em;
+	margin: 0.5em 0 1em;
+}
+
+.search-input {
+	padding: 0.4em 0.6em;
+	border: 1px solid var(--border-color);
+	border-radius: 4px;
+	background-color: var(--bg-color);
+	color: var(--text-color);
+	font-size: 1em;
+	min-width: 16em;
+}
+
+.search-input:focus {
+	outline: none;
+	border-color: #4a90e2;
+	box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
+}
+
+.class-filter {
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.pager {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.25em;
+	margin: 0.75em 0;
+}
+
+.pager button {
+	margin: 0;
+	padding: 0.35em 0.8em;
+}
+
+.pager-status {
+	margin: 0 0.75em;
+	color: var(--text-secondary);
+}
+
+button:disabled,
+button:disabled:hover {
+	background-color: var(--border-color);
+	color: var(--text-muted);
+	cursor: default;
+}
+
+.table ol li.suggestion-gap {
+	list-style: none;
+	color: var(--text-muted);
+}
+
+.table .link-button,
+[data-theme="dark"] .table .link-button {
+	background: none;
+	color: rgb(0, 100, 200);
+	padding: 0;
+	margin: 0.3em 0 0.3em 1.2em;
+	font-size: 0.9em;
+	text-decoration: underline;
+}
+
+[data-theme="dark"] .table .link-button {
+	color: #6eb9ff;
+}
+
+.no-results {
+	margin: 1.5em 0;
+	color: var(--text-muted);
+}
+
 /* Mobile responsiveness */
 @media (max-width: 768px) {
 	.accuracy-stats-container {
@@ -379,6 +464,11 @@ h2 {
 	.table td, .table th {
 		padding: 0.2em 0.3em;
 		word-break: break-word;
+	}
+
+	.search-input {
+		min-width: 0;
+		width: 100%;
 	}
 
 	.config-block {
