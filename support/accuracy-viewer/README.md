@@ -6,7 +6,10 @@ A web viewer for `divvunspell` accuracy reports, written in Rust with
 fetches a `speller-accuracy.json.gz` (or plain `speller-accuracy.json`) served
 alongside it and renders the speller
 configuration, performance/classification/suggestion statistics, and a sortable,
-colour-coded results table.
+colour-coded results table. The table is paged (100 rows at a time), filterable by
+classification and by word, and collapses each row's suggestions to the top 10
+(plus the correct one), so reports with tens of thousands of words stay
+responsive.
 
 ## Prerequisites
 
