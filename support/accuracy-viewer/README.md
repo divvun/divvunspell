@@ -3,7 +3,8 @@
 A web viewer for `divvunspell` accuracy reports, written in Rust with
 [Dioxus](https://dioxuslabs.com/) and built to WebAssembly with
 [Trunk](https://trunkrs.dev/). It is a static site — no Node toolchain — that
-fetches a `speller-accuracy.json` served alongside it and renders the speller
+fetches a `speller-accuracy.json.gz` (or plain `speller-accuracy.json`) served
+alongside it and renders the speller
 configuration, performance/classification/suggestion statistics, and a sortable,
 colour-coded results table.
 
@@ -38,7 +39,14 @@ trunk serve --open
 ```
 
 Place the `speller-accuracy.json` to view in `dist/` (Trunk serves that directory), or copy
-it there after `trunk build`. The app fetches `speller-accuracy.json` relative to the page.
+it there after `trunk build`. The app fetches `speller-accuracy.json.gz` relative to the page,
+and falls back to `speller-accuracy.json` if that 404s. To test the path CI uses, gzip it:
+`jq -c . speller-accuracy.json | gzip > dist/speller-accuracy.json.gz`.
+
+CI publishes the reports gzipped (minified first) because the largest ones pass
+GitHub's 100 MB file limit as plain JSON. The app inflates them itself, going by
+the gzip magic bytes, so it works whether or not the host also sends
+`Content-Encoding: gzip`.
 
 ## Build for deployment
 
@@ -70,7 +78,7 @@ branch/directory.
 For `lang-*` repos' docs sites specifically, this app is instead deployed via
 [`giellalt/jekyll-theme-giellalt`](https://github.com/giellalt/jekyll-theme-giellalt)'s
 `typosreport` layout, which supplies `window.__DOCS_DATA_BASE__` (the repo's
-`generated/docs-data` branch, where CI publishes `speller-accuracy.json`) and the wasm
+`generated/docs-data` branch, where CI publishes `speller-accuracy.json.gz`) and the wasm
 bootstrap script.
 
 There's no CI wiring this up — the built output is a checked-in artifact in
@@ -84,5 +92,5 @@ this app:
 then copy the paths it prints into a checkout of jekyll-theme-giellalt at
 `assets/typosreport/` (replacing what's there — this includes the whole
 `snippets/` directory, which `accuracy-viewer.js` imports relative to
-itself), and commit there. `index.html` and `dist/speller-accuracy.json` are for local
+itself), and commit there. `index.html` and `dist/speller-accuracy.json[.gz]` are for local
 `trunk serve`/`trunk build` testing only — don't copy those in.

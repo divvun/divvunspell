@@ -1,6 +1,7 @@
 //! Dioxus web viewer for divvunspell accuracy reports.
 //!
-//! Fetches `report.json` (served alongside the page, e.g. on GitHub Pages) and
+//! Fetches `speller-accuracy.json.gz` (served alongside the page, e.g. on GitHub
+//! Pages, or from the repo's `generated/docs-data` branch) and
 //! renders the speller configuration, performance/classification/suggestion
 //! statistics, and a sortable, colour-coded results table. This is a Rust/WASM
 //! reimplementation of the former Svelte app — no Node toolchain required.
@@ -521,33 +522,72 @@ fn docs_data_base() -> String {
         .unwrap_or_default()
 }
 
-/// `speller-accuracy.json`, or `speller-accuracy-<tag>.json` for a variant
-/// (dialect/area/orthography/writing system — see `fetch_variants` below).
+/// `speller-accuracy.json.gz`, or `speller-accuracy-<tag>.json.gz` for a
+/// variant (dialect/area/orthography/writing system — see `fetch_variants`
+/// below). The reports are published gzipped because the largest ones pass
+/// GitHub's 100 MB file limit as plain JSON; raw.githubusercontent.com serves
+/// the `.gz` as opaque bytes, so it is inflated here. Falls back to the plain
+/// `.json` when there is no `.gz` (a repo not yet rebuilt, or local testing).
 async fn fetch_report(variant: Option<&str>) -> Result<Report, String> {
     let file = match variant {
         Some(tag) => format!("speller-accuracy-{tag}.json"),
         None => "speller-accuracy.json".to_string(),
     };
-    let url = format!("{}{file}", docs_data_base());
-    let resp = gloo_net::http::Request::get(&url)
+    let base = docs_data_base();
+    let gz_url = format!("{base}{file}.gz");
+    let mut url = gz_url.clone();
+    let mut resp = gloo_net::http::Request::get(&url)
         .send()
         .await
         .map_err(|e| format!("Failed to load {url}: {e}"))?;
+    if resp.status() == 404 {
+        url = format!("{base}{file}");
+        resp = gloo_net::http::Request::get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to load {url}: {e}"))?;
+    }
     if !resp.ok() {
+        let tried = if url == gz_url {
+            url.clone()
+        } else {
+            format!("{gz_url} or {url}")
+        };
         return Err(format!(
-            "Failed to load {url}: {} {}",
+            "Failed to load {tried}: {} {}",
             resp.status(),
             resp.status_text()
         ));
     }
-    let mut report = resp
-        .json::<Report>()
+    let bytes = resp
+        .binary()
         .await
-        .map_err(|e| format!("Failed to parse {url}: {e}"))?;
+        .map_err(|e| format!("Failed to load {url}: {e}"))?;
+    let mut report = parse_report(&bytes).map_err(|e| format!("Failed to parse {url}: {e}"))?;
     for (i, r) in report.results.iter_mut().enumerate() {
         r.id = i;
     }
     Ok(report)
+}
+
+/// Parse a report that may or may not be gzipped, going by the gzip magic
+/// bytes rather than the file name: a host that sends the `.gz` with
+/// `Content-Encoding: gzip` has the browser inflate it before we see it.
+///
+/// Inflates into a buffer before parsing rather than handing the decoder to
+/// `serde_json::from_reader`, which reads a byte at a time and made a
+/// sme-sized report (~100 MB inflated) take minutes in wasm.
+fn parse_report(bytes: &[u8]) -> Result<Report, String> {
+    if bytes.starts_with(&[0x1f, 0x8b]) {
+        use std::io::Read;
+        let mut json = Vec::new();
+        flate2::read::GzDecoder::new(bytes)
+            .read_to_end(&mut json)
+            .map_err(|e| format!("gzip: {e}"))?;
+        serde_json::from_slice(&json).map_err(|e| e.to_string())
+    } else {
+        serde_json::from_slice(bytes).map_err(|e| e.to_string())
+    }
 }
 
 // ===========================================================================
@@ -555,7 +595,8 @@ async fn fetch_report(variant: Option<&str>) -> Result<Report, String> {
 // ===========================================================================
 
 /// One `<option>` in the variant selector. `tag: None` is the always-present
-/// "Default" entry (`report.json`); `Some(code)` fetches `report-<code>.json`.
+/// "Default" entry (`speller-accuracy.json.gz`); `Some(code)` fetches
+/// `speller-accuracy-<code>.json.gz`.
 #[derive(Clone, PartialEq)]
 struct VariantOption {
     tag: Option<String>,
@@ -1093,13 +1134,13 @@ fn App() -> Element {
                             " in "
                             code { ".build-config.yml" }
                             " so CI generates "
-                            code { "speller-accuracy.json" }
+                            code { "speller-accuracy.json.gz" }
                         }
                         li {
                             "Check that the repo's "
                             code { "generated/docs-data" }
                             " branch has a "
-                            code { "speller-accuracy.json" }
+                            code { "speller-accuracy.json.gz" }
                             " from a recent build (published by "
                             code { "divvun-actions run lang-docs-publish" }
                             ")"
@@ -1120,7 +1161,7 @@ fn App() -> Element {
                     p { "Generate a report file:" }
                     pre { "divvunspell accuracy -o speller-accuracy.json typos.tsv language.zhfst" }
                     p {
-                        "Then copy the speller-accuracy.json file next to the built "
+                        "Then copy the speller-accuracy.json file (or a gzipped speller-accuracy.json.gz) next to the built "
                         code { "index.html" }
                         " (the Trunk "
                         code { "dist/" }
