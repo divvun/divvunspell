@@ -11,6 +11,14 @@ classification and by word, and collapses each row's suggestions to the top 10
 (plus the correct one), so reports with tens of thousands of words stay
 responsive.
 
+The address bar always links to the current view, so it can be shared as is:
+`?variant=<tag>&q=<search>&show=fn,fp&sort=time:desc&page=3`. Values at their
+defaults are left out. `show` lists the classes ticked (`tp`, `fn`, `tn`,
+`fp`), and `sort` is `time`, `position`, `distance` or `classification` with
+`:asc`/`:desc`. A row's permalink (`#<word>`) opens the page holding that row.
+Back/Forward step through page, sort, filter and variant changes (search edits
+don't add history entries).
+
 ## Prerequisites
 
 ```bash

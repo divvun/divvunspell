@@ -760,12 +760,127 @@ async fn fetch_variants() -> Vec<VariantOption> {
     out
 }
 
-/// The `?variant=` query param on the current page, if any.
-fn variant_from_url() -> Option<String> {
-    let window = web_sys::window()?;
-    let href = window.location().href().ok()?;
-    let url = web_sys::Url::new(&href).ok()?;
-    url.search_params().get("variant")
+/// Classification codes for the `show` URL parameter, indexed by
+/// `class_index`.
+const CLASS_CODES: [&str; 4] = ["tp", "fn", "tn", "fp"];
+
+/// Fields the results can be sorted by, as used in `sort_mode`
+/// (`"<field>:asc"` / `"<field>:desc"`) and the `sort` URL parameter.
+const SORT_FIELDS: [&str; 4] = ["time", "position", "distance", "classification"];
+
+fn is_sort_mode(mode: &str) -> bool {
+    mode.split_once(':')
+        .is_some_and(|(f, d)| SORT_FIELDS.contains(&f) && (d == "asc" || d == "desc"))
+}
+
+/// The view a link carries in its query string, so the address bar is always
+/// a shareable link to what is on screen:
+/// `?variant=<tag>&q=<search>&show=fn,fp&sort=time:desc&page=3`. Values at
+/// their defaults are left out, so a plain view keeps a plain URL. A row
+/// permalink (`#<input>`) rides along in the fragment (see `anchor_from_url`).
+#[derive(Clone, PartialEq)]
+struct UrlState {
+    variant: Option<String>,
+    query: String,
+    /// Which classes to list, indexed by `class_index`.
+    classes: [bool; 4],
+    sort: Option<String>,
+    /// 0-based (the URL's `page` is 1-based).
+    page: usize,
+}
+
+impl UrlState {
+    /// The current page's URL state. Unknown or malformed values fall back to
+    /// their defaults.
+    fn from_url() -> Self {
+        let params = current_url().map(|u| u.search_params());
+        let get = |k: &str| params.as_ref().and_then(|p| p.get(k));
+        let classes = match get("show") {
+            None => [true; 4],
+            Some(show) => {
+                let mut classes = [false; 4];
+                for code in show.split(',') {
+                    if let Some(i) = CLASS_CODES.iter().position(|&c| c == code.trim()) {
+                        classes[i] = true;
+                    }
+                }
+                classes
+            }
+        };
+        UrlState {
+            variant: get("variant").filter(|v| !v.is_empty()),
+            query: get("q").unwrap_or_default(),
+            classes,
+            sort: get("sort").filter(|s| is_sort_mode(s)),
+            page: get("page")
+                .and_then(|p| p.parse::<usize>().ok())
+                .map_or(0, |p| p.saturating_sub(1)),
+        }
+    }
+
+    /// Writes this state into `url`'s query string, replacing any previous
+    /// values (in a fixed order, so equal states give equal URLs) and leaving
+    /// other parameters alone.
+    ///
+    /// Built by hand rather than with `URLSearchParams`, which form-encodes
+    /// `,` and `:` and would turn `show=fn,fp&sort=time:desc` into
+    /// `show=fn%2Cfp&sort=time%3Adesc`; both are legal as-is in a query.
+    fn write_search(&self, url: &web_sys::Url) {
+        let params = url.search_params();
+        for key in ["variant", "q", "show", "sort", "page"] {
+            params.delete(key);
+        }
+        let mut parts: Vec<String> = Vec::new();
+        let others = params.to_string().as_string().unwrap_or_default();
+        if !others.is_empty() {
+            parts.push(others);
+        }
+        let mut add = |key: &str, value: &str| parts.push(format!("{key}={}", encode_query_value(value)));
+        if let Some(v) = &self.variant {
+            add("variant", v);
+        }
+        if !self.query.is_empty() {
+            add("q", &self.query);
+        }
+        if self.classes != [true; 4] {
+            let show: Vec<&str> = CLASS_CODES
+                .iter()
+                .zip(self.classes)
+                .filter_map(|(&code, on)| on.then_some(code))
+                .collect();
+            add("show", &show.join(","));
+        }
+        if let Some(s) = &self.sort {
+            add("sort", s);
+        }
+        if self.page > 0 {
+            add("page", &(self.page + 1).to_string());
+        }
+        url.set_search(&parts.join("&"));
+    }
+}
+
+/// Percent-encodes a query parameter value, leaving `,` and `:` readable.
+/// Anything that would end or split the value (`&`, `=`, `#`, `+`, spaces,
+/// ...) is still escaped, as are non-ASCII letters (browsers show those
+/// decoded in the address bar).
+fn encode_query_value(value: &str) -> String {
+    String::from(js_sys::encode_uri_component(value))
+        .replace("%2C", ",")
+        .replace("%3A", ":")
+}
+
+fn current_url() -> Option<web_sys::Url> {
+    let href = web_sys::window()?.location().href().ok()?;
+    web_sys::Url::new(&href).ok()
+}
+
+/// Sets `signal` to `value` only if that changes it, so re-applying the same
+/// URL state doesn't wake everything subscribed to it.
+fn set_if_changed<T: PartialEq + 'static>(mut signal: Signal<T>, value: T) {
+    if *signal.peek() != value {
+        signal.set(value);
+    }
 }
 
 /// The word named by the URL fragment (`#<input>`, the rows' permalinks), if
@@ -785,23 +900,6 @@ fn scroll_to_id(id: &str) {
         .and_then(|d| d.get_element_by_id(id))
     {
         el.scroll_into_view();
-    }
-}
-
-/// Reflects the selected variant into the URL (`?variant=<tag>`, or removed
-/// for the default) via `history.pushState`, so the page is linkable/
-/// reloadable without a network round trip — mirrors the Svelte bundle.
-fn set_variant_in_url(tag: Option<&str>) {
-    let Some(window) = web_sys::window() else { return };
-    let Ok(href) = window.location().href() else { return };
-    let Ok(url) = web_sys::Url::new(&href) else { return };
-    let params = url.search_params();
-    match tag {
-        Some(t) => params.set("variant", t),
-        None => params.delete("variant"),
-    }
-    if let Ok(history) = window.history() {
-        let _ = history.push_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&url.href()));
     }
 }
 
@@ -1148,26 +1246,38 @@ struct AppState {
     pending_anchor: Signal<Option<String>>,
 }
 
-/// Loads `variant`'s report into the shared signals — used both for the
-/// initial fetch and every variant-selector change. Resets sorting, filters
-/// and paging, and reflects the choice into the URL on success so the page
-/// is linkable/reloadable.
+impl AppState {
+    /// Takes on a URL's search, filter, sort and page (the variant is loaded
+    /// separately, being a fetch).
+    fn apply_url_state(self, u: &UrlState) {
+        set_if_changed(self.query, u.query.clone());
+        set_if_changed(self.class_filter, u.classes);
+        set_if_changed(self.sort_mode, u.sort.clone());
+        set_if_changed(self.page, u.page);
+    }
+}
+
+/// Loads `variant`'s report into the shared signals — used for the initial
+/// fetch, every variant-selector change, and Back/Forward across variants.
+/// Search, filters and sort carry over, so the same view can be compared
+/// across variants; the URL follows via the URL-sync effect in `App`.
 async fn load_variant(variant: Option<String>, mut st: AppState) {
     st.loaded.set(None);
     st.load_error.set(None);
     match fetch_report(variant.as_deref()).await {
         Ok(rep) => {
             st.loaded.set(Some(ReportRef(Rc::new(LoadedReport::new(rep)))));
-            st.current_variant.set(variant.clone());
-            st.sort_mode.set(None);
-            st.class_filter.set([true; 4]);
-            st.query.set(String::new());
-            st.page.set(0);
+            st.current_variant.set(variant);
             st.pending_anchor.set(anchor_from_url());
-            set_variant_in_url(variant.as_deref());
         }
         Err(e) => st.load_error.set(Some(e)),
     }
+}
+
+/// `requested` if it names one of `variants`; unknown variants in a URL are
+/// ignored, same as the Svelte bundle.
+fn known_variant(requested: Option<String>, variants: &[VariantOption]) -> Option<String> {
+    requested.filter(|t| variants.iter().any(|v| v.tag.as_deref() == Some(t.as_str())))
 }
 
 #[component]
@@ -1213,13 +1323,18 @@ fn App() -> Element {
     let AppState {
         loaded,
         load_error,
+        current_variant,
         mut sort_mode,
         mut class_filter,
         mut query,
         mut page,
         mut pending_anchor,
-        ..
     } = st;
+    // A variant to load, requested from outside a Dioxus event handler (the
+    // `popstate` listener), where `spawn` isn't available.
+    let mut variant_request = use_signal(|| None::<Option<String>>);
+    // Whether the URL-sync effect has run since the report loaded (see there).
+    let mut url_written = use_signal(|| false);
     let mut theme = use_signal(saved_theme);
     let mut variants = use_signal(|| {
         vec![VariantOption {
@@ -1228,23 +1343,28 @@ fn App() -> Element {
         }]
     });
 
-    // Discover variants (if any), then fetch the report once on mount — the
-    // ?variant= URL param is honoured only if it names a variant that
-    // actually exists, same as the Svelte bundle.
+    // Discover variants (if any), take on the view the URL describes, then
+    // fetch the report once on mount.
     use_future(move || async move {
         let vs = fetch_variants().await;
         variants.set(vs.clone());
-        let requested = variant_from_url();
-        let effective =
-            requested.filter(|t| vs.iter().any(|v| v.tag.as_deref() == Some(t.as_str())));
-        load_variant(effective, st).await;
+        let u = UrlState::from_url();
+        st.apply_url_state(&u);
+        load_variant(known_variant(u.variant, &vs), st).await;
     });
 
     let select_variant = move |evt: dioxus::events::FormEvent| {
         let value = evt.value();
         let tag = if value.is_empty() { None } else { Some(value) };
+        page.set(0);
         spawn(load_variant(tag, st));
     };
+
+    use_effect(move || {
+        let Some(v) = variant_request() else { return };
+        variant_request.set(None);
+        spawn(load_variant(v, st));
+    });
 
     // The rows to list, as indices into the report's results: recomputed only
     // when the report, sort, filter or search changes (not on paging).
@@ -1281,9 +1401,68 @@ fn App() -> Element {
         }
     });
 
+    // Keep the URL describing the current view (see `UrlState`), so the
+    // address bar is always a shareable link. A search edit replaces the
+    // history entry (Back shouldn't undo it a keystroke at a time); paging,
+    // sorting, filtering and variant changes push one, so Back undoes them.
+    use_effect(move || {
+        let Some(rep) = loaded() else { return };
+        // Let a permalink settle on its page first.
+        if pending_anchor().is_some() {
+            return;
+        }
+        let rows = view();
+        let pages = rows.len().div_ceil(PAGE_SIZE).max(1);
+        let p = page();
+        if p >= pages {
+            // e.g. `page=` past the end of a link, or of a narrower view.
+            page.set(pages - 1);
+            return;
+        }
+        let state = UrlState {
+            variant: current_variant(),
+            query: query(),
+            classes: class_filter(),
+            sort: sort_mode(),
+            page: p,
+        };
+        let (Some(window), Some(url)) = (web_sys::window(), current_url()) else {
+            return;
+        };
+        let before = UrlState::from_url();
+        state.write_search(&url);
+        // Keep a `#<input>` permalink only while its row is on the page shown;
+        // otherwise it would pull the link's recipient to another page.
+        let shown = &rows[p * PAGE_SIZE..((p + 1) * PAGE_SIZE).min(rows.len())];
+        let keep_hash = anchor_from_url()
+            .is_some_and(|w| shown.iter().any(|&i| rep.0.results[i as usize].input == w));
+        if !keep_hash {
+            url.set_hash("");
+        }
+        // The first run after load only tidies the URL the page was opened
+        // with (even if that changes nothing), so it never adds an entry.
+        let first = !*url_written.peek();
+        if first {
+            url_written.set(true);
+        }
+        let href = url.href();
+        if window.location().href().ok().as_deref() == Some(href.as_str()) {
+            return;
+        }
+        let replace = first || state.query != before.query;
+        if let Ok(history) = window.history() {
+            let null = wasm_bindgen::JsValue::NULL;
+            let _ = if replace {
+                history.replace_state_with_url(&null, "", Some(&href))
+            } else {
+                history.push_state_with_url(&null, "", Some(&href))
+            };
+        }
+    });
+
     // One-time setup: apply the saved theme and react to OS theme changes
     // while in "auto" mode; follow permalink clicks/edits (`#<input>`) to rows
-    // on other pages.
+    // on other pages; restore the view on Back/Forward.
     use_hook(move || {
         apply_theme(&saved_theme());
         let Some(window) = web_sys::window() else { return };
@@ -1298,6 +1477,17 @@ fn App() -> Element {
         }
         let cb = Closure::<dyn FnMut()>::new(move || pending_anchor.set(anchor_from_url()));
         let _ = window.add_event_listener_with_callback("hashchange", cb.as_ref().unchecked_ref());
+        cb.forget();
+        let cb = Closure::<dyn FnMut()>::new(move || {
+            let u = UrlState::from_url();
+            st.apply_url_state(&u);
+            set_if_changed(pending_anchor, anchor_from_url());
+            let variant = known_variant(u.variant, &variants.peek());
+            if variant != *current_variant.peek() {
+                variant_request.set(Some(variant));
+            }
+        });
+        let _ = window.add_event_listener_with_callback("popstate", cb.as_ref().unchecked_ref());
         cb.forget();
     });
 
@@ -1329,7 +1519,7 @@ fn App() -> Element {
     let err = load_error();
     let mode = sort_mode();
     let variant_list = variants();
-    let active_variant = (st.current_variant)();
+    let active_variant = current_variant();
 
     let rows = view();
     let matching = rows.len();
