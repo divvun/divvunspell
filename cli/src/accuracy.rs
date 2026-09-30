@@ -472,15 +472,32 @@ pub struct AccuracyArgs {
     /// Enable verbose mode to include weight details in output
     #[arg(short = 'v', long)]
     verbose: bool,
+
+    /// Read the archive's error model from this file instead (HFST optimized
+    /// lookup or DHFST; the file's header says which)
+    #[arg(long = "errmodel")]
+    errmodel_path: Option<PathBuf>,
+
+    /// Read the error model the archive names as its own, ignoring any
+    /// variant in another format it also carries
+    #[arg(long)]
+    primary_errmodel: bool,
 }
 
 pub fn run(args: AccuracyArgs) -> anyhow::Result<()> {
+    let options = archive::OpenOptions {
+        errmodel_path: args.errmodel_path.clone(),
+        primary_errmodel_only: args.primary_errmodel,
+    };
     let archive = match args.archive {
-        Some(path) => archive::open(Path::new(&path))?,
+        Some(path) => archive::open_with(Path::new(&path), &options)?,
         None => {
             anyhow::bail!("No archive path provided; aborting.");
         }
     };
+    if let Some(source) = archive.errmodel_source() {
+        println!("Error model: {source}");
+    }
 
     // Precedence, whole-struct: a config named on the command line wins
     // outright, then the archive's own, then the built-in defaults.

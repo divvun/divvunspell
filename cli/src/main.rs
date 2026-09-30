@@ -10,15 +10,15 @@ use std::{
 use anyhow::Context as _;
 use clap::{Parser, Subcommand};
 use divvun_fst::speller::HfstSpeller;
-use divvun_fst::transducer::TransducerLoader;
 use divvun_fst::transducer::hfst::HfstTransducer;
+use divvun_fst::transducer::{ErrorModel, TransducerLoader};
 use divvun_fst::types::Weight;
 use divvun_fst::vfs::Fs;
 use serde::Serialize;
 
 use divvun_fst::{
     archive::{
-        SpellerArchive, boxf::BoxSpellerArchive, boxf::ThfstBoxSpellerArchive,
+        OpenOptions, SpellerArchive, boxf::BoxSpellerArchive, boxf::ThfstBoxSpellerArchive,
         error::SpellerArchiveError, zip::ZipSpellerArchive,
     },
     speller::{Speller, SpellerConfig, suggestion::Suggestion},
@@ -334,6 +334,16 @@ struct SuggestArgs {
     #[arg(long)]
     lexicon_path: Option<PathBuf>,
 
+    /// Read the archive's error model from this file instead (HFST optimized
+    /// lookup or DHFST; the file's header says which)
+    #[arg(long = "errmodel")]
+    errmodel_path: Option<PathBuf>,
+
+    /// Read the error model the archive names as its own, ignoring any
+    /// variant in another format it also carries
+    #[arg(long)]
+    primary_errmodel: bool,
+
     /// Always show suggestions even if word is correct
     #[arg(short = 'S', long = "always-suggest")]
     always_suggest: bool,
@@ -413,13 +423,16 @@ fn tokenize(args: TokenizeArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn load_archive(path: &Path) -> Result<Box<dyn SpellerArchive>, SpellerArchiveError> {
+fn load_archive(
+    path: &Path,
+    options: &OpenOptions,
+) -> Result<Box<dyn SpellerArchive>, SpellerArchiveError> {
     match path.extension() {
         Some(ext) if ext == "bhfst" => {
-            let archive: ThfstBoxSpellerArchive = BoxSpellerArchive::open(path)?;
+            let archive: ThfstBoxSpellerArchive = BoxSpellerArchive::open_with(path, options)?;
             Ok(Box::new(archive))
         }
-        Some(ext) if ext == "zhfst" => Ok(Box::new(ZipSpellerArchive::open(path)?)),
+        Some(ext) if ext == "zhfst" => Ok(Box::new(ZipSpellerArchive::open_with(path, options)?)),
         ext => Err(SpellerArchiveError::UnsupportedExt {
             path: path.to_path_buf(),
             ext: ext.map(|x| x.to_owned()).unwrap_or_default(),
@@ -432,8 +445,15 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
     let mut suggest_cfg = SpellerConfig::default();
 
     let speller = if let Some(archive_path) = args.archive_path {
-        let archive = load_archive(&archive_path)
+        let options = OpenOptions {
+            errmodel_path: args.errmodel_path.clone(),
+            primary_errmodel_only: args.primary_errmodel,
+        };
+        let archive = load_archive(&archive_path, &options)
             .with_context(|| format!("failed to load archive '{}'", archive_path.display()))?;
+        if let Some(source) = archive.errmodel_source() {
+            eprintln!("Error model: {source}");
+        }
         // 2. config bundled in the archive, which stands in for the defaults
         if let Some(config) = archive.bundled_config() {
             suggest_cfg = config.clone();
@@ -453,13 +473,16 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
                 lexicon_path.display()
             )
         })?;
-        let errmodel = HfstTransducer::from_path(&Fs, &mutator_path).with_context(|| {
+        let errmodel = ErrorModel::from_path(&Fs, &mutator_path).with_context(|| {
             format!(
                 "failed to load mutator transducer '{}'",
                 mutator_path.display()
             )
         })?;
-        HfstSpeller::new(errmodel, acceptor) as _
+        match errmodel {
+            ErrorModel::Hfst(errmodel) => HfstSpeller::new(errmodel, acceptor) as _,
+            ErrorModel::Dhfst(errmodel) => HfstSpeller::new(errmodel, acceptor) as _,
+        }
     } else {
         anyhow::bail!(
             "either a BHFST or ZHFST archive must be provided via --archive, or both --lexicon and --mutator"
