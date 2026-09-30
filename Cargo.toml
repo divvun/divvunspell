@@ -83,6 +83,9 @@ box-format = { workspace = true, features = ["writer"] }
 
 [features]
 compression = ["zip/deflate"]
+# The DHFST writer: finds default arcs and fallback rows for an error model and
+# writes it in the compact format. Tools need it; spellers do not.
+dhfst-writer = []
 
 # Internal features: unstable, not for external use!
 internal_convert = []

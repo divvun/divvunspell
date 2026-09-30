@@ -1,11 +1,15 @@
-//! The reader's validation, and the default-arc and fallback semantics against
-//! a literal reading of the lookup rule.
+//! The reader's validation, the default-arc and fallback semantics against a
+//! literal reading of the lookup rule, and the writer end to end.
 
 use std::path::Path;
 use std::sync::Arc;
 
+use super::writer::{SourceArc, SourceModel, SourceState, WriteOptions, write};
 use super::*;
-use crate::transducer::ErrorModel;
+use crate::speller::{HfstSpeller, Speller, SpellerConfig};
+use crate::transducer::thfst::MmapThfstTransducer;
+use crate::transducer::{ErrorModel, TransducerLoader};
+use crate::vfs::Fs;
 
 /// A file assembled by hand from its parts, without the writer.
 #[derive(Clone)]
@@ -746,4 +750,257 @@ fn random_models_answer_as_the_lookup_rule_says() {
             );
         }
     }
+}
+
+fn random_source(rng: &mut Rng) -> SourceModel {
+    let symbols: Vec<String> = [
+        "@_EPSILON_SYMBOL_@",
+        "@_IDENTITY_SYMBOL_@",
+        "@_UNKNOWN_SYMBOL_@",
+        "a",
+        "b",
+        "c",
+        "d",
+        "e",
+        "f",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    let n = 1 + rng.below(12) as u32;
+    // Fans of one target and weight, so that defaults have something to
+    // find.
+    let mut states = Vec::new();
+    for _ in 0..n {
+        let mut arcs = Vec::new();
+        let fan_target = rng.below(n as u64) as u32;
+        let fan_weight = rng.weight();
+        for x in 3..9u16 {
+            for o in 3..9u16 {
+                if x != o && !rng.chance(6) {
+                    arcs.push(SourceArc {
+                        input: x,
+                        output: o,
+                        target: fan_target,
+                        weight: fan_weight,
+                    });
+                }
+            }
+            if !rng.chance(4) {
+                arcs.push(SourceArc {
+                    input: x,
+                    output: x,
+                    target: 0,
+                    weight: 0.0,
+                });
+            }
+            if rng.chance(2) {
+                arcs.push(SourceArc {
+                    input: x,
+                    output: 0,
+                    target: rng.below(n as u64) as u32,
+                    weight: rng.weight(),
+                });
+            }
+        }
+        for _ in 0..rng.below(6) {
+            arcs.push(SourceArc {
+                input: rng.below(9) as u16,
+                output: rng.below(9) as u16,
+                target: rng.below(n as u64) as u32,
+                weight: rng.weight(),
+            });
+        }
+        let final_weight = rng.chance(3).then(|| rng.weight());
+        states.push(SourceState { final_weight, arcs });
+    }
+    // Near-copies of other states' rows, which is what fallbacks are for.
+    for q in 1..n as usize {
+        if rng.chance(2) {
+            let from = rng.below(q as u64) as usize;
+            let mut arcs = states[from].arcs.clone();
+            arcs.retain(|_| !rng.chance(10));
+            states[q].arcs = arcs;
+        }
+    }
+    SourceModel::new(symbols, states).expect("the random model is valid")
+}
+
+#[test]
+fn the_writer_writes_what_it_was_given() {
+    let mut rng = Rng(0x2545_F491_4F6C_DD1D);
+    for round in 0..200 {
+        let model = random_source(&mut rng);
+        for depth in [Some(0), Some(1), Some(4), None] {
+            let options = WriteOptions {
+                max_fallback_depth: depth,
+                threads: 2,
+                source_name: "random".into(),
+            };
+            // `write` checks every (state, pair) of the encoding and every
+            // (state, input) of the bytes against the model.
+            let written = write(&model, &options)
+                .unwrap_or_else(|e| panic!("round {round}, depth {depth:?}: {e}"));
+            assert!(
+                written.report.max_depth <= depth.unwrap_or(u32::MAX),
+                "round {round}: chain deeper than the bound"
+            );
+            let again = write(&model, &options).expect("second write");
+            assert_eq!(
+                written.bytes, again.bytes,
+                "round {round}: not deterministic"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_writer_refuses_what_it_cannot_hold() {
+    let symbols: Vec<String> = ["@_EPSILON_SYMBOL_@", "a"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let arc = |target, weight| SourceArc {
+        input: 1,
+        output: 1,
+        target,
+        weight,
+    };
+    let state = |arcs| SourceState {
+        final_weight: None,
+        arcs,
+    };
+    assert!(SourceModel::new(symbols.clone(), vec![state(vec![arc(1, 0.0)])]).is_err());
+    assert!(SourceModel::new(symbols.clone(), vec![state(vec![arc(0, f32::NAN)])]).is_err());
+    assert!(SourceModel::new(symbols.clone(), Vec::new()).is_err());
+    assert!(SourceModel::new(vec!["a".into()], vec![state(Vec::new())]).is_err());
+}
+
+fn fixture(name: &str) -> std::path::PathBuf {
+    Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures")).join(name)
+}
+
+/// Symbol names of a THFST fixture as its file stores them.
+fn thfst_names(t: &MmapThfstTransducer) -> Vec<String> {
+    t.alphabet()
+        .key_table()
+        .iter()
+        .enumerate()
+        .map(|(i, k)| {
+            if i == 0 && k.is_empty() {
+                "@_EPSILON_SYMBOL_@".to_string()
+            } else {
+                k.to_string()
+            }
+        })
+        .collect()
+}
+
+pub(crate) fn dhfst_from_fixture(name: &str) -> Vec<u8> {
+    let thfst = MmapThfstTransducer::from_path(&Fs, fixture(name)).expect("fixture loads");
+    let model = SourceModel::from_transducer(&thfst, thfst_names(&thfst)).expect("fixture reads");
+    write(
+        &model,
+        &WriteOptions {
+            threads: 2,
+            ..WriteOptions::default()
+        },
+    )
+    .expect("fixture writes")
+    .bytes
+}
+
+type Row = (String, u32, Option<bool>, Option<(u32, u32, u32, u32, u32)>);
+
+fn rows(suggestions: Vec<crate::speller::suggestion::Suggestion>) -> Vec<Row> {
+    suggestions
+        .into_iter()
+        .map(|s| {
+            (
+                s.value.to_string(),
+                s.weight.0.to_bits(),
+                s.completed,
+                s.weight_details.map(|d| {
+                    (
+                        d.lexicon_weight.0.to_bits(),
+                        d.mutator_weight.0.to_bits(),
+                        d.reweight_start.to_bits(),
+                        d.reweight_mid.to_bits(),
+                        d.reweight_end.to_bits(),
+                    )
+                }),
+            )
+        })
+        .collect()
+}
+
+/// A speller whose error model was converted to DHFST suggests exactly what
+/// the original suggests, walking the model as an NFA (where default arcs
+/// reach the search as groups) and with the subset construction.
+#[test]
+fn a_converted_error_model_suggests_the_same() {
+    let pairs = [
+        ("lexicon.thfst", "mutator.thfst"),
+        ("eps-lexicon.thfst", "eps-mutator.thfst"),
+        ("flag-lexicon.thfst", "flag-mutator.thfst"),
+        ("identity-lexicon.thfst", "identity-mutator.thfst"),
+        ("reorder-lexicon.thfst", "reorder-mutator.thfst"),
+        (
+            "unknown-out-lexicon.thfst",
+            "unknown-out-compact-mutator.thfst",
+        ),
+        (
+            "unknown-out-lexicon.thfst",
+            "unknown-out-expanded-mutator.thfst",
+        ),
+        ("lexicon.thfst", "wildcard-compact-mutator.thfst"),
+        ("lexicon.thfst", "wildcard-expanded-mutator.thfst"),
+    ];
+    let words = [
+        "cat", "kat", "cet", "car", "cart", "kar", "katt", "cae", "ät", "cät", "cZt", "ct", "catt",
+        "ca", "c", "tac", "cxt", "cbt", "abc", "bac", "xab", "cäät", "cöt", "caZ", "re",
+    ];
+    let mut configs = Vec::new();
+    for subsets in [true, false] {
+        let mut config = SpellerConfig::default();
+        config.n_best = None;
+        config.mutator_subsets = subsets;
+        config.verbose = true;
+        configs.push(config);
+    }
+
+    for (lexicon, mutator) in pairs {
+        let original = HfstSpeller::new(
+            MmapThfstTransducer::from_path(&Fs, fixture(mutator)).expect("mutator loads"),
+            MmapThfstTransducer::from_path(&Fs, fixture(lexicon)).expect("lexicon loads"),
+        );
+        let converted = HfstSpeller::new(
+            DhfstTransducer::from_bytes(&dhfst_from_fixture(mutator), mutator)
+                .expect("written file loads"),
+            MmapThfstTransducer::from_path(&Fs, fixture(lexicon)).expect("lexicon loads"),
+        );
+        let mut compared = 0;
+        for config in &configs {
+            for word in words {
+                let want = rows(original.clone().suggest_with_config(word, config));
+                let got = rows(converted.clone().suggest_with_config(word, config));
+                assert_eq!(
+                    got, want,
+                    "{mutator} with {lexicon}, subsets {}, word {word}",
+                    config.mutator_subsets
+                );
+                compared += want.len();
+            }
+        }
+        assert!(compared > 0, "{mutator}: no suggestions to compare");
+    }
+}
+
+/// The converted fixture models do carry default arcs and fallbacks, so the
+/// parity above exercises them.
+#[test]
+fn converted_fixtures_use_defaults() {
+    let t = DhfstTransducer::from_bytes(&dhfst_from_fixture("mutator.thfst"), "mutator")
+        .expect("loads");
+    assert!(t.flags() & FLAG_DEFAULTS != 0);
 }

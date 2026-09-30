@@ -95,6 +95,9 @@ use crate::transducer::{
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use crate::vfs::{self, Filesystem};
 
+#[cfg(any(test, feature = "dhfst-writer"))]
+pub mod writer;
+
 /// The first five bytes of a DHFST file.
 pub const MAGIC: &[u8; 5] = b"DHFST";
 /// The format version this reader reads and the writer writes.
