@@ -4,10 +4,13 @@ use std::sync::Arc;
 use box_format::sync::BoxReader as BoxFileReader;
 
 use super::error::SpellerArchiveError;
-use super::{SpellerArchive, meta::SpellerMetadata};
+use super::{
+    DHFST_FORMAT, ErrmodelSource, OpenOptions, SpellerArchive, meta::SpellerMetadata,
+    readable_variant,
+};
 use crate::speller::{HfstSpeller, Speller, SpellerConfig};
 use crate::transducer::{
-    Transducer,
+    ErrorModel, Transducer,
     thfst::{MmapThfstTransducer, chunked::MmapThfstChunkedTransducer},
 };
 use crate::vfs::Filesystem;
@@ -28,6 +31,13 @@ pub type ThfstBoxSpeller = HfstSpeller<MmapThfstTransducer, MmapThfstTransducer>
 /// archive.
 pub type ThfstChunkedBoxSpellerArchive =
     BoxSpellerArchive<MmapThfstChunkedTransducer, MmapThfstChunkedTransducer>;
+
+/// The THFST error-model member every BHFST archive has carried.
+pub const THFST_ERRMODEL_MEMBER: &str = "errmodel.default.thfst";
+
+/// The member a BHFST archive carries a compact DHFST error model in, unless
+/// its `meta.json` names another.
+pub const DHFST_ERRMODEL_MEMBER: &str = "errmodel.default.dhfst";
 
 /// The one key this loader reads from `meta.json` beyond [`SpellerMetadata`]:
 /// the archive's bundled [`SpellerConfig`], under
@@ -69,13 +79,21 @@ fn read_bundled_config(meta_json: &[u8], path: &std::path::Path) -> Option<Spell
 }
 
 /// Speller in box archive.
+///
+/// The error model is the THFST member [`THFST_ERRMODEL_MEMBER`], unless
+/// `meta.json` declares `"format": "dhfst"` on its `errmodel`, in which case it
+/// is the single-file member the `errmodel` `id` names, read in place. The
+/// member's header, not its name, decides how it is read.
 pub struct BoxSpellerArchive<T, U>
 where
     T: Transducer,
     U: Transducer,
 {
     metadata: Option<SpellerMetadata>,
-    speller: Arc<HfstSpeller<T, U>>,
+    speller: Arc<dyn Speller + Send + Sync>,
+    typed: Option<Arc<HfstSpeller<T, U>>>,
+    bundled_config: Option<SpellerConfig>,
+    errmodel_source: ErrmodelSource,
 }
 
 impl<T, U> BoxSpellerArchive<T, U>
@@ -83,13 +101,14 @@ where
     T: Transducer + Send + Sync + 'static,
     U: Transducer + Send + Sync + 'static,
 {
-    /// get the spell-checking component
-    pub fn hfst_speller(&self) -> Arc<HfstSpeller<T, U>> {
-        self.speller.clone()
+    /// get the spell-checking component, when its error model is the
+    /// archive's THFST one; `None` when it was read in another format
+    pub fn hfst_speller(&self) -> Option<Arc<HfstSpeller<T, U>>> {
+        self.typed.clone()
     }
 }
 
-impl<T, U> SpellerArchive for BoxSpellerArchive<T, U>
+impl<T, U> BoxSpellerArchive<T, U>
 where
     T: Transducer
         + crate::transducer::TransducerLoader<crate::vfs::boxf::File>
@@ -102,7 +121,11 @@ where
         + Sync
         + 'static,
 {
-    fn open(file_path: &std::path::Path) -> Result<BoxSpellerArchive<T, U>, SpellerArchiveError> {
+    /// Open an archive, with the error model chosen by `options`.
+    pub fn open_with(
+        file_path: &std::path::Path,
+        options: &OpenOptions,
+    ) -> Result<BoxSpellerArchive<T, U>, SpellerArchiveError> {
         let archive = BoxFileReader::open(file_path).map_err(|e| SpellerArchiveError::Open {
             path: file_path.to_path_buf(),
             source: std::io::Error::other(e),
@@ -134,7 +157,7 @@ where
 
         let (metadata, bundled_config) = match meta_json {
             Some(buf) => {
-                let metadata = serde_json::from_slice(&buf).map_err(|e| {
+                let metadata: SpellerMetadata = serde_json::from_slice(&buf).map_err(|e| {
                     SpellerArchiveError::MetadataJson {
                         archive: file_path.to_path_buf(),
                         source: crate::util::JsonParseError::new(e, &buf),
@@ -144,13 +167,6 @@ where
             }
             None => (None, None),
         };
-        let errmodel = T::from_path(&fs, "errmodel.default.thfst").map_err(|source| {
-            SpellerArchiveError::Transducer {
-                archive: file_path.to_path_buf(),
-                member: "errmodel.default.thfst".into(),
-                source,
-            }
-        })?;
         let acceptor = U::from_path(&fs, "acceptor.default.thfst").map_err(|source| {
             SpellerArchiveError::Transducer {
                 archive: file_path.to_path_buf(),
@@ -159,8 +175,130 @@ where
             }
         })?;
 
-        let speller = HfstSpeller::new_with_bundled_config(errmodel, acceptor, bundled_config);
-        Ok(BoxSpellerArchive { speller, metadata })
+        // A compact error model is one file, read by its header; a THFST one
+        // is the directory every BHFST has carried.
+        let compact_member = metadata
+            .as_ref()
+            .map(|m| m.errmodel())
+            .filter(|e| {
+                !options.primary_errmodel_only
+                    && e.format() == Some(DHFST_FORMAT)
+                    && readable_variant(DHFST_FORMAT, e.format_version().unwrap_or("1"))
+            })
+            .map(|e| {
+                if e.id().is_empty() {
+                    DHFST_ERRMODEL_MEMBER.to_string()
+                } else {
+                    e.id().to_string()
+                }
+            });
+
+        let external = match &options.errmodel_path {
+            Some(path) => Some((
+                path.display().to_string(),
+                ErrorModel::from_path(&crate::vfs::Fs, path).map_err(|source| {
+                    SpellerArchiveError::Transducer {
+                        archive: file_path.to_path_buf(),
+                        member: path.display().to_string(),
+                        source,
+                    }
+                })?,
+            )),
+            None => None,
+        };
+
+        let (speller, typed, errmodel_source): (Arc<dyn Speller + Send + Sync>, _, _) =
+            match (external, compact_member) {
+                (Some((location, errmodel)), _) => {
+                    let source = ErrmodelSource::new(location, true, errmodel.format());
+                    let speller: Arc<dyn Speller + Send + Sync> = match errmodel {
+                        ErrorModel::Hfst(errmodel) => HfstSpeller::new_with_bundled_config(
+                            errmodel,
+                            acceptor,
+                            bundled_config.clone(),
+                        ),
+                        ErrorModel::Dhfst(errmodel) => HfstSpeller::new_with_bundled_config(
+                            errmodel,
+                            acceptor,
+                            bundled_config.clone(),
+                        ),
+                    };
+                    (speller, None, source)
+                }
+                (None, Some(member)) => {
+                    let errmodel = ErrorModel::from_path(&fs, &member).map_err(|source| {
+                        SpellerArchiveError::Transducer {
+                            archive: file_path.to_path_buf(),
+                            member: member.clone(),
+                            source,
+                        }
+                    })?;
+                    let source = ErrmodelSource::new(member.clone(), false, errmodel.format());
+                    let speller: Arc<dyn Speller + Send + Sync> = match errmodel {
+                        ErrorModel::Dhfst(errmodel) => HfstSpeller::new_with_bundled_config(
+                            errmodel,
+                            acceptor,
+                            bundled_config.clone(),
+                        ),
+                        ErrorModel::Hfst(errmodel) => HfstSpeller::new_with_bundled_config(
+                            errmodel,
+                            acceptor,
+                            bundled_config.clone(),
+                        ),
+                    };
+                    (speller, None, source)
+                }
+                (None, None) => {
+                    let errmodel = T::from_path(&fs, THFST_ERRMODEL_MEMBER).map_err(|source| {
+                        SpellerArchiveError::Transducer {
+                            archive: file_path.to_path_buf(),
+                            member: THFST_ERRMODEL_MEMBER.into(),
+                            source,
+                        }
+                    })?;
+                    let speller = HfstSpeller::new_with_bundled_config(
+                        errmodel,
+                        acceptor,
+                        bundled_config.clone(),
+                    );
+                    let source = ErrmodelSource {
+                        location: THFST_ERRMODEL_MEMBER.into(),
+                        external: false,
+                        format: "THFST".into(),
+                    };
+                    (
+                        speller.clone() as Arc<dyn Speller + Send + Sync>,
+                        Some(speller),
+                        source,
+                    )
+                }
+            };
+
+        Ok(BoxSpellerArchive {
+            metadata,
+            speller,
+            typed,
+            bundled_config,
+            errmodel_source,
+        })
+    }
+}
+
+impl<T, U> SpellerArchive for BoxSpellerArchive<T, U>
+where
+    T: Transducer
+        + crate::transducer::TransducerLoader<crate::vfs::boxf::File>
+        + Send
+        + Sync
+        + 'static,
+    U: Transducer
+        + crate::transducer::TransducerLoader<crate::vfs::boxf::File>
+        + Send
+        + Sync
+        + 'static,
+{
+    fn open(file_path: &std::path::Path) -> Result<BoxSpellerArchive<T, U>, SpellerArchiveError> {
+        BoxSpellerArchive::open_with(file_path, &OpenOptions::default())
     }
 
     fn speller(&self) -> Arc<dyn Speller + Send + Sync> {
@@ -172,7 +310,11 @@ where
     }
 
     fn bundled_config(&self) -> Option<&SpellerConfig> {
-        self.speller.bundled_config()
+        self.bundled_config.as_ref()
+    }
+
+    fn errmodel_source(&self) -> Option<&ErrmodelSource> {
+        Some(&self.errmodel_source)
     }
 }
 
@@ -214,5 +356,163 @@ mod tests {
     fn a_malformed_config_falls_back_to_defaults() {
         assert!(read(r#"{"n-best": "ten"}"#).is_none());
         assert!(read("42").is_none());
+    }
+
+    mod dhfst_member {
+        use super::super::super::OpenOptions;
+        use super::*;
+        use crate::speller::suggestion::Suggestion;
+        use crate::transducer::TransducerLoader;
+        use crate::transducer::dhfst::writer::{SourceModel, WriteOptions, write};
+        use box_format::{
+            BoxPath, Compression, CompressionConfig, HashMap as BoxHashMap, sync::BoxWriter,
+        };
+        use std::path::{Path, PathBuf};
+
+        fn fixture(name: &str) -> PathBuf {
+            Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures")).join(name)
+        }
+
+        fn dhfst_mutator() -> Vec<u8> {
+            let thfst = MmapThfstTransducer::from_path(&crate::vfs::Fs, fixture("mutator.thfst"))
+                .expect("fixture loads");
+            let names = thfst
+                .alphabet()
+                .key_table()
+                .iter()
+                .map(|k| k.to_string())
+                .collect();
+            let model = SourceModel::from_transducer(&thfst, names).expect("fixture reads");
+            write(
+                &model,
+                &WriteOptions {
+                    threads: 1,
+                    ..WriteOptions::default()
+                },
+            )
+            .expect("fixture writes")
+            .bytes
+        }
+
+        fn insert_thfst(boxfile: &mut BoxWriter, source: &Path, name: &str) {
+            boxfile
+                .mkdir(BoxPath::new(name).expect("box path"), BoxHashMap::new())
+                .expect("mkdir");
+            for component in ["alphabet", "index", "transition"] {
+                let file = std::fs::File::open(source.join(component)).expect("open component");
+                boxfile
+                    .insert(
+                        &CompressionConfig::new(Compression::Stored),
+                        BoxPath::new(Path::new(name).join(component)).expect("box path"),
+                        std::io::BufReader::new(file),
+                        BoxHashMap::new(),
+                    )
+                    .expect("insert component");
+            }
+        }
+
+        /// A BHFST with the fixture lexicon, the fixture error model both as
+        /// THFST and as DHFST, and a `meta.json` whose `errmodel` carries
+        /// `extra`.
+        fn bhfst(dir: &Path, extra: &str) -> PathBuf {
+            let path = dir.join("dhfst.bhfst");
+            let mut boxfile = BoxWriter::create_with_alignment(&path, 8).expect("create");
+            insert_thfst(
+                &mut boxfile,
+                &fixture("lexicon.thfst"),
+                "acceptor.default.thfst",
+            );
+            insert_thfst(
+                &mut boxfile,
+                &fixture("mutator.thfst"),
+                THFST_ERRMODEL_MEMBER,
+            );
+            boxfile
+                .insert(
+                    &CompressionConfig::new(Compression::Stored),
+                    BoxPath::new(DHFST_ERRMODEL_MEMBER).expect("box path"),
+                    std::io::Cursor::new(dhfst_mutator()),
+                    BoxHashMap::new(),
+                )
+                .expect("insert DHFST");
+            let meta = format!(
+                r#"{{"info": {{"locale": "se", "title": [], "description": "", "producer": ""}},
+                    "acceptor": {{"type": "general", "id": "acceptor.default.thfst", "title": [], "description": ""}},
+                    "errmodel": {{"id": "{DHFST_ERRMODEL_MEMBER}", "title": [], "description": ""{extra}}}}}"#
+            );
+            boxfile
+                .insert(
+                    &CompressionConfig::new(Compression::Stored),
+                    BoxPath::new("meta.json").expect("box path"),
+                    std::io::Cursor::new(meta.into_bytes()),
+                    BoxHashMap::new(),
+                )
+                .expect("insert meta.json");
+            boxfile.finish().expect("finish");
+            path
+        }
+
+        fn suggestions(archive: &ThfstBoxSpellerArchive) -> Vec<Vec<(String, u32)>> {
+            let mut config = SpellerConfig::default();
+            config.n_best = None;
+            ["kat", "cet", "car", "cäät", "katt"]
+                .iter()
+                .map(|word| {
+                    let s: Vec<Suggestion> = archive.speller().suggest_with_config(word, &config);
+                    s.into_iter()
+                        .map(|s| (s.value.to_string(), s.weight.0.to_bits()))
+                        .collect()
+                })
+                .collect()
+        }
+
+        #[test]
+        fn the_format_key_selects_the_dhfst_member() {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = bhfst(dir.path(), r#", "format": "dhfst", "formatVersion": "1""#);
+
+            let dhfst = ThfstBoxSpellerArchive::open(&path).expect("opens");
+            let source = dhfst.errmodel_source().expect("a source");
+            assert_eq!(source.location, DHFST_ERRMODEL_MEMBER);
+            assert_eq!(source.format, "DHFST version 1");
+            assert!(dhfst.hfst_speller().is_none());
+
+            let thfst = ThfstBoxSpellerArchive::open_with(
+                &path,
+                &OpenOptions {
+                    primary_errmodel_only: true,
+                    ..OpenOptions::default()
+                },
+            )
+            .expect("opens");
+            assert_eq!(
+                thfst.errmodel_source().map(|s| s.location.as_str()),
+                Some(THFST_ERRMODEL_MEMBER)
+            );
+            assert!(thfst.hfst_speller().is_some());
+
+            let from_dhfst = suggestions(&dhfst);
+            assert!(from_dhfst.iter().any(|s| !s.is_empty()));
+            assert_eq!(from_dhfst, suggestions(&thfst));
+        }
+
+        #[test]
+        fn without_the_key_the_thfst_member_is_read() {
+            let dir = tempfile::tempdir().expect("tempdir");
+            for (i, extra) in ["", r#", "format": "dhfst", "formatVersion": "2""#]
+                .iter()
+                .enumerate()
+            {
+                let sub = dir.path().join(i.to_string());
+                std::fs::create_dir(&sub).expect("mkdir");
+                let path = bhfst(&sub, extra);
+                let archive = ThfstBoxSpellerArchive::open(&path).expect("opens");
+                assert_eq!(
+                    archive.errmodel_source().map(|s| s.location.as_str()),
+                    Some(THFST_ERRMODEL_MEMBER),
+                    "{extra}"
+                );
+            }
+        }
     }
 }

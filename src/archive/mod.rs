@@ -1,6 +1,10 @@
 //! Handling of archives of spell-checking models.
 use memmap2::Mmap;
-use std::{ffi::OsString, path::Path, sync::Arc};
+use std::{
+    ffi::OsString,
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 pub mod boxf;
 pub mod error;
@@ -11,6 +15,7 @@ use self::{boxf::ThfstChunkedBoxSpellerArchive, meta::SpellerMetadata};
 use crate::{
     archive::{error::SpellerArchiveError, zip::ZipSpellerArchive},
     speller::{Speller, SpellerConfig},
+    transducer::TransducerFormat,
 };
 
 /// Top-level, one-line hint printed by CLIs when an error chain indicates the
@@ -63,6 +68,70 @@ pub(crate) fn warn_malformed_config(archive: &Path, source: &dyn std::fmt::Displ
     );
 }
 
+/// The error-model format a ZHFST `<variant>` or a BHFST `meta.json` names
+/// for the compact format.
+pub const DHFST_FORMAT: &str = "dhfst";
+
+/// How to open an archive.
+#[derive(Clone, Debug, Default)]
+pub struct OpenOptions {
+    /// Read the error model from this file instead of from the archive. The
+    /// file may be in any error-model format the reader knows; its header
+    /// says which.
+    pub errmodel_path: Option<PathBuf>,
+    /// Read the error model the archive names as its own (`<errmodel id>` in
+    /// a ZHFST, the THFST member in a BHFST) even when the archive also
+    /// carries a variant this reader could use instead.
+    pub primary_errmodel_only: bool,
+}
+
+/// Where an archive's speller got its error model from, and in what format.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ErrmodelSource {
+    /// the archive member, or the file given in [`OpenOptions::errmodel_path`]
+    pub location: String,
+    /// whether `location` is a file outside the archive
+    pub external: bool,
+    /// the format its header declared
+    pub format: String,
+}
+
+impl std::fmt::Display for ErrmodelSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.external {
+            write!(f, "file {} ({})", self.location, self.format)
+        } else {
+            write!(f, "member {} ({})", self.location, self.format)
+        }
+    }
+}
+
+impl ErrmodelSource {
+    pub(crate) fn new(
+        location: impl Into<String>,
+        external: bool,
+        format: TransducerFormat,
+    ) -> Self {
+        ErrmodelSource {
+            location: location.into(),
+            external,
+            format: format.to_string(),
+        }
+    }
+}
+
+/// Whether a variant's declared format and version are ones this reader
+/// reads.
+pub(crate) fn readable_variant(format: &str, version: &str) -> bool {
+    format == DHFST_FORMAT
+        && version
+            .trim()
+            .split('.')
+            .next()
+            .and_then(|major| major.parse::<u8>().ok())
+            == Some(crate::transducer::dhfst::VERSION)
+}
+
 pub(crate) struct TempMmap {
     mmap: Arc<Mmap>,
 
@@ -108,6 +177,11 @@ pub trait SpellerArchive {
     fn bundled_config(&self) -> Option<&SpellerConfig> {
         None
     }
+
+    /// Where the speller's error model came from, and in what format.
+    fn errmodel_source(&self) -> Option<&ErrmodelSource> {
+        None
+    }
 }
 
 /// Reads a speller archive.
@@ -115,12 +189,25 @@ pub fn open<P>(path: P) -> Result<Arc<dyn SpellerArchive + Send + Sync>, Speller
 where
     P: AsRef<Path>,
 {
+    open_with(path, &OpenOptions::default())
+}
+
+/// Reads a speller archive, with the error model chosen by `options`.
+pub fn open_with<P>(
+    path: P,
+    options: &OpenOptions,
+) -> Result<Arc<dyn SpellerArchive + Send + Sync>, SpellerArchiveError>
+where
+    P: AsRef<Path>,
+{
     let path = path.as_ref();
     match path.extension() {
         Some(x) if x == "bhfst" => {
-            ThfstChunkedBoxSpellerArchive::open(path).map(|x| Arc::new(x) as _)
+            ThfstChunkedBoxSpellerArchive::open_with(path, options).map(|x| Arc::new(x) as _)
         }
-        Some(x) if x == "zhfst" => ZipSpellerArchive::open(path).map(|x| Arc::new(x) as _),
+        Some(x) if x == "zhfst" => {
+            ZipSpellerArchive::open_with(path, options).map(|x| Arc::new(x) as _)
+        }
         unknown => Err(SpellerArchiveError::UnsupportedExt {
             path: path.to_path_buf(),
             ext: unknown.map(|x| x.to_owned()).unwrap_or_else(OsString::new),

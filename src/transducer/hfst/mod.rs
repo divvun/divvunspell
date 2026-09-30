@@ -6,6 +6,8 @@
 pub mod alphabet;
 pub mod header;
 pub mod index_table;
+#[cfg(test)]
+pub(crate) mod test_support;
 pub mod transition_table;
 
 use std::borrow::Cow;

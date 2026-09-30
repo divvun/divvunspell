@@ -162,12 +162,93 @@ pub struct SpellerMetadataErrmodel {
     title: Vec<SpellerTitle>,
     /// human readable description of the error model
     description: String,
+    /// The format of the member `id` names, when it is not the archive's
+    /// usual one. A BHFST `meta.json` says `"format": "dhfst"` for an error
+    /// model in the compact format; without the key the member is THFST.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    format: Option<String>,
+    /// The version of `format`.
+    #[serde(
+        default,
+        rename = "formatVersion",
+        alias = "format-version",
+        skip_serializing_if = "Option::is_none"
+    )]
+    format_version: Option<String>,
+    /// The same error model in other formats, in members of their own
+    /// (`<variant>` children of `<errmodel>` in a ZHFST `index.xml`). A
+    /// reader that knows a variant's format and version, and finds its
+    /// member, may read it instead of `id`; one that does not reads `id`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    variant: Vec<SpellerMetadataVariant>,
+}
+
+/// Another encoding of the error model, carried in a member of its own.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct SpellerMetadataVariant {
+    /// the format, e.g. `dhfst`
+    pub format: String,
+    /// the format's version, e.g. `1`
+    #[serde(default)]
+    pub version: String,
+    /// the member holding it
+    pub id: String,
+    /// SHA-256 of the member, hex, if the archive records one
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sha256: Option<String>,
 }
 
 impl SpellerMetadataErrmodel {
     /// Get the error model ID
     pub fn id(&self) -> &str {
         &self.id
+    }
+
+    /// The format of the member [`id`](Self::id) names, if declared.
+    pub fn format(&self) -> Option<&str> {
+        self.format.as_deref()
+    }
+
+    /// The version of [`format`](Self::format), if declared.
+    pub fn format_version(&self) -> Option<&str> {
+        self.format_version.as_deref()
+    }
+
+    /// Other encodings of the error model the archive carries.
+    pub fn variants(&self) -> &[SpellerMetadataVariant] {
+        &self.variant
+    }
+
+    /// Declare another encoding of the error model.
+    ///
+    /// # Warning
+    /// This method is only for internal tooling use and should not be used in normal applications.
+    /// It may be removed in a future version.
+    #[doc(hidden)]
+    pub fn add_variant(&mut self, variant: SpellerMetadataVariant) {
+        self.variant.retain(|v| v.id != variant.id);
+        self.variant.push(variant);
+    }
+
+    /// Replace the declared encodings of the error model.
+    ///
+    /// # Warning
+    /// This method is only for internal tooling use and should not be used in normal applications.
+    /// It may be removed in a future version.
+    #[doc(hidden)]
+    pub fn set_variants(&mut self, variants: Vec<SpellerMetadataVariant>) {
+        self.variant = variants;
+    }
+
+    /// Declare the format of the member [`id`](Self::id) names.
+    ///
+    /// # Warning
+    /// This method is only for internal tooling use and should not be used in normal applications.
+    /// It may be removed in a future version.
+    #[doc(hidden)]
+    pub fn set_format(&mut self, format: Option<String>, version: Option<String>) {
+        self.format = format;
+        self.format_version = version;
     }
 
     /// Get the localized titles
@@ -257,4 +338,75 @@ fn test_xml_parse() {
 
     let s = SpellerMetadata::from_str(&xml_data).unwrap();
     println!("{:#?}", s);
+}
+
+#[test]
+fn errmodel_variants_are_read_from_index_xml() {
+    use std::str::FromStr;
+
+    let xml_data = r##"<?xml version="1.0" encoding="UTF-8"?>
+        <hfstspeller dtdversion="1.0" hfstversion="3">
+        <info>
+            <locale>se</locale>
+            <title>North Sami spellchecker</title>
+            <description>A spellchecker.</description>
+            <producer>Divvun</producer>
+        </info>
+        <acceptor type="general" id="acceptor.default.hfst">
+            <title>Lexicon</title>
+            <description>Lexicon.</description>
+        </acceptor>
+        <errmodel id="errmodel.default.hfst">
+            <title>Error model</title>
+            <description>Error model.</description>
+            <type type="default"/>
+            <model>errormodel.default.hfst</model>
+            <variant format="dhfst" version="1" id="errmodel.default.dhfst" sha256="00ff"/>
+        </errmodel>
+        </hfstspeller>
+    "##;
+
+    let metadata = SpellerMetadata::from_str(xml_data).expect("the XML is well formed");
+    let errmodel = metadata.errmodel();
+    assert_eq!(errmodel.id(), "errmodel.default.hfst");
+    assert_eq!(
+        errmodel.variants(),
+        &[SpellerMetadataVariant {
+            format: "dhfst".into(),
+            version: "1".into(),
+            id: "errmodel.default.dhfst".into(),
+            sha256: Some("00ff".into()),
+        }]
+    );
+    assert_eq!(errmodel.format(), None);
+}
+
+#[test]
+fn metadata_without_variants_serialises_as_before() {
+    use std::str::FromStr;
+
+    let xml_data = r##"<hfstspeller>
+        <info><locale>se</locale><title>t</title><description>d</description><producer>p</producer></info>
+        <acceptor type="general" id="acceptor.default.hfst"><title>a</title><description>a</description></acceptor>
+        <errmodel id="errmodel.default.hfst"><title>e</title><description>e</description></errmodel>
+        </hfstspeller>"##;
+    let metadata = SpellerMetadata::from_str(xml_data).expect("the XML is well formed");
+    let json = serde_json::to_value(&metadata).expect("metadata serialises");
+    let errmodel = json.get("errmodel").expect("errmodel key");
+    assert!(errmodel.get("variant").is_none());
+    assert!(errmodel.get("format").is_none());
+    assert!(errmodel.get("formatVersion").is_none());
+}
+
+#[test]
+fn bhfst_meta_json_declares_the_errmodel_format() {
+    let json = br#"{
+        "info": {"locale": "se", "title": [], "description": "", "producer": ""},
+        "acceptor": {"type": "general", "id": "acceptor.default.thfst", "title": [], "description": "", "continuation": null},
+        "errmodel": {"id": "errmodel.default.dhfst", "title": [], "description": "", "format": "dhfst", "formatVersion": "1"}
+    }"#;
+    let metadata: SpellerMetadata = serde_json::from_slice(json).expect("meta.json parses");
+    assert_eq!(metadata.errmodel().format(), Some("dhfst"));
+    assert_eq!(metadata.errmodel().format_version(), Some("1"));
+    assert!(metadata.errmodel().variants().is_empty());
 }
