@@ -1,0 +1,18 @@
+[package]
+name = "dhfst-tools"
+description = "Write, check and package error models in the compact DHFST format."
+version.workspace = true
+authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
+edition = "2024"
+license = "GPL-3.0"
+repository = "https://github.com/divvun/divvunspell"
+
+[dependencies]
+anyhow.workspace = true
+serde_json.workspace = true
+divvun-fst = { features = ["compression", "dhfst-writer"], path = "../.." }
+box-format = { workspace = true, features = ["writer"] }
+clap.workspace = true
+tempfile.workspace = true
+zip = { workspace = true, features = ["deflate"] }
+sha2 = "0.10"
