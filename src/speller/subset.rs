@@ -70,7 +70,7 @@ use std::hash::{BuildHasher, BuildHasherDefault, Hash, Hasher};
 
 use hashbrown::{HashMap, HashTable};
 
-use crate::transducer::Transducer;
+use crate::transducer::{ArcGroup, Transducer};
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 
 /// How many model states one subset may hold before the construction gives up.
@@ -357,31 +357,12 @@ impl MutatorSubsets {
         let (start, len) = self.spans[subset.0 as usize];
         for slot in start..start + len {
             let member = self.members[slot as usize];
-            let state = TransitionTableIndex(member.state);
-
-            if !mutator.has_transitions(state.incr(), Some(symbol)) {
-                continue;
-            }
-            let Some(mut next) = mutator.next(state, symbol) else {
-                continue;
-            };
-
             let residual = member.residual();
-            loop {
-                let transition = if symbol == SymbolNumber::ZERO {
-                    mutator.take_epsilons(next)
-                } else {
-                    mutator.take_non_epsilons(next, symbol)
-                };
-                let Some(transition) = transition else {
-                    break;
-                };
 
-                if let (Some(output), Some(target), Some(weight)) = (
-                    transition.symbol(),
-                    transition.target(),
-                    transition.weight(),
-                ) {
+            mutator.for_each_arc(
+                TransitionTableIndex(member.state),
+                symbol,
+                |output, target, weight| {
                     // `ε:ε` moves the model without touching either tape, so it
                     // is not a transition of the product at all — every subset
                     // is closed over those arcs instead, which is what merges
@@ -393,10 +374,8 @@ impl MutatorSubsets {
                             weight: residual + weight.0,
                         });
                     }
-                }
-
-                next = next.incr();
-            }
+                },
+            );
         }
 
         // Grouping is by output symbol: sorting on it puts each group in one
@@ -529,26 +508,19 @@ impl MutatorSubsets {
                 continue;
             };
 
-            let state = TransitionTableIndex(state);
-            if !mutator.has_transitions(state.incr(), Some(SymbolNumber::ZERO)) {
-                continue;
-            }
-            let Some(mut next) = mutator.next(state, SymbolNumber::ZERO) else {
-                continue;
-            };
-
-            while let Some(transition) = mutator.take_epsilons(next) {
-                if let (Some(SymbolNumber::ZERO), Some(target), Some(arc)) = (
-                    transition.symbol(),
-                    transition.target(),
-                    transition.weight(),
-                ) && relax(closure, target.0, weight + arc.0)
+            // Only `ε:ε` arcs close a subset. An insertion default of a
+            // compact model writes a symbol, so it is left alone here.
+            mutator.for_each_arc_group(TransitionTableIndex(state), SymbolNumber::ZERO, |group| {
+                if let ArcGroup::One {
+                    output: SymbolNumber::ZERO,
+                    target,
+                    weight: arc,
+                } = group
+                    && relax(closure, target.0, weight + arc.0)
                 {
                     pending.push(target.0);
                 }
-
-                next = next.incr();
-            }
+            });
         }
 
         true

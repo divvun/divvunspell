@@ -9,8 +9,8 @@ use lifeguard::{Pool, Recycled};
 use super::subset::{MutatorSubsets, SubsetStats};
 use super::{HfstSpeller, OutputMode, SpellerConfig};
 use crate::speller::suggestion::{Suggestion, WeightDetails};
-use crate::transducer::Transducer;
 use crate::transducer::tree_node::TreeNode;
+use crate::transducer::{ArcGroup, SymbolSet, Transducer};
 use crate::types::{SymbolNumber, TransitionTableIndex, ValueNumber, Weight};
 
 #[inline(always)]
@@ -520,14 +520,17 @@ where
         }
     }
 
-    /// Hand `visit` every error-model arc leaving `state` on `input_sym`, as
-    /// `(output symbol, next model state, weight)`.
+    /// Hand `visit` every error-model arc leaving `state` on `input_sym`.
     ///
     /// `state` names a model state when the search walks the model as an NFA
     /// and an interned subset when it determinises the model on the fly. The
     /// two agree on everything downstream of this call — an arc is an output
     /// symbol, a successor and a weight either way — which is what lets the
     /// product walk below be written once.
+    ///
+    /// Walking the model as an NFA, a default arc of a compact error model
+    /// arrives as one [`ArcGroup::Each`] rather than one arc per output; the
+    /// subset construction expands it into the memo like any other arcs.
     ///
     /// False means the subset construction breached a cap; the caller must
     /// abandon the search and redo it as the NFA walk.
@@ -537,39 +540,12 @@ where
         subsets: Option<&mut MutatorSubsets>,
         state: TransitionTableIndex,
         input_sym: SymbolNumber,
-        mut visit: impl FnMut(SymbolNumber, TransitionTableIndex, Weight),
+        mut visit: impl FnMut(ArcGroup<'_>),
     ) -> bool {
         let mutator = self.speller.mutator();
 
         let Some(subsets) = subsets else {
-            if !mutator.has_transitions(state.incr(), Some(input_sym)) {
-                return true;
-            }
-            let Some(mut next) = mutator.next(state, input_sym) else {
-                return true;
-            };
-
-            loop {
-                let transition = if input_sym == SymbolNumber::ZERO {
-                    mutator.take_epsilons(next)
-                } else {
-                    mutator.take_non_epsilons(next, input_sym)
-                };
-                let Some(transition) = transition else {
-                    break;
-                };
-
-                if let (Some(symbol), Some(target), Some(weight)) = (
-                    transition.symbol(),
-                    transition.target(),
-                    transition.weight(),
-                ) {
-                    visit(symbol, target, weight);
-                }
-
-                next = next.incr();
-            }
-
+            mutator.for_each_arc_group(state, input_sym, visit);
             return true;
         };
 
@@ -579,10 +555,52 @@ where
 
         for index in start..start + len {
             let arc = subsets.arc(index);
-            visit(arc.symbol, arc.target, arc.weight);
+            visit(ArcGroup::One {
+                output: arc.symbol,
+                target: arc.target,
+                weight: arc.weight,
+            });
         }
 
         true
+    }
+
+    /// Queue what the lexicon can do with a default arc of the error model:
+    /// one arc for each symbol in `outputs`, all to `target` at `weight`.
+    ///
+    /// The set is not a list of nodes to make. Each candidate goes through
+    /// [`queue_mutator_output`](Self::queue_mutator_output), which asks the
+    /// lexicon whether it can continue with that symbol at this node and
+    /// queues nothing when it cannot — so what reaches the queue is the part
+    /// of the set the lexicon offers here, found by the same test an explicit
+    /// arc's output gets. The search therefore reaches exactly the nodes it
+    /// would reach over the arcs the default stands for.
+    #[inline]
+    fn queue_mutator_output_set<'a>(
+        &self,
+        pool: &'a Pool<TreeNode>,
+        max_weight: Weight,
+        next_node: &TreeNode,
+        outputs: SymbolSet<'_>,
+        target: TransitionTableIndex,
+        weight: Weight,
+        input_increment: i16,
+        input_lexicon_sym: Option<SymbolNumber>,
+        output_nodes: &mut Vec<Recycled<'a, TreeNode>>,
+    ) {
+        for sym in outputs.iter() {
+            self.queue_mutator_output(
+                pool,
+                max_weight,
+                next_node,
+                sym,
+                target,
+                weight,
+                input_increment,
+                input_lexicon_sym,
+                output_nodes,
+            );
+        }
     }
 
     /// Queue what the lexicon can do with one error-model output symbol.
@@ -704,29 +722,51 @@ where
             subsets,
             next_node.mutator_state,
             SymbolNumber::ZERO,
-            |sym, target, weight| {
-                if sym == SymbolNumber::ZERO {
-                    if self.is_under_weight_limit(max_weight, next_node.weight() + weight) {
-                        output_nodes.push(next_node.update_mutator(pool, target, weight));
+            |group| match group {
+                ArcGroup::One {
+                    output: sym,
+                    target,
+                    weight,
+                } => {
+                    if sym == SymbolNumber::ZERO {
+                        if self.is_under_weight_limit(max_weight, next_node.weight() + weight) {
+                            output_nodes.push(next_node.update_mutator(pool, target, weight));
+                        }
+                        return;
                     }
-                    return;
-                }
 
-                // An `@_UNKNOWN_@` output against an epsilon input inserts
-                // "some symbol outside the alphabet" — no character in
-                // particular, and none to exclude either, since no input
-                // character is being consumed here.
-                self.queue_mutator_output(
+                    // An `@_UNKNOWN_@` output against an epsilon input inserts
+                    // "some symbol outside the alphabet" — no character in
+                    // particular, and none to exclude either, since no input
+                    // character is being consumed here.
+                    self.queue_mutator_output(
+                        pool,
+                        max_weight,
+                        next_node,
+                        sym,
+                        target,
+                        weight,
+                        0,
+                        None,
+                        output_nodes,
+                    );
+                }
+                // An insertion default: any of these symbols, inserted.
+                ArcGroup::Each {
+                    outputs,
+                    target,
+                    weight,
+                } => self.queue_mutator_output_set(
                     pool,
                     max_weight,
                     next_node,
-                    sym,
+                    outputs,
                     target,
                     weight,
                     0,
                     None,
                     output_nodes,
-                );
+                ),
             },
         )
     }
@@ -873,33 +913,55 @@ where
             subsets,
             next_node.mutator_state,
             input_sym,
-            |sym, target, weight| {
-                if sym == SymbolNumber::ZERO {
-                    if self.is_under_weight_limit(max_weight, next_node.weight() + weight) {
-                        output_nodes.push(next_node.update(
-                            pool,
-                            SymbolNumber::ZERO,
-                            Some(next_node.input_state.incr(1)),
-                            target,
-                            next_node.lexicon_state,
-                            weight,
-                            weight,
-                        ));
+            |group| match group {
+                ArcGroup::One {
+                    output: sym,
+                    target,
+                    weight,
+                } => {
+                    if sym == SymbolNumber::ZERO {
+                        if self.is_under_weight_limit(max_weight, next_node.weight() + weight) {
+                            output_nodes.push(next_node.update(
+                                pool,
+                                SymbolNumber::ZERO,
+                                Some(next_node.input_state.incr(1)),
+                                target,
+                                next_node.lexicon_state,
+                                weight,
+                                weight,
+                            ));
+                        }
+                        return;
                     }
-                    return;
-                }
 
-                self.queue_mutator_output(
+                    self.queue_mutator_output(
+                        pool,
+                        max_weight,
+                        next_node,
+                        sym,
+                        target,
+                        weight,
+                        1,
+                        input_lexicon_sym,
+                        output_nodes,
+                    );
+                }
+                // A substitution default: the input becomes any of these.
+                ArcGroup::Each {
+                    outputs,
+                    target,
+                    weight,
+                } => self.queue_mutator_output_set(
                     pool,
                     max_weight,
                     next_node,
-                    sym,
+                    outputs,
                     target,
                     weight,
                     1,
                     input_lexicon_sym,
                     output_nodes,
-                );
+                ),
             },
         )
     }

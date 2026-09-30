@@ -101,6 +101,92 @@ pub enum TransducerError {
     },
 }
 
+/// A set of symbols, as a bitset indexed by symbol number.
+#[derive(Clone, Copy, Debug)]
+pub struct SymbolSet<'a> {
+    words: &'a [u64],
+}
+
+impl<'a> SymbolSet<'a> {
+    /// A set over the given bitset words: symbol `s` is word `s / 64`, bit
+    /// `s % 64`.
+    #[inline(always)]
+    pub fn new(words: &'a [u64]) -> SymbolSet<'a> {
+        SymbolSet { words }
+    }
+
+    /// Whether `symbol` is in the set.
+    #[inline(always)]
+    pub fn contains(&self, symbol: SymbolNumber) -> bool {
+        let s = symbol.0 as usize;
+        self.words
+            .get(s / 64)
+            .is_some_and(|word| word & (1u64 << (s % 64)) != 0)
+    }
+
+    /// Whether the set is empty.
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.words.iter().all(|word| *word == 0)
+    }
+
+    /// How many symbols the set holds.
+    #[inline(always)]
+    pub fn len(&self) -> usize {
+        self.words
+            .iter()
+            .map(|word| word.count_ones() as usize)
+            .sum()
+    }
+
+    /// The symbols in ascending order.
+    #[inline(always)]
+    pub fn iter(&self) -> impl Iterator<Item = SymbolNumber> + 'a {
+        self.words.iter().enumerate().flat_map(|(index, word)| {
+            let mut bits = *word;
+            std::iter::from_fn(move || {
+                if bits == 0 {
+                    return None;
+                }
+                let bit = bits.trailing_zeros() as usize;
+                bits &= bits - 1;
+                Some(SymbolNumber((index * 64 + bit) as u16))
+            })
+        })
+    }
+}
+
+/// Arcs leaving one state on one input symbol, grouped the way a transducer
+/// may store them.
+#[derive(Clone, Copy, Debug)]
+pub enum ArcGroup<'a> {
+    /// A single arc.
+    One {
+        /// output symbol
+        output: SymbolNumber,
+        /// target state
+        target: TransitionTableIndex,
+        /// arc weight
+        weight: Weight,
+    },
+    /// One arc per symbol in `outputs`, every one of them to `target` at
+    /// `weight`: a default arc, which says "any of these outputs" rather than
+    /// naming one.
+    ///
+    /// The outputs are symbols of the transducer's own alphabet. A consumer
+    /// that composes this transducer with another one should intersect the
+    /// set with what the other can continue with, rather than spell out every
+    /// member.
+    Each {
+        /// the output symbols, never empty
+        outputs: SymbolSet<'a>,
+        /// target state shared by every arc of the group
+        target: TransitionTableIndex,
+        /// weight shared by every arc of the group
+        weight: Weight,
+    },
+}
+
 /// A finite-state transducer.
 ///
 /// This trait defines the interface for finite-state transducers used for spell-checking
@@ -154,6 +240,70 @@ pub trait Transducer: Sized {
     /// changing its results.
     fn distance_to_final(&self, _i: TransitionTableIndex) -> Weight {
         Weight::ZERO
+    }
+
+    /// Hand `visit` every arc leaving `state` on `input`, as `(output, target,
+    /// weight)`.
+    ///
+    /// `state` is a state, not the cursor one past it that
+    /// [`has_transitions`](Self::has_transitions) takes. An `input` of epsilon
+    /// visits the epsilon-input arcs; flag diacritic arcs are never visited.
+    ///
+    /// The default implementation walks the cursor API, exactly as the
+    /// suggestion search always has; a format without a flat run of arcs per
+    /// input overrides it.
+    #[inline(always)]
+    fn for_each_arc<V>(&self, state: TransitionTableIndex, input: SymbolNumber, mut visit: V)
+    where
+        V: FnMut(SymbolNumber, TransitionTableIndex, Weight),
+    {
+        if !self.has_transitions(state.incr(), Some(input)) {
+            return;
+        }
+        let Some(mut next) = self.next(state, input) else {
+            return;
+        };
+
+        loop {
+            let transition = if input == SymbolNumber::ZERO {
+                self.take_epsilons(next)
+            } else {
+                self.take_non_epsilons(next, input)
+            };
+            let Some(transition) = transition else {
+                break;
+            };
+
+            if let (Some(output), Some(target), Some(weight)) = (
+                transition.symbol(),
+                transition.target(),
+                transition.weight(),
+            ) {
+                visit(output, target, weight);
+            }
+
+            next = next.incr();
+        }
+    }
+
+    /// Like [`for_each_arc`](Self::for_each_arc), but a group of arcs that
+    /// differ only in their output symbol may arrive as one
+    /// [`ArcGroup::Each`].
+    ///
+    /// The default implementation has no groups and hands over one arc at a
+    /// time.
+    #[inline(always)]
+    fn for_each_arc_group<V>(&self, state: TransitionTableIndex, input: SymbolNumber, mut visit: V)
+    where
+        V: FnMut(ArcGroup<'_>),
+    {
+        self.for_each_arc(state, input, |output, target, weight| {
+            visit(ArcGroup::One {
+                output,
+                target,
+                weight,
+            })
+        });
     }
 }
 
