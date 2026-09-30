@@ -5,6 +5,9 @@ use std::path::Path;
 use crate::transducer::TransducerError;
 use crate::types::{HeaderFlag, SymbolNumber, TransitionTableIndex};
 
+/// The first five bytes of every HFST transducer file.
+pub const MAGIC: &[u8; 5] = b"HFST\0";
+
 #[derive(Debug)]
 pub struct TransducerHeader {
     symbols: SymbolNumber,
@@ -22,14 +25,24 @@ pub struct TransducerHeader {
 impl TransducerHeader {
     /// Parse a HFST header from the start of the buffer.
     ///
-    /// Returns a [`TransducerError::CorruptHeader`] (wrapping `path`) if the
-    /// buffer is too short to contain a complete HFST header, or if any read
-    /// falls off the end of the slice.
+    /// Returns a [`TransducerError::UnrecognisedFormat`] if the buffer does not
+    /// start with `HFST\0`, so that a file in another format is never read as
+    /// optimized lookup, and a [`TransducerError::CorruptHeader`] (wrapping
+    /// `path`) if the buffer is too short to contain a complete HFST header,
+    /// or if any read falls off the end of the slice.
     pub fn parse(buf: &[u8], path: &Path) -> Result<TransducerHeader, TransducerError> {
-        let mut rdr = Cursor::new(buf);
+        if !buf.starts_with(MAGIC) {
+            let format = crate::transducer::TransducerFormat::detect(buf, path)?;
+            return Err(TransducerError::UnrecognisedFormat {
+                path: path.to_path_buf(),
+                detail: std::borrow::Cow::Owned(format!(
+                    "the file is {format}, not HFST optimized lookup"
+                )),
+            });
+        }
 
-        // Skip "HFST\0" magic string
-        rdr.set_position(5);
+        let mut rdr = Cursor::new(buf);
+        rdr.set_position(MAGIC.len() as u64);
 
         let header_len = read_u16(&mut rdr, path)?;
 
