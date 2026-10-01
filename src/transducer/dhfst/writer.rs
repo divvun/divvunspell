@@ -326,8 +326,11 @@ pub struct TableSpec {
     pub del: Vec<(u16, f32)>,
     /// insertions `ε:y`
     pub ins: Vec<(u16, f32)>,
-    /// transpositions `x y → y x`
+    /// transpositions `x y → y x`, charged when the middle symbol is copied
     pub swap: Vec<(u16, u16, f32)>,
+    /// what starting a transposition of `x` costs; 0 for a symbol not listed,
+    /// and for all when empty
+    pub swap_entry: Vec<(u16, f32)>,
 }
 
 /// What the encoding came to.
@@ -1576,7 +1579,8 @@ fn encode_stages(model: &SourceModel, spec: &StagesSpec) -> Result<Vec<u8>, Writ
                     .iter()
                     .all(|c| in_alphabet(c.0) && in_alphabet(c.1))
                 && table.del.iter().all(|c| in_alphabet(c.0))
-                && table.ins.iter().all(|c| in_alphabet(c.0));
+                && table.ins.iter().all(|c| in_alphabet(c.0))
+                && table.swap_entry.iter().all(|c| in_alphabet(c.0));
             if !symbols_ok || table.target as usize >= st.contexts.len() {
                 return Err(WriteError::Unsupported(format!(
                     "stage {k} table {t}: a symbol or target is out of range"
@@ -1602,7 +1606,19 @@ fn encode_stages(model: &SourceModel, spec: &StagesSpec) -> Result<Vec<u8>, Writ
             } else {
                 encode_matrix(&table.swap, &mut pool, &mut arrays)?
             };
-            tables.push([table.target, sub, del, ins, swap, 0]);
+            let swap_entry = if table.swap_entry.is_empty() {
+                NONE
+            } else {
+                // A symbol not listed starts its transposition for nothing.
+                let mut entry = table.swap_entry.clone();
+                for &(x, _, _) in &table.swap {
+                    if !entry.iter().any(|e| e.0 == x) {
+                        entry.push((x, 0.0));
+                    }
+                }
+                encode_vector(&entry, &mut pool, &mut arrays)?
+            };
+            tables.push([table.target, sub, del, ins, swap, swap_entry]);
         }
 
         let mut body: Vec<u8> = Vec::new();
@@ -1809,10 +1825,15 @@ fn verify_stages(spec: &StagesSpec, reader: &DhfstTransducer) -> Result<u64, Wri
                         if w.is_finite() {
                             want.push((0, virt(table.target), w.to_bits()));
                         }
+                        let entry = table
+                            .swap_entry
+                            .iter()
+                            .find(|e| e.0 == x)
+                            .map_or(0.0, |e| e.1);
                         if let Some(sb) = swap_bases[t]
                             && (1..n).any(|y| reader.stage_edit_weight(k, t, 3, x, y).is_finite())
                         {
-                            want.push((0, virt(sb + 2 * x as u32), 0f32.to_bits()));
+                            want.push((0, virt(sb + 2 * x as u32), entry.to_bits()));
                         }
                     }
                 }

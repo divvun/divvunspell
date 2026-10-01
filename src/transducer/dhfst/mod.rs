@@ -422,7 +422,8 @@ impl DhfstTransducer {
 
     /// The weight of an edit of table `table` in stage `stage`: substitution
     /// `x:y` for `kind` 0, deletion `x:ε` for 1, insertion `ε:x` for 2,
-    /// transposition `x y → y x` for 3; `+inf` for none. For tools that check
+    /// transposition `x y → y x` for 3, starting a transposition of `x` for 4;
+    /// `+inf` for none. For tools that check
     /// a written table against its source.
     pub fn stage_edit_weight(&self, stage: usize, table: usize, kind: u8, x: u16, y: u16) -> f32 {
         let Some(st) = self.stages.as_ref().and_then(|s| s.stages.get(stage)) else {
@@ -436,6 +437,7 @@ impl DhfstTransducer {
             1 => t.del.map_or(f32::INFINITY, |v| st.vector_weight(v, x)),
             2 => t.ins.map_or(f32::INFINITY, |v| st.vector_weight(v, x)),
             3 => t.swap.map_or(f32::INFINITY, |m| st.matrix_weight(m, x, y)),
+            4 => t.swap_entry.map_or(0.0, |v| st.vector_weight(v, x)),
             _ => f32::INFINITY,
         }
     }

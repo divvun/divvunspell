@@ -479,6 +479,8 @@ struct EditTableJson {
     del: Vec<(String, f32)>,
     ins: Vec<(String, f32)>,
     swap: Vec<(String, String, f32)>,
+    #[serde(default)]
+    swap_entry: Vec<(String, f32)>,
 }
 
 fn cmd_stage(
@@ -612,6 +614,11 @@ fn cmd_stage(
                 .swap
                 .iter()
                 .map(|(x, y, w)| Ok((sym(x)?, sym(y)?, *w)))
+                .collect::<anyhow::Result<_>>()?,
+            swap_entry: t
+                .swap_entry
+                .iter()
+                .map(|(x, w)| Ok((sym(x)?, *w)))
                 .collect::<anyhow::Result<_>>()?,
         });
     }

@@ -1314,3 +1314,83 @@ fn corrupt_stages_are_refused() {
         }
     }
 }
+
+/// Exactly one edit, as the stored relation and as a weight-pushed stage: the
+/// call arc carries the least edit cost, the cells what is left, and a
+/// transposition its row's least cost when it starts.
+#[test]
+fn a_pushed_stage_suggests_what_the_stored_edits_suggest() {
+    let mut stored = stored_edits();
+    let mut states: Vec<SourceState> = stored.states().to_vec();
+    states[0].final_weight = None;
+    stored = SourceModel::new(stage_symbols(false), states).expect("valid");
+
+    let table = edit_table();
+    let swap_min = 4.0f32;
+    let m = table
+        .sub
+        .iter()
+        .map(|c| c.2)
+        .chain(table.del.iter().map(|c| c.1))
+        .chain(table.ins.iter().map(|c| c.1))
+        .chain(std::iter::once(swap_min))
+        .fold(f32::INFINITY, f32::min);
+    let pushed = TableSpec {
+        target: 1,
+        sub: table.sub.iter().map(|&(x, y, w)| (x, y, w - m)).collect(),
+        del: table.del.iter().map(|&(x, w)| (x, w - m)).collect(),
+        ins: table.ins.iter().map(|&(x, w)| (x, w - m)).collect(),
+        swap: table
+            .swap
+            .iter()
+            .map(|&(x, y, w)| (x, y, w - swap_min))
+            .collect(),
+        swap_entry: vec![(2, swap_min - m), (4, swap_min - m)],
+    };
+    let (mut model, mut stages) = staged_edits();
+    let mut states: Vec<SourceState> = model.states().to_vec();
+    states[0].arcs[0].weight = m;
+    model = SourceModel::new(stage_symbols(true), states).expect("valid");
+    stages.stages[0].table.contexts[0].final_weight = None;
+    stages.stages[0].table.tables = vec![pushed];
+
+    let options = WriteOptions {
+        threads: 1,
+        ..WriteOptions::default()
+    };
+    let a_bytes = write(&stored, &options).expect("writes").bytes;
+    let b_bytes = write(
+        &model,
+        &WriteOptions {
+            stages: Some(stages),
+            ..options
+        },
+    )
+    .expect("writes and checks")
+    .bytes;
+    let lexicon = || MmapThfstTransducer::from_path(&Fs, fixture("lexicon.thfst")).expect("loads");
+    let a = HfstSpeller::new(
+        DhfstTransducer::from_bytes(&a_bytes, "a").expect("loads"),
+        lexicon(),
+    );
+    let b = HfstSpeller::new(
+        DhfstTransducer::from_bytes(&b_bytes, "b").expect("loads"),
+        lexicon(),
+    );
+    let mut compared = 0;
+    for subsets in [true, false] {
+        let mut config = SpellerConfig::default();
+        config.n_best = None;
+        config.mutator_subsets = subsets;
+        config.verbose = true;
+        for word in [
+            "cat", "cet", "cta", "acr", "ca", "catt", "car", "cra", "caer", "crae", "tac", "re",
+        ] {
+            let want = rows(a.clone().suggest_with_config(word, &config));
+            let got = rows(b.clone().suggest_with_config(word, &config));
+            assert_eq!(got, want, "word {word}, subsets {subsets}");
+            compared += want.len();
+        }
+    }
+    assert!(compared > 10, "too few suggestions to compare");
+}

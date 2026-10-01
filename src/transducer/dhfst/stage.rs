@@ -25,8 +25,17 @@
 //! * substitution `x:y` at `sub(x, y)`,
 //! * deletion `x:ε` at `del(x)`,
 //! * insertion `ε:y` at `ins(y)`,
-//! * transposition `x y → y x` at `swap(x, y)`, walked as `x:ε`, then `y:y`
-//!   charged `swap(x, y)`, then `ε:x`, through two pending substates per `x`.
+//! * transposition `x y → y x`, walked as `x:ε` charged `swap_entry(x)`
+//!   (0 without an entry vector), then `y:y` charged `swap(x, y)`, then `ε:x`,
+//!   through two pending substates per `x`.
+//!
+//! Where a stage is charged matters even though the total does not: the
+//! search adds weights in `f32` as it goes, interleaved with the lexicon's.
+//! A stage written from a weight-pushed model is pushed too — the call arc
+//! carries the least cost of getting through the stage, the edits carry what
+//! is left, and a transposition charges its row's least cost when it starts
+//! — so that every partial sum equals the stored model's and the totals
+//! agree to the bit.
 //!
 //! A matrix cell is its exception if one is listed, else — inside the
 //! matrix's row and column sets — its column's weight if the column has one,
@@ -60,7 +69,8 @@
 //! u64 sets[n_sets * words]            words = ceil(n_alphabet / 64)
 //! { f32 final; u32 first_ident; u32 n_idents; u32 table }[n_contexts]
 //! { u32 set; u32 target_context }[n_idents]
-//! { u32 target_context; u32 sub; u32 del; u32 ins; u32 swap; u32 0 }[n_tables]
+//! { u32 target_context; u32 sub; u32 del; u32 ins; u32 swap;
+//!   u32 swap_entry }[n_tables]
 //! { u32 row_set; u32 column_set; f32 default; u32 first_column_weight;
 //!   u32 n_column_weights; u32 first_cell; u32 n_cells; u32 0 }[n_matrices]
 //! { u32 set; f32 default; u32 first_cell; u32 n_cells }[n_vectors]
@@ -114,6 +124,8 @@ pub(crate) struct Table {
     pub(crate) del: Option<u32>,
     pub(crate) ins: Option<u32>,
     pub(crate) swap: Option<u32>,
+    /// What starting a transposition of `x` costs, by `x`; none for 0.
+    pub(crate) swap_entry: Option<u32>,
     /// Substate of the first transposition-pending state: `x` pending after
     /// `x:ε` is `swap_base + 2x`, and after copying the middle symbol it is
     /// `swap_base + 2x + 1`.
@@ -523,6 +535,7 @@ impl EditStage {
                 del: opt(u32_at(b, r + 8), n_vectors, "deletion")?,
                 ins: opt(u32_at(b, r + 12), n_vectors, "insertion")?,
                 swap,
+                swap_entry: opt(u32_at(b, r + 20), n_vectors, "transposition entry")?,
                 swap_base: swap_base as u32,
             });
             if swap.is_some() {
@@ -723,11 +736,16 @@ impl EditStage {
         if let Some(swap) = table.swap
             && self.matrix_row_live(swap, input)
         {
-            visit(ArcGroup::One {
-                output: SymbolNumber::ZERO,
-                target: self.virtual_state(ret, table.swap_base + 2 * input as u32),
-                weight: Weight::ZERO,
-            });
+            let w = table
+                .swap_entry
+                .map_or(0.0, |v| self.vector_weight(v, input));
+            if w.is_finite() {
+                visit(ArcGroup::One {
+                    output: SymbolNumber::ZERO,
+                    target: self.virtual_state(ret, table.swap_base + 2 * input as u32),
+                    weight: Weight(w),
+                });
+            }
         }
     }
 
