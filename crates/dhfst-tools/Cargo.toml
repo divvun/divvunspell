@@ -15,4 +15,3 @@ box-format = { workspace = true, features = ["writer"] }
 clap.workspace = true
 tempfile.workspace = true
 zip = { workspace = true, features = ["deflate"] }
-sha2 = "0.10"

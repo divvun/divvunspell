@@ -1,13 +1,13 @@
 //! Write, check and package error models in the compact DHFST format.
 
-use std::io::{Read as _, Write as _};
+use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use anyhow::{Context as _, bail};
+use anyhow::Context as _;
 use box_format::{BoxPath, Compression, CompressionConfig, HashMap as BoxHashMap, sync::BoxWriter};
 use clap::Parser;
-use divvun_fst::archive::meta::{SpellerMetadata, SpellerMetadataVariant};
+use divvun_fst::archive::meta::SpellerMetadata;
 use divvun_fst::archive::{DHFST_FORMAT, boxf::DHFST_ERRMODEL_MEMBER};
 use divvun_fst::transducer::dhfst::{
     self, DefaultKind, DhfstTransducer,
@@ -16,9 +16,7 @@ use divvun_fst::transducer::dhfst::{
 use divvun_fst::transducer::hfst::HfstTransducer;
 use divvun_fst::transducer::{TransducerFormat, TransducerLoader, convert::ConvertFile, thfst};
 use divvun_fst::vfs::Fs;
-use sha2::{Digest, Sha256};
-use zip::write::SimpleFileOptions;
-use zip::{CompressionMethod, ZipArchive, ZipWriter};
+use zip::ZipArchive;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -61,28 +59,6 @@ enum Opts {
     Info {
         /// the DHFST file
         path: PathBuf,
-    },
-
-    /// Add a DHFST error model to a ZHFST archive
-    ///
-    /// By default the member is declared as a `<variant>` of `<errmodel>` in
-    /// index.xml and the archive's own error model stays, so readers that do
-    /// not know the format read it as before. With `--primary`, `<errmodel
-    /// id>` names the DHFST member and the old member is dropped: an archive
-    /// only readers of the format can use.
-    Zhfst {
-        /// the ZHFST archive to start from
-        archive: PathBuf,
-        /// the DHFST error model
-        dhfst: PathBuf,
-        /// the ZHFST archive to write
-        output: PathBuf,
-        /// name of the new member
-        #[arg(long, default_value = "errmodel.default.dhfst")]
-        member: String,
-        /// make the DHFST member the archive's error model and drop the old one
-        #[arg(long)]
-        primary: bool,
     },
 
     /// Build a BHFST archive from a ZHFST archive's acceptor and a DHFST
@@ -345,150 +321,6 @@ fn cmd_info(path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
-}
-
-/// Rewrite `index.xml` text so that `<errmodel>` declares `variant`, keeping
-/// every other byte.
-fn add_variant_line(xml: &str, variant: &SpellerMetadataVariant) -> anyhow::Result<String> {
-    // An earlier declaration of the same member goes.
-    let needle = format!("id=\"{}\"", variant.id);
-    let xml: String = xml
-        .split_inclusive('\n')
-        .filter(|line| !(line.contains("<variant") && line.contains(&needle)))
-        .collect();
-    let close = xml
-        .rfind("</errmodel>")
-        .context("index.xml has no </errmodel>")?;
-    let sha = variant
-        .sha256
-        .as_ref()
-        .map(|s| format!(" sha256=\"{s}\""))
-        .unwrap_or_default();
-    let element = format!(
-        "<variant format=\"{}\" version=\"{}\" id=\"{}\"{sha}/>",
-        variant.format, variant.version, variant.id
-    );
-    let line_start = xml[..close].rfind('\n').map_or(0, |i| i + 1);
-    let before_close = &xml[line_start..close];
-    Ok(if before_close.trim().is_empty() {
-        // `</errmodel>` has a line of its own: the variant gets one above it.
-        format!(
-            "{}{before_close}    {element}\n{}",
-            &xml[..line_start],
-            &xml[line_start..]
-        )
-    } else {
-        format!("{}{element}{}", &xml[..close], &xml[close..])
-    })
-}
-
-/// Rewrite `index.xml` text so that `<errmodel id>` names `member`.
-fn set_errmodel_id(xml: &str, member: &str) -> anyhow::Result<String> {
-    let open = xml
-        .find("<errmodel")
-        .context("index.xml has no <errmodel>")?;
-    let tag_end = open + xml[open..].find('>').context("unterminated <errmodel>")?;
-    let id_at = open
-        + xml[open..tag_end]
-            .find("id=\"")
-            .context("<errmodel> has no id")?
-        + 4;
-    let id_end = id_at + xml[id_at..].find('"').context("unterminated id")?;
-    Ok(format!("{}{}{}", &xml[..id_at], member, &xml[id_end..]))
-}
-
-fn cmd_zhfst(
-    archive_path: &Path,
-    dhfst_path: &Path,
-    output: &Path,
-    member: &str,
-    primary: bool,
-) -> anyhow::Result<()> {
-    let bytes = std::fs::read(dhfst_path)
-        .with_context(|| format!("failed to read '{}'", dhfst_path.display()))?;
-    DhfstTransducer::from_bytes(&bytes, dhfst_path)
-        .with_context(|| format!("'{}' is not a DHFST error model", dhfst_path.display()))?;
-
-    let mut archive = ZipArchive::new(std::fs::File::open(archive_path)?)
-        .with_context(|| format!("failed to read '{}'", archive_path.display()))?;
-    let mut xml = String::new();
-    archive
-        .by_name("index.xml")
-        .context("the archive has no index.xml")?
-        .read_to_string(&mut xml)?;
-    let metadata = SpellerMetadata::from_bytes(xml.as_bytes())
-        .map_err(|e| anyhow::anyhow!("index.xml does not parse: {e}"))?;
-    let old_errmodel = metadata.errmodel().id().to_string();
-
-    let new_xml = if primary {
-        set_errmodel_id(&xml, member)?
-    } else {
-        add_variant_line(
-            &xml,
-            &SpellerMetadataVariant {
-                format: DHFST_FORMAT.into(),
-                version: dhfst::VERSION.to_string(),
-                id: member.to_string(),
-                sha256: Some(sha256_hex(&bytes)),
-            },
-        )?
-    };
-    let check = SpellerMetadata::from_bytes(new_xml.as_bytes())
-        .map_err(|e| anyhow::anyhow!("rewritten index.xml does not parse: {e}"))?;
-    if primary {
-        if check.errmodel().id() != member {
-            bail!("rewritten index.xml does not name {member}");
-        }
-    } else if !check.errmodel().variants().iter().any(|v| v.id == member) {
-        bail!("rewritten index.xml does not declare {member}");
-    }
-
-    let mut writer = ZipWriter::new(std::fs::File::create(output)?);
-    for i in 0..archive.len() {
-        let name = archive.by_index_raw(i)?.name().to_string();
-        if name == member || name == "index.xml" || (primary && name == old_errmodel) {
-            continue;
-        }
-        let file = archive.by_index_raw(i)?;
-        writer.raw_copy_file(file)?;
-    }
-    writer.start_file(
-        "index.xml",
-        SimpleFileOptions::default().compression_method(CompressionMethod::Deflated),
-    )?;
-    writer.write_all(new_xml.as_bytes())?;
-    // Stored and aligned, so a reader maps it in place instead of inflating
-    // it to a temporary file.
-    writer.start_file(
-        member,
-        SimpleFileOptions::default()
-            .compression_method(CompressionMethod::Stored)
-            .with_alignment(8),
-    )?;
-    writer.write_all(&bytes)?;
-    writer.finish()?;
-
-    let mut written = ZipArchive::new(std::fs::File::open(output)?)?;
-    let start = written.by_name(member)?.data_start();
-    println!(
-        "wrote {}: {} bytes; member {member} stored at offset {start} ({} bytes){}",
-        output.display(),
-        std::fs::metadata(output)?.len(),
-        bytes.len(),
-        if primary {
-            format!("; <errmodel id> names it and {old_errmodel} was dropped")
-        } else {
-            format!("; declared as a <variant> of {old_errmodel}")
-        }
-    );
-    Ok(())
-}
-
 fn cmd_bhfst(archive_path: &Path, dhfst_path: &Path, output: &Path) -> anyhow::Result<()> {
     let bytes = std::fs::read(dhfst_path)
         .with_context(|| format!("failed to read '{}'", dhfst_path.display()))?;
@@ -533,7 +365,6 @@ fn cmd_bhfst(archive_path: &Path, dhfst_path: &Path, output: &Path) -> anyhow::R
         .acceptor_mut()
         .set_id("acceptor.default.thfst".into());
     metadata.errmodel_mut().set_id(DHFST_ERRMODEL_MEMBER.into());
-    metadata.errmodel_mut().set_variants(Vec::new());
     metadata
         .errmodel_mut()
         .set_format(Some(DHFST_FORMAT.into()), Some(dhfst::VERSION.to_string()));
@@ -599,13 +430,6 @@ fn run() -> anyhow::Result<()> {
             threads,
         } => cmd_check(&source, &dhfst, threads),
         Opts::Info { path } => cmd_info(&path),
-        Opts::Zhfst {
-            archive,
-            dhfst,
-            output,
-            member,
-            primary,
-        } => cmd_zhfst(&archive, &dhfst, &output, &member, primary),
         Opts::Bhfst {
             archive,
             dhfst,
