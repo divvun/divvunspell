@@ -602,6 +602,7 @@ dependencies = [
  "box-format",
  "clap",
  "divvun-fst",
+ "serde",
  "serde_json",
  "tempfile",
  "zip",

@@ -4,17 +4,22 @@ use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use anyhow::Context as _;
+use anyhow::{Context as _, bail};
 use box_format::{BoxPath, Compression, CompressionConfig, HashMap as BoxHashMap, sync::BoxWriter};
 use clap::Parser;
 use divvun_fst::archive::meta::SpellerMetadata;
 use divvun_fst::archive::{DHFST_FORMAT, boxf::DHFST_ERRMODEL_MEMBER};
+use divvun_fst::transducer::Transducer;
 use divvun_fst::transducer::dhfst::{
     self, DefaultKind, DhfstTransducer,
-    writer::{SourceModel, WriteOptions, verify_reader, write},
+    writer::{
+        ContextSpec, EditStageSpec, SourceArc, SourceModel, SourceState, StageSpec, StagesSpec,
+        TableSpec, WriteOptions, verify_reader, write,
+    },
 };
 use divvun_fst::transducer::hfst::HfstTransducer;
 use divvun_fst::transducer::{TransducerFormat, TransducerLoader, convert::ConvertFile, thfst};
+use divvun_fst::types::{SymbolNumber, TransitionTableIndex};
 use divvun_fst::vfs::Fs;
 use zip::ZipArchive;
 
@@ -59,6 +64,40 @@ enum Opts {
     Info {
         /// the DHFST file
         path: PathBuf,
+    },
+
+    /// Write a staged DHFST file (version 2): a stored model whose call arcs
+    /// call an edit-table stage
+    ///
+    /// The stored model is the error model rebuilt with the table-shaped
+    /// component replaced by one arc "<DHFST_CALL_IN>":"<DHFST_CALL_OUT>".
+    /// Other arcs on those symbols (identities hfst's harmonisation adds to
+    /// `?` loops) are dropped. The file keeps the reference model's symbol
+    /// numbering, with the call symbols after it.
+    Stage {
+        /// the stored model, HFST optimized lookup
+        stored: PathBuf,
+        /// the edit table, as JSON from derive_table.py
+        table: PathBuf,
+        /// the original error model, HFST optimized lookup
+        reference: PathBuf,
+        /// the DHFST file to write
+        output: PathBuf,
+        /// longest fallback chain to allow
+        #[arg(long, default_value_t = 4)]
+        max_depth: u32,
+        /// worker threads (0: all cores)
+        #[arg(long, default_value_t = 0)]
+        threads: usize,
+    },
+
+    /// Write every reachable state and arc of an error model, as the search
+    /// reads it (stages included), as AT&T text
+    Dump {
+        /// HFST optimized lookup or DHFST
+        input: PathBuf,
+        /// the AT&T text file to write
+        output: PathBuf,
     },
 
     /// Build a BHFST archive from a ZHFST archive's acceptor and a DHFST
@@ -325,8 +364,9 @@ fn cmd_info(path: &Path) -> anyhow::Result<()> {
 fn cmd_bhfst(archive_path: &Path, dhfst_path: &Path, output: &Path) -> anyhow::Result<()> {
     let bytes = std::fs::read(dhfst_path)
         .with_context(|| format!("failed to read '{}'", dhfst_path.display()))?;
-    DhfstTransducer::from_bytes(&bytes, dhfst_path)
-        .with_context(|| format!("'{}' is not a DHFST error model", dhfst_path.display()))?;
+    let version = DhfstTransducer::from_bytes(&bytes, dhfst_path)
+        .with_context(|| format!("'{}' is not a DHFST error model", dhfst_path.display()))?
+        .version();
 
     let mut archive = ZipArchive::new(std::fs::File::open(archive_path)?)
         .with_context(|| format!("failed to read '{}'", archive_path.display()))?;
@@ -368,7 +408,7 @@ fn cmd_bhfst(archive_path: &Path, dhfst_path: &Path, output: &Path) -> anyhow::R
     metadata.errmodel_mut().set_id(DHFST_ERRMODEL_MEMBER.into());
     metadata
         .errmodel_mut()
-        .set_format(Some(DHFST_FORMAT.into()), Some(dhfst::VERSION.to_string()));
+        .set_format(Some(DHFST_FORMAT.into()), Some(version.to_string()));
     let mut meta = serde_json::to_value(&metadata)?;
     if let (Some(config), Some(object)) = (config, meta.as_object_mut()) {
         object.insert(divvun_fst::archive::BUNDLED_CONFIG_KEY.into(), config);
@@ -411,6 +451,311 @@ fn cmd_bhfst(archive_path: &Path, dhfst_path: &Path, output: &Path) -> anyhow::R
     Ok(())
 }
 
+/// Name of the placeholder arc's input symbol in the stored model.
+const CALL_IN: &str = "<DHFST_CALL_IN>";
+/// Name of the placeholder arc's output symbol in the stored model.
+const CALL_OUT: &str = "<DHFST_CALL_OUT>";
+
+#[derive(serde::Deserialize)]
+struct TableJson {
+    symbols: Vec<String>,
+    start: u32,
+    contexts: Vec<ContextJson>,
+    tables: Vec<EditTableJson>,
+}
+
+#[derive(serde::Deserialize)]
+struct ContextJson {
+    #[serde(rename = "final")]
+    final_weight: Option<f32>,
+    ident: Vec<(Vec<String>, u32)>,
+    table: Option<u32>,
+}
+
+#[derive(serde::Deserialize)]
+struct EditTableJson {
+    target: u32,
+    sub: Vec<(String, String, f32)>,
+    del: Vec<(String, f32)>,
+    ins: Vec<(String, f32)>,
+    swap: Vec<(String, String, f32)>,
+}
+
+fn cmd_stage(
+    stored: &Path,
+    table: &Path,
+    reference: &Path,
+    output: &Path,
+    max_depth: u32,
+    threads: usize,
+) -> anyhow::Result<()> {
+    let started = Instant::now();
+    let stored_t = HfstTransducer::from_path(&Fs, stored)
+        .with_context(|| format!("failed to load '{}'", stored.display()))?;
+    let stored_names = hfst_symbol_names(&stored_t)?;
+    let source = SourceModel::from_transducer(&stored_t, stored_names.clone())?;
+    let reference_t = HfstTransducer::from_path(&Fs, reference)
+        .with_context(|| format!("failed to load '{}'", reference.display()))?;
+    let mut symbols = hfst_symbol_names(&reference_t)?;
+    let n_alphabet = symbols.len() as u16;
+    symbols.push("@DHFST_CALL_1_IN@".into());
+    symbols.push("@DHFST_CALL_1_OUT@".into());
+    let index_of = |name: &str| {
+        symbols[..n_alphabet as usize]
+            .iter()
+            .position(|s| s == name)
+    };
+
+    let call_in = stored_names.iter().position(|s| s == CALL_IN);
+    let call_out = stored_names.iter().position(|s| s == CALL_OUT);
+    let mut map: Vec<Option<u16>> = Vec::with_capacity(stored_names.len());
+    let mut missing: Vec<&str> = Vec::new();
+    for (i, name) in stored_names.iter().enumerate() {
+        if Some(i) == call_in {
+            map.push(Some(n_alphabet));
+        } else if Some(i) == call_out {
+            map.push(Some(n_alphabet + 1));
+        } else {
+            match index_of(name) {
+                Some(at) => map.push(Some(at as u16)),
+                None => {
+                    missing.push(name);
+                    map.push(None);
+                }
+            }
+        }
+    }
+    if !missing.is_empty() {
+        bail!("symbols of the stored model missing from the reference: {missing:?}");
+    }
+    let unused = symbols[..n_alphabet as usize]
+        .iter()
+        .filter(|s| !stored_names.contains(s))
+        .count();
+
+    let (mut calls, mut dropped) = (0u64, 0u64);
+    let mut states: Vec<SourceState> = Vec::new();
+    for state in source.states() {
+        let mut arcs = Vec::with_capacity(state.arcs.len());
+        for arc in &state.arcs {
+            let (Some(i), Some(o)) = (map[arc.input as usize], map[arc.output as usize]) else {
+                bail!("an arc names a symbol with no place in the reference");
+            };
+            let is_call = |s: u16| s >= n_alphabet;
+            if is_call(i) || is_call(o) {
+                if (i, o) == (n_alphabet, n_alphabet + 1) {
+                    calls += 1;
+                } else {
+                    dropped += 1;
+                    continue;
+                }
+            }
+            arcs.push(SourceArc {
+                input: i,
+                output: o,
+                target: arc.target,
+                weight: arc.weight,
+            });
+        }
+        states.push(SourceState {
+            final_weight: state.final_weight,
+            arcs,
+        });
+    }
+    let model = SourceModel::new(symbols.clone(), states)?;
+
+    let spec: TableJson = serde_json::from_reader(std::fs::File::open(table)?)
+        .with_context(|| format!("failed to read '{}'", table.display()))?;
+    let sym = |name: &str| -> anyhow::Result<u16> {
+        index_of(name)
+            .map(|i| i as u16)
+            .with_context(|| format!("table symbol {name:?} is not in the reference alphabet"))
+    };
+    let mut contexts = Vec::new();
+    for c in &spec.contexts {
+        let mut ident = Vec::new();
+        for (names, target) in &c.ident {
+            ident.push((
+                names
+                    .iter()
+                    .map(|n| sym(n))
+                    .collect::<anyhow::Result<Vec<u16>>>()?,
+                *target,
+            ));
+        }
+        contexts.push(ContextSpec {
+            final_weight: c.final_weight,
+            ident,
+            table: c.table,
+        });
+    }
+    let mut tables = Vec::new();
+    for t in &spec.tables {
+        tables.push(TableSpec {
+            target: t.target,
+            sub: t
+                .sub
+                .iter()
+                .map(|(x, y, w)| Ok((sym(x)?, sym(y)?, *w)))
+                .collect::<anyhow::Result<_>>()?,
+            del: t
+                .del
+                .iter()
+                .map(|(x, w)| Ok((sym(x)?, *w)))
+                .collect::<anyhow::Result<_>>()?,
+            ins: t
+                .ins
+                .iter()
+                .map(|(x, w)| Ok((sym(x)?, *w)))
+                .collect::<anyhow::Result<_>>()?,
+            swap: t
+                .swap
+                .iter()
+                .map(|(x, y, w)| Ok((sym(x)?, sym(y)?, *w)))
+                .collect::<anyhow::Result<_>>()?,
+        });
+    }
+    let _ = &spec.symbols;
+    let stages = StagesSpec {
+        n_alphabet: n_alphabet as u32,
+        stages: vec![StageSpec {
+            call_input: n_alphabet,
+            call_output: n_alphabet + 1,
+            table: EditStageSpec {
+                contexts,
+                start: spec.start,
+                tables,
+            },
+        }],
+    };
+    let written = write(
+        &model,
+        &WriteOptions {
+            max_fallback_depth: Some(max_depth),
+            threads,
+            source_name: stored
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            stages: Some(stages),
+        },
+    )?;
+    std::fs::write(output, &written.bytes)?;
+    let r = &written.report;
+    println!(
+        "stored model: {} states, {} arcs; {} call arcs; {} harmonisation arcs on call symbols dropped; {} reference symbols unused by it",
+        model.states().len(),
+        model.arc_count(),
+        calls,
+        dropped,
+        unused
+    );
+    println!(
+        "checked: {} (state, pair) resolutions, {} stored (state, input) queries, {} stage (state, input) queries against the table",
+        r.pairs_checked, r.queries_checked, r.stage_queries_checked
+    );
+    println!(
+        "wrote {}: {} bytes ({}), of which STAG {} bytes ({:.1} s)",
+        output.display(),
+        written.bytes.len(),
+        human(written.bytes.len() as u64),
+        r.stage_bytes,
+        started.elapsed().as_secs_f64()
+    );
+    Ok(())
+}
+
+/// Symbol name as AT&T text needs it.
+fn att_name(name: &str) -> String {
+    match name {
+        "" | "@_EPSILON_SYMBOL_@" => "@0@".into(),
+        " " => "@_SPACE_@".into(),
+        "\t" => "@_TAB_@".into(),
+        "\u{a0}" => "<U+00A0>".into(),
+        "\u{202f}" => "<U+202F>".into(),
+        other => other.into(),
+    }
+}
+
+fn dump<T: Transducer>(
+    t: &T,
+    names: &[String],
+    n_inputs: usize,
+    output: &Path,
+) -> anyhow::Result<(usize, u64)> {
+    use std::collections::HashMap;
+    use std::io::Write as _;
+    let mut ids: HashMap<u32, u32> = HashMap::new();
+    let mut order: Vec<u32> = vec![0];
+    ids.insert(0, 0);
+    let mut out = std::io::BufWriter::new(std::fs::File::create(output)?);
+    let mut finals: Vec<(u32, f32)> = Vec::new();
+    let mut arcs = 0u64;
+    let mut cursor = 0;
+    while cursor < order.len() {
+        let state = order[cursor];
+        let id = cursor as u32;
+        cursor += 1;
+        let mut lines: Vec<(u32, u16, u16, u32)> = Vec::new();
+        for input in 0..n_inputs as u16 {
+            t.for_each_arc(
+                TransitionTableIndex(state),
+                SymbolNumber(input),
+                |o, target, w| {
+                    let next = order.len() as u32;
+                    let tid = *ids.entry(target.0).or_insert_with(|| {
+                        order.push(target.0);
+                        next
+                    });
+                    lines.push((tid, input, o.0, w.0.to_bits()));
+                },
+            );
+        }
+        for (tid, i, o, w) in lines {
+            writeln!(
+                out,
+                "{id}\t{tid}\t{}\t{}\t{}",
+                att_name(&names[i as usize]),
+                att_name(&names[o as usize]),
+                f32::from_bits(w)
+            )?;
+            arcs += 1;
+        }
+        let at = TransitionTableIndex(state);
+        if t.is_final(at)
+            && let Some(w) = t.final_weight(at)
+        {
+            finals.push((id, w.0));
+        }
+    }
+    for (id, w) in finals {
+        writeln!(out, "{id}\t{w}")?;
+    }
+    Ok((order.len(), arcs))
+}
+
+fn cmd_dump(input: &Path, output: &Path) -> anyhow::Result<()> {
+    let mut header = [0u8; 8];
+    let filled = std::fs::File::open(input)?.read(&mut header)?;
+    let (states, arcs) = match TransducerFormat::detect(&header[..filled], input)? {
+        TransducerFormat::Hfst => {
+            let t = HfstTransducer::from_path(&Fs, input)?;
+            let names = hfst_symbol_names(&t)?;
+            dump(&t, &names, names.len(), output)?
+        }
+        TransducerFormat::Dhfst { .. } => {
+            let t = DhfstTransducer::from_path(&Fs, input)?;
+            let names = t.symbol_names().to_vec();
+            dump(&t, &names, t.alphabet_len() as usize, output)?
+        }
+    };
+    println!(
+        "{}: {states} states, {arcs} arcs as the search reads them",
+        output.display()
+    );
+    Ok(())
+}
+
 fn run() -> anyhow::Result<()> {
     match Opts::parse() {
         Opts::Write {
@@ -436,6 +781,15 @@ fn run() -> anyhow::Result<()> {
             dhfst,
             output,
         } => cmd_bhfst(&archive, &dhfst, &output),
+        Opts::Stage {
+            stored,
+            table,
+            reference,
+            output,
+            max_depth,
+            threads,
+        } => cmd_stage(&stored, &table, &reference, &output, max_depth, threads),
+        Opts::Dump { input, output } => cmd_dump(&input, &output),
     }
 }
 
