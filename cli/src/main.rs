@@ -10,8 +10,8 @@ use std::{
 use anyhow::Context as _;
 use clap::{Parser, Subcommand};
 use divvun_fst::speller::HfstSpeller;
+use divvun_fst::transducer::TransducerLoader;
 use divvun_fst::transducer::hfst::HfstTransducer;
-use divvun_fst::transducer::{ErrorModel, TransducerLoader};
 use divvun_fst::types::Weight;
 use divvun_fst::vfs::Fs;
 use serde::Serialize;
@@ -334,13 +334,13 @@ struct SuggestArgs {
     #[arg(long)]
     lexicon_path: Option<PathBuf>,
 
-    /// Read the archive's error model from this file instead (HFST optimized
-    /// lookup or DHFST; the file's header says which)
+    /// Read a BHFST archive's error model from this file instead (HFST
+    /// optimized lookup or DHFST; the file's header says which). BHFST only
     #[arg(long = "errmodel")]
     errmodel_path: Option<PathBuf>,
 
-    /// Read the error model the archive names as its own, ignoring any
-    /// variant in another format it also carries
+    /// Read a BHFST archive's THFST error model even when its meta.json
+    /// declares a DHFST one. BHFST only
     #[arg(long)]
     primary_errmodel: bool,
 
@@ -432,7 +432,13 @@ fn load_archive(
             let archive: ThfstBoxSpellerArchive = BoxSpellerArchive::open_with(path, options)?;
             Ok(Box::new(archive))
         }
-        Some(ext) if ext == "zhfst" => Ok(Box::new(ZipSpellerArchive::open_with(path, options)?)),
+        Some(ext) if ext == "zhfst" => match options.first_set() {
+            Some(option) => Err(SpellerArchiveError::ErrmodelOptionUnsupported {
+                path: path.to_path_buf(),
+                option,
+            }),
+            None => Ok(Box::new(ZipSpellerArchive::open(path)?)),
+        },
         ext => Err(SpellerArchiveError::UnsupportedExt {
             path: path.to_path_buf(),
             ext: ext.map(|x| x.to_owned()).unwrap_or_default(),
@@ -473,16 +479,13 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
                 lexicon_path.display()
             )
         })?;
-        let errmodel = ErrorModel::from_path(&Fs, &mutator_path).with_context(|| {
+        let errmodel = HfstTransducer::from_path(&Fs, &mutator_path).with_context(|| {
             format!(
                 "failed to load mutator transducer '{}'",
                 mutator_path.display()
             )
         })?;
-        match errmodel {
-            ErrorModel::Hfst(errmodel) => HfstSpeller::new(errmodel, acceptor) as _,
-            ErrorModel::Dhfst(errmodel) => HfstSpeller::new(errmodel, acceptor) as _,
-        }
+        HfstSpeller::new(errmodel, acceptor) as _
     } else {
         anyhow::bail!(
             "either a BHFST or ZHFST archive must be provided via --archive, or both --lexicon and --mutator"

@@ -6,7 +6,7 @@ use box_format::sync::BoxReader as BoxFileReader;
 use super::error::SpellerArchiveError;
 use super::{
     DHFST_FORMAT, ErrmodelSource, OpenOptions, SpellerArchive, meta::SpellerMetadata,
-    readable_variant,
+    readable_dhfst_version,
 };
 use crate::speller::{HfstSpeller, Speller, SpellerConfig};
 use crate::transducer::{
@@ -183,7 +183,7 @@ where
             .filter(|e| {
                 !options.primary_errmodel_only
                     && e.format() == Some(DHFST_FORMAT)
-                    && readable_variant(DHFST_FORMAT, e.format_version().unwrap_or("1"))
+                    && readable_dhfst_version(e.format_version().unwrap_or("1"))
             })
             .map(|e| {
                 if e.id().is_empty() {

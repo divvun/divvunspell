@@ -177,9 +177,10 @@ impl TransducerFormat {
     }
 }
 
-/// An error model in either of the formats an archive can carry it in.
+/// An error model in either of the formats a BHFST archive, or a file given
+/// in its place, can hold it in.
 ///
-/// Loading goes by the file's header rather than its name, so a member that
+/// Loading goes by the file's header rather than its name, so a file that
 /// holds the compact format can never be read as optimized lookup, or the
 /// other way round.
 pub enum ErrorModel {

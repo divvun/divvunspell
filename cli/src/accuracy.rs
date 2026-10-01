@@ -473,13 +473,13 @@ pub struct AccuracyArgs {
     #[arg(short = 'v', long)]
     verbose: bool,
 
-    /// Read the archive's error model from this file instead (HFST optimized
-    /// lookup or DHFST; the file's header says which)
+    /// Read a BHFST archive's error model from this file instead (HFST
+    /// optimized lookup or DHFST; the file's header says which). BHFST only
     #[arg(long = "errmodel")]
     errmodel_path: Option<PathBuf>,
 
-    /// Read the error model the archive names as its own, ignoring any
-    /// variant in another format it also carries
+    /// Read a BHFST archive's THFST error model even when its meta.json
+    /// declares a DHFST one. BHFST only
     #[arg(long)]
     primary_errmodel: bool,
 }

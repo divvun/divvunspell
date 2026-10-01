@@ -9,48 +9,28 @@ use std::sync::Arc;
 use super::error::SpellerArchiveError;
 use super::meta::SpellerMetadata;
 use super::{
-    BUNDLED_CONFIG_MEMBER, ErrmodelSource, MmapRef, OpenOptions, SpellerArchive, TempMmap,
-    parse_bundled_config, readable_variant,
+    BUNDLED_CONFIG_MEMBER, ErrmodelSource, MmapRef, SpellerArchive, TempMmap, parse_bundled_config,
 };
 use crate::speller::{HfstSpeller, Speller, SpellerConfig};
-use crate::transducer::ErrorModel;
-use crate::transducer::dhfst::DhfstTransducer;
+use crate::transducer::TransducerFormat;
 use crate::transducer::hfst::HfstTransducer;
-use crate::vfs::Fs;
 
 /// Type alias for HFST-based speller loaded from a zip archive.
 ///
 /// Uses memory-mapped HFST transducers for both the error model and lexicon.
 pub type HfstZipSpeller = HfstSpeller<HfstTransducer, HfstTransducer>;
 
-/// A speller from a zip archive whose error model is in the compact DHFST
-/// format.
-pub type DhfstZipSpeller = HfstSpeller<DhfstTransducer, HfstTransducer>;
-
 /// Speller archive backed by a zip file.
 ///
 /// This is the standard format for distributing spell-checkers (`.zhfst` files).
 /// The archive contains metadata, an error model transducer, and a lexicon transducer.
 ///
-/// The error model is read from the member `<errmodel id>` names, unless the
-/// element also declares a `<variant>` in a format this reader knows (the
-/// compact DHFST format) whose member is present, in which case that member is
-/// read instead. Readers that know nothing of variants read `id` as always.
-/// Either way the member's header, not its name, decides how it is read.
+/// Both transducers are HFST optimized lookup. A member in any other format,
+/// the compact DHFST error-model format included, is refused by its header.
 pub struct ZipSpellerArchive {
     metadata: SpellerMetadata,
-    speller: Arc<dyn Speller + Send + Sync>,
-    hfst_speller: Option<Arc<HfstZipSpeller>>,
-    bundled_config: Option<SpellerConfig>,
+    speller: Arc<HfstZipSpeller>,
     errmodel_source: ErrmodelSource,
-}
-
-/// Where the error model is to be read from.
-enum ErrmodelInput<'a> {
-    /// a file outside the archive
-    External(&'a std::path::Path),
-    /// a member of the archive, mapped
-    Member(MmapRef),
 }
 
 fn mmap_by_name<R: Read + Seek>(
@@ -127,18 +107,15 @@ pub(crate) fn read_bundled_config<R: Read + Seek>(
 impl ZipSpellerArchive {
     /// Get a reference to the HFST speller.
     ///
-    /// Returns the underlying `HfstSpeller` with its concrete transducer types,
-    /// when both transducers are HFST optimized lookup; `None` when the error
-    /// model was read in another format.
-    pub fn hfst_speller(&self) -> Option<Arc<HfstSpeller<HfstTransducer, HfstTransducer>>> {
-        self.hfst_speller.clone()
+    /// Returns the underlying `HfstSpeller` with its concrete transducer types.
+    /// This is useful when you need access to HFST-specific functionality.
+    pub fn hfst_speller(&self) -> Arc<HfstSpeller<HfstTransducer, HfstTransducer>> {
+        self.speller.clone()
     }
+}
 
-    /// Open an archive, with the error model chosen by `options`.
-    pub fn open_with(
-        file_path: &std::path::Path,
-        options: &OpenOptions,
-    ) -> Result<ZipSpellerArchive, SpellerArchiveError> {
+impl SpellerArchive for ZipSpellerArchive {
+    fn open(file_path: &std::path::Path) -> Result<ZipSpellerArchive, SpellerArchiveError> {
         let file = File::open(file_path).map_err(|source| SpellerArchiveError::Open {
             path: file_path.to_path_buf(),
             source,
@@ -173,20 +150,7 @@ impl ZipSpellerArchive {
         let bundled_config = read_bundled_config(&mut archive, file_path);
 
         let acceptor_id = metadata.acceptor().id().to_string();
-        let errmodel_member = if options.primary_errmodel_only {
-            metadata.errmodel().id().to_string()
-        } else {
-            let present: std::collections::HashSet<&str> = archive.file_names().collect();
-            metadata
-                .errmodel()
-                .variants()
-                .iter()
-                .find(|v| {
-                    readable_variant(&v.format, &v.version) && present.contains(v.id.as_str())
-                })
-                .map(|v| v.id.clone())
-                .unwrap_or_else(|| metadata.errmodel().id().to_string())
-        };
+        let errmodel_id = metadata.errmodel().id().to_string();
 
         let acceptor_mmap =
             mmap_by_name(&mut file, &mut archive, &acceptor_id).map_err(|source| {
@@ -196,18 +160,14 @@ impl ZipSpellerArchive {
                     source,
                 }
             })?;
-        let errmodel_input = match &options.errmodel_path {
-            Some(path) => ErrmodelInput::External(path),
-            None => ErrmodelInput::Member(
-                mmap_by_name(&mut file, &mut archive, &errmodel_member).map_err(|source| {
-                    SpellerArchiveError::Io {
-                        archive: file_path.to_path_buf(),
-                        member: errmodel_member.clone(),
-                        source,
-                    }
-                })?,
-            ),
-        };
+        let errmodel_mmap =
+            mmap_by_name(&mut file, &mut archive, &errmodel_id).map_err(|source| {
+                SpellerArchiveError::Io {
+                    archive: file_path.to_path_buf(),
+                    member: errmodel_id.clone(),
+                    source,
+                }
+            })?;
         drop(archive);
 
         let acceptor =
@@ -217,61 +177,22 @@ impl ZipSpellerArchive {
                 member: acceptor_id.clone(),
                 source,
             })?;
+        let errmodel =
+            HfstTransducer::from_mapped_memory(errmodel_mmap.map(), file_path.join(&errmodel_id))
+                .map_err(|source| SpellerArchiveError::Transducer {
+                archive: file_path.to_path_buf(),
+                member: errmodel_id.clone(),
+                source,
+            })?;
 
-        let (errmodel, errmodel_source) = match errmodel_input {
-            ErrmodelInput::External(path) => {
-                let errmodel = ErrorModel::from_path(&Fs, path).map_err(|source| {
-                    SpellerArchiveError::Transducer {
-                        archive: file_path.to_path_buf(),
-                        member: path.display().to_string(),
-                        source,
-                    }
-                })?;
-                let source =
-                    ErrmodelSource::new(path.display().to_string(), true, errmodel.format());
-                (errmodel, source)
-            }
-            ErrmodelInput::Member(mmap) => {
-                let errmodel =
-                    ErrorModel::from_mapped_memory(mmap.map(), file_path.join(&errmodel_member))
-                        .map_err(|source| SpellerArchiveError::Transducer {
-                            archive: file_path.to_path_buf(),
-                            member: errmodel_member.clone(),
-                            source,
-                        })?;
-                let source = ErrmodelSource::new(errmodel_member.clone(), false, errmodel.format());
-                (errmodel, source)
-            }
-        };
-
-        let (speller, hfst_speller): (Arc<dyn Speller + Send + Sync>, _) = match errmodel {
-            ErrorModel::Hfst(errmodel) => {
-                let speller = HfstSpeller::new_with_bundled_config(
-                    errmodel,
-                    acceptor,
-                    bundled_config.clone(),
-                );
-                (speller.clone(), Some(speller))
-            }
-            ErrorModel::Dhfst(errmodel) => (
-                HfstSpeller::new_with_bundled_config(errmodel, acceptor, bundled_config.clone()),
-                None,
-            ),
-        };
+        let speller = HfstSpeller::new_with_bundled_config(errmodel, acceptor, bundled_config);
+        let errmodel_source = ErrmodelSource::new(errmodel_id, false, TransducerFormat::Hfst);
 
         Ok(ZipSpellerArchive {
             metadata,
             speller,
-            hfst_speller,
-            bundled_config,
             errmodel_source,
         })
-    }
-}
-
-impl SpellerArchive for ZipSpellerArchive {
-    fn open(file_path: &std::path::Path) -> Result<ZipSpellerArchive, SpellerArchiveError> {
-        ZipSpellerArchive::open_with(file_path, &OpenOptions::default())
     }
 
     fn speller(&self) -> Arc<dyn Speller + Send + Sync> {
@@ -283,7 +204,7 @@ impl SpellerArchive for ZipSpellerArchive {
     }
 
     fn bundled_config(&self) -> Option<&SpellerConfig> {
-        self.bundled_config.as_ref()
+        self.speller.bundled_config()
     }
 
     fn errmodel_source(&self) -> Option<&ErrmodelSource> {
@@ -294,8 +215,6 @@ impl SpellerArchive for ZipSpellerArchive {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::archive::OpenOptions;
-    use crate::archive::error::SpellerArchiveError;
     use ::zip::write::{SimpleFileOptions, ZipWriter};
     use std::io::Cursor;
 
@@ -356,22 +275,23 @@ mod tests {
         assert!(read_config(&[(BUNDLED_CONFIG_MEMBER, r#"{"n-best": "ten"}"#)]).is_none());
     }
 
-    mod dhfst_members {
+    /// A ZHFST archive runs with optimized lookup only: an error model in the
+    /// compact DHFST format is refused, and so are the options that choose a
+    /// BHFST archive's error model.
+    mod dhfst_is_not_zhfst {
         use super::*;
-        use crate::archive::DHFST_FORMAT;
-        use crate::speller::suggestion::Suggestion;
+        use crate::archive::OpenOptions;
+        use crate::archive::error::SpellerArchiveError;
+        use crate::transducer::TransducerError;
         use crate::transducer::dhfst::writer::{SourceModel, WriteOptions, write};
         use crate::transducer::hfst::test_support;
 
-        fn map(bytes: &[u8]) -> Arc<memmap2::Mmap> {
-            let mut map = memmap2::MmapMut::map_anon(bytes.len()).expect("anonymous map");
-            map.copy_from_slice(bytes);
-            Arc::new(map.make_read_only().expect("read-only map"))
-        }
-
         fn dhfst_errmodel() -> Vec<u8> {
-            let ol = HfstTransducer::from_mapped_memory(map(&test_support::errmodel()), "e")
-                .expect("the test error model loads");
+            let mut map =
+                memmap2::MmapMut::map_anon(test_support::errmodel().len()).expect("anonymous map");
+            map.copy_from_slice(&test_support::errmodel());
+            let map = Arc::new(map.make_read_only().expect("read-only map"));
+            let ol = HfstTransducer::from_mapped_memory(map, "errmodel").expect("it loads");
             let names = test_support::SYMBOLS
                 .iter()
                 .map(|s| s.to_string())
@@ -388,46 +308,27 @@ mod tests {
             .bytes
         }
 
-        fn index_xml(errmodel_id: &str, variant: &str) -> String {
-            format!(
-                r#"<?xml version="1.0" encoding="UTF-8"?>
-<hfstspeller dtdversion="1.0" hfstversion="3">
-  <info><locale>se</locale><title>t</title><description>d</description><producer>p</producer></info>
-  <acceptor type="general" id="acceptor.default.hfst"><title>a</title><description>a</description></acceptor>
-  <errmodel id="{errmodel_id}">
-    <title>e</title>
-    <description>e</description>
-    {variant}
-  </errmodel>
-</hfstspeller>"#
-            )
-        }
-
-        fn variant(version: &str, id: &str) -> String {
-            format!(r#"<variant format="{DHFST_FORMAT}" version="{version}" id="{id}"/>"#)
-        }
-
-        /// A ZHFST in `dir` with `index.xml` and the given members, the DHFST
-        /// member stored and aligned so that it is read in place.
         fn zhfst(
             dir: &std::path::Path,
-            xml: &str,
+            errmodel_id: &str,
             members: &[(&str, Vec<u8>)],
         ) -> std::path::PathBuf {
-            let path = dir.join(format!("test-{}.zhfst", members.len()));
+            let path = dir.join("test.zhfst");
             let mut writer = ZipWriter::new(File::create(&path).expect("create zip"));
+            let options =
+                SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            let xml = format!(
+                r#"<hfstspeller>
+  <info><locale>se</locale><title>t</title><description>d</description><producer>p</producer></info>
+  <acceptor type="general" id="acceptor.default.hfst"><title>a</title><description>a</description></acceptor>
+  <errmodel id="{errmodel_id}"><title>e</title><description>e</description></errmodel>
+</hfstspeller>"#
+            );
             writer
-                .start_file("index.xml", SimpleFileOptions::default())
+                .start_file("index.xml", options)
                 .expect("start index.xml");
             writer.write_all(xml.as_bytes()).expect("write index.xml");
             for (name, bytes) in members {
-                let options = if name.ends_with(".dhfst") {
-                    SimpleFileOptions::default()
-                        .compression_method(CompressionMethod::Stored)
-                        .with_alignment(8)
-                } else {
-                    SimpleFileOptions::default().compression_method(CompressionMethod::Stored)
-                };
                 writer.start_file(*name, options).expect("start member");
                 writer.write_all(bytes).expect("write member");
             }
@@ -435,137 +336,56 @@ mod tests {
             path
         }
 
-        fn suggestions(archive: &ZipSpellerArchive) -> Vec<(String, Vec<(String, u32)>)> {
-            let mut config = SpellerConfig::default();
-            config.n_best = None;
-            [
-                "cat", "cet", "kat", "crt", "carte", "ct", "caat", "rac", "cae",
-            ]
-            .iter()
-            .map(|word| {
-                let s: Vec<Suggestion> = archive.speller().suggest_with_config(word, &config);
-                (
-                    word.to_string(),
-                    s.into_iter()
-                        .map(|s| (s.value.to_string(), s.weight.0.to_bits()))
-                        .collect(),
-                )
-            })
-            .collect()
-        }
-
-        fn standard_members() -> Vec<(&'static str, Vec<u8>)> {
-            vec![
-                ("acceptor.default.hfst", test_support::lexicon()),
-                ("errmodel.default.hfst", test_support::errmodel()),
-                ("errmodel.default.dhfst", dhfst_errmodel()),
-            ]
-        }
-
         #[test]
-        fn a_readable_variant_is_read_instead_of_the_primary_member() {
+        fn an_optimized_lookup_error_model_loads() {
             let dir = tempfile::tempdir().expect("tempdir");
             let path = zhfst(
                 dir.path(),
-                &index_xml(
-                    "errmodel.default.hfst",
-                    &variant("1", "errmodel.default.dhfst"),
-                ),
-                &standard_members(),
+                "errmodel.default.hfst",
+                &[
+                    ("acceptor.default.hfst", test_support::lexicon()),
+                    ("errmodel.default.hfst", test_support::errmodel()),
+                ],
             );
-
-            let dhfst = ZipSpellerArchive::open(&path).expect("opens");
-            let source = dhfst.errmodel_source().expect("a source");
-            assert_eq!(source.location, "errmodel.default.dhfst");
-            assert_eq!(source.format, "DHFST version 1");
-            assert!(dhfst.hfst_speller().is_none());
-
-            let primary = ZipSpellerArchive::open_with(
-                &path,
-                &OpenOptions {
-                    primary_errmodel_only: true,
-                    ..OpenOptions::default()
-                },
-            )
-            .expect("opens");
-            assert_eq!(
-                primary.errmodel_source().map(|s| s.location.as_str()),
-                Some("errmodel.default.hfst")
-            );
-            assert!(primary.hfst_speller().is_some());
-
-            let from_dhfst = suggestions(&dhfst);
-            assert!(from_dhfst.iter().any(|(_, s)| !s.is_empty()));
-            assert_eq!(from_dhfst, suggestions(&primary));
+            let archive = ZipSpellerArchive::open(&path).expect("opens");
+            let source = archive.errmodel_source().expect("a source");
+            assert_eq!(source.location, "errmodel.default.hfst");
+            assert_eq!(source.format, "HFST optimized lookup");
+            let suggestions = archive.speller().suggest("cet");
+            assert!(suggestions.iter().any(|s| s.value == "cat"));
         }
 
         #[test]
-        fn a_variant_this_reader_cannot_use_is_passed_over() {
+        fn a_dhfst_error_model_is_refused() {
             let dir = tempfile::tempdir().expect("tempdir");
-            for declared in [
-                variant("2", "errmodel.default.dhfst"),
-                variant("1", "errmodel.missing.dhfst"),
-                r#"<variant format="other" version="1" id="errmodel.default.dhfst"/>"#.to_string(),
-                String::new(),
-            ] {
+            for name in ["errmodel.default.hfst", "errmodel.default.dhfst"] {
                 let path = zhfst(
                     dir.path(),
-                    &index_xml("errmodel.default.hfst", &declared),
-                    &standard_members(),
+                    name,
+                    &[
+                        ("acceptor.default.hfst", test_support::lexicon()),
+                        (name, dhfst_errmodel()),
+                    ],
                 );
-                let archive = ZipSpellerArchive::open(&path).expect("opens");
-                assert_eq!(
-                    archive.errmodel_source().map(|s| s.location.as_str()),
-                    Some("errmodel.default.hfst"),
-                    "{declared}"
+                assert!(
+                    matches!(
+                        ZipSpellerArchive::open(&path),
+                        Err(SpellerArchiveError::Transducer {
+                            source: TransducerError::UnrecognisedFormat { .. },
+                            ..
+                        })
+                    ),
+                    "a DHFST member named {name} loaded"
                 );
             }
         }
 
         #[test]
-        fn a_member_is_read_by_its_header_not_its_name() {
-            let dir = tempfile::tempdir().expect("tempdir");
-            // An archive for new readers only: `<errmodel id>` names the DHFST
-            // member and there is no optimized-lookup one.
-            let path = zhfst(
-                dir.path(),
-                &index_xml("errmodel.default.dhfst", ""),
-                &[
-                    ("acceptor.default.hfst", test_support::lexicon()),
-                    ("errmodel.default.dhfst", dhfst_errmodel()),
-                ],
-            );
-            let archive = ZipSpellerArchive::open(&path).expect("opens");
-            assert_eq!(
-                archive.errmodel_source().map(|s| s.format.as_str()),
-                Some("DHFST version 1")
-            );
-
-            // A member whose header is neither format is refused, whatever
-            // its name says.
-            let path = zhfst(
-                dir.path(),
-                &index_xml("errmodel.default.hfst", ""),
-                &[
-                    ("acceptor.default.hfst", test_support::lexicon()),
-                    ("errmodel.default.hfst", b"NOTAFST\0 at all".to_vec()),
-                ],
-            );
-            assert!(matches!(
-                ZipSpellerArchive::open(&path),
-                Err(SpellerArchiveError::Transducer {
-                    source: crate::transducer::TransducerError::UnrecognisedFormat { .. },
-                    ..
-                })
-            ));
-        }
-
-        #[test]
-        fn an_external_error_model_replaces_the_archives() {
+        fn error_model_options_are_refused() {
             let dir = tempfile::tempdir().expect("tempdir");
             let path = zhfst(
                 dir.path(),
-                &index_xml("errmodel.default.hfst", ""),
+                "errmodel.default.hfst",
                 &[
                     ("acceptor.default.hfst", test_support::lexicon()),
                     ("errmodel.default.hfst", test_support::errmodel()),
@@ -573,21 +393,22 @@ mod tests {
             );
             let external = dir.path().join("external.dhfst");
             std::fs::write(&external, dhfst_errmodel()).expect("write");
-            let archive = ZipSpellerArchive::open_with(
-                &path,
-                &OpenOptions {
-                    errmodel_path: Some(external.clone()),
+            for options in [
+                OpenOptions {
+                    errmodel_path: Some(external),
                     ..OpenOptions::default()
                 },
-            )
-            .expect("opens");
-            let source = archive.errmodel_source().expect("a source");
-            assert!(source.external);
-            assert_eq!(source.location, external.display().to_string());
-            assert_eq!(
-                suggestions(&archive),
-                suggestions(&ZipSpellerArchive::open(&path).expect("opens"))
-            );
+                OpenOptions {
+                    primary_errmodel_only: true,
+                    ..OpenOptions::default()
+                },
+            ] {
+                assert!(matches!(
+                    crate::archive::open_with(&path, &options),
+                    Err(SpellerArchiveError::ErrmodelOptionUnsupported { .. })
+                ));
+            }
+            assert!(crate::archive::open_with(&path, &OpenOptions::default()).is_ok());
         }
     }
 }

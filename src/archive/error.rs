@@ -93,6 +93,20 @@ pub enum SpellerArchiveError {
         source: Box<dyn std::error::Error + Send + Sync>,
     },
 
+    /// An option choosing the error model was given for a ZHFST archive. A
+    /// ZHFST always runs with the optimized-lookup error model it carries;
+    /// only BHFST archives take these options.
+    #[error(
+        "'{}' is a ZHFST archive; {option} chooses the error model of BHFST archives only",
+        path.display()
+    )]
+    ErrmodelOptionUnsupported {
+        /// archive path
+        path: PathBuf,
+        /// the option given
+        option: &'static str,
+    },
+
     /// Parsing the `meta.json` metadata in a BHFST archive failed.
     #[error("failed to parse meta.json in archive '{}'", archive.display())]
     MetadataJson {
