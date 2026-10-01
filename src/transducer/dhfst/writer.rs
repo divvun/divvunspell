@@ -18,9 +18,12 @@
 
 use std::collections::HashMap;
 
+use crate::transducer::ArcGroup;
+use crate::transducer::dhfst::stage::{EDIT_TABLE_HEADER_LEN, STAGE_EDIT_TABLE, STAGE_HEADER_LEN};
 use crate::transducer::dhfst::{
-    DEFAULT_BASE, DefaultKind, DhfstTransducer, FLAG_DEFAULTS, FLAG_FALLBACK, FLAG_TROPICAL,
-    HEADER_LEN, MAGIC, NONE, SECTION_ENTRY_LEN, VERSION, is_regular_name, tag,
+    DEFAULT_BASE, DefaultKind, DhfstTransducer, FLAG_DEFAULTS, FLAG_FALLBACK, FLAG_STAGES,
+    FLAG_TROPICAL, HEADER_LEN, MAGIC, NONE, SECTION_ENTRY_LEN, VERSION, VERSION_1, is_regular_name,
+    tag,
 };
 use crate::transducer::{Transducer, TransducerError};
 use crate::types::{SymbolNumber, TransitionTableIndex};
@@ -252,6 +255,8 @@ pub struct WriteOptions {
     pub threads: usize,
     /// A name for the source, recorded in the `meta` section.
     pub source_name: String,
+    /// Stages the model's call arcs call into; written as a version 2 file.
+    pub stages: Option<StagesSpec>,
 }
 
 impl Default for WriteOptions {
@@ -260,8 +265,69 @@ impl Default for WriteOptions {
             max_fallback_depth: Some(4),
             threads: 0,
             source_name: String::new(),
+            stages: None,
         }
     }
+}
+
+/// The stages a model's call arcs call into.
+#[derive(Clone, Debug)]
+pub struct StagesSpec {
+    /// Symbols `0..n_alphabet` of the model are its alphabet; the rest are
+    /// call symbols, which may appear only on call arcs.
+    pub n_alphabet: u32,
+    /// Each stage with the call pair that calls it.
+    pub stages: Vec<StageSpec>,
+}
+
+/// One edit-table stage and the call pair that reaches it.
+#[derive(Clone, Debug)]
+pub struct StageSpec {
+    /// input symbol of the call arcs
+    pub call_input: u16,
+    /// output symbol of the call arcs
+    pub call_output: u16,
+    /// the stage
+    pub table: EditStageSpec,
+}
+
+/// An edit-table stage, in the model's symbol numbers.
+#[derive(Clone, Debug, Default)]
+pub struct EditStageSpec {
+    /// contexts
+    pub contexts: Vec<ContextSpec>,
+    /// start context
+    pub start: u32,
+    /// edit tables
+    pub tables: Vec<TableSpec>,
+}
+
+/// A context of an edit-table stage.
+#[derive(Clone, Debug, Default)]
+pub struct ContextSpec {
+    /// final weight, if the call may return from here
+    pub final_weight: Option<f32>,
+    /// identity transitions: symbols copied at weight 0, and the context
+    /// they lead to
+    pub ident: Vec<(Vec<u16>, u32)>,
+    /// the edit table this context allows
+    pub table: Option<u32>,
+}
+
+/// An edit table: its edits all lead to `target`. Cells not listed are no
+/// edit.
+#[derive(Clone, Debug, Default)]
+pub struct TableSpec {
+    /// target context
+    pub target: u32,
+    /// substitutions `x:y`
+    pub sub: Vec<(u16, u16, f32)>,
+    /// deletions `x:ε`
+    pub del: Vec<(u16, f32)>,
+    /// insertions `ε:y`
+    pub ins: Vec<(u16, f32)>,
+    /// transpositions `x y → y x`
+    pub swap: Vec<(u16, u16, f32)>,
 }
 
 /// What the encoding came to.
@@ -298,6 +364,10 @@ pub struct WriteReport {
     pub queries_checked: u64,
     /// arcs compared on the written bytes
     pub arcs_checked: u64,
+    /// `(stage state, input)` queries checked against the stage spec
+    pub stage_queries_checked: u64,
+    /// bytes of the `STAG` section
+    pub stage_bytes: usize,
 }
 
 /// A written file and what it holds.
@@ -328,7 +398,11 @@ pub fn write(model: &SourceModel, options: &WriteOptions) -> Result<Written, Wri
     let scored = score_candidates(&m, &groups, &cands, threads);
     let enc = assign(&m, &groups, &scored, max_depth);
     let (answered_by, pairs_checked) = verify_encoding(&m, &groups, &enc, threads)?;
-    let (bytes, mut report) = serialise(model, &m, &groups, &enc, options);
+    let stages = match &options.stages {
+        Some(spec) => Some(encode_stages(model, spec)?),
+        None => None,
+    };
+    let (bytes, mut report) = serialise(model, &m, &groups, &enc, options, stages);
     report.answered_by = answered_by;
     report.pairs_checked = pairs_checked;
 
@@ -337,6 +411,9 @@ pub fn write(model: &SourceModel, options: &WriteOptions) -> Result<Written, Wri
     let (queries, arcs) = verify_reader(model, &reader, threads)?;
     report.queries_checked = queries;
     report.arcs_checked = arcs;
+    if let Some(spec) = &options.stages {
+        report.stage_queries_checked = verify_stages(spec, &reader)?;
+    }
 
     Ok(Written { bytes, report })
 }
@@ -387,7 +464,7 @@ pub fn verify_reader(
                             }
                             let want = &state.arcs[start..at];
                             got.clear();
-                            reader.for_each_arc(
+                            reader.for_each_stored_arc(
                                 TransitionTableIndex(q as u32),
                                 SymbolNumber(x),
                                 |o, t, w| got.push((o.0, t.0, w.0.to_bits())),
@@ -1038,6 +1115,7 @@ fn serialise(
     groups: &[[Option<Group>; 4]],
     enc: &Encoded,
     options: &WriteOptions,
+    stages: Option<Vec<u8>>,
 ) -> (Vec<u8>, WriteReport) {
     let nsym = model.symbols.len();
     let words = nsym.div_ceil(64);
@@ -1223,9 +1301,20 @@ fn serialise(
     }
     sections.push((tag::STAT, stat));
     sections.push((tag::ENTR, entr));
+    let version = match stages {
+        Some(stag) => {
+            report.stage_bytes = stag.len();
+            sections.push((tag::STAG, stag));
+            VERSION
+        }
+        None => VERSION_1,
+    };
     sections.push((tag::META, meta));
 
     let mut flags = FLAG_TROPICAL;
+    if version == VERSION {
+        flags |= FLAG_STAGES;
+    }
     if report.states_with_fallback > 0 {
         flags |= FLAG_FALLBACK;
     }
@@ -1236,7 +1325,7 @@ fn serialise(
     let table_len = sections.len() * SECTION_ENTRY_LEN;
     let mut out: Vec<u8> = Vec::new();
     out.extend_from_slice(MAGIC);
-    out.push(VERSION);
+    out.push(version);
     out.extend_from_slice(&[0u8; 2]);
     out.extend_from_slice(&flags.to_le_bytes());
     out.extend_from_slice(&(sections.len() as u32).to_le_bytes());
@@ -1257,4 +1346,518 @@ fn serialise(
         pad8(&mut out);
     }
     (out, report)
+}
+
+/// Interned symbol sets of a stage, as bitset words.
+struct SetPool {
+    words: usize,
+    sets: Vec<Vec<u64>>,
+}
+
+impl SetPool {
+    fn intern(&mut self, symbols: impl IntoIterator<Item = u16>) -> u32 {
+        let mut bits = vec![0u64; self.words];
+        for s in symbols {
+            bits[s as usize / 64] |= 1u64 << (s % 64);
+        }
+        if let Some(at) = self.sets.iter().position(|s| *s == bits) {
+            return at as u32;
+        }
+        self.sets.push(bits);
+        (self.sets.len() - 1) as u32
+    }
+}
+
+/// The most common value, ties going to the smallest.
+fn most_common(values: impl IntoIterator<Item = f32>) -> Option<f32> {
+    let mut counts: Vec<(u32, usize)> = Vec::new();
+    for v in values {
+        let bits = v.to_bits();
+        match counts.iter_mut().find(|(b, _)| *b == bits) {
+            Some((_, n)) => *n += 1,
+            None => counts.push((bits, 1)),
+        }
+    }
+    counts.sort_by(|a, b| {
+        b.1.cmp(&a.1)
+            .then(f32::from_bits(a.0).total_cmp(&f32::from_bits(b.0)))
+    });
+    counts.first().map(|(b, _)| f32::from_bits(*b))
+}
+
+#[derive(Default)]
+struct StageArrays {
+    matrices: Vec<[u32; 8]>,
+    vectors: Vec<[u32; 4]>,
+    colw: Vec<(u16, f32)>,
+    cells: Vec<(u16, u16, f32)>,
+    vcells: Vec<(u16, f32)>,
+}
+
+fn check_weight(w: f32, what: &str) -> Result<(), WriteError> {
+    if w.is_nan() || w == f32::NEG_INFINITY {
+        return Err(WriteError::Unsupported(format!(
+            "{what} has an invalid weight"
+        )));
+    }
+    Ok(())
+}
+
+/// A matrix as default + column weights + exceptions over the rectangle of
+/// its rows and columns.
+fn encode_matrix(
+    cells: &[(u16, u16, f32)],
+    pool: &mut SetPool,
+    arrays: &mut StageArrays,
+) -> Result<u32, WriteError> {
+    let mut dense: HashMap<(u16, u16), f32> = HashMap::new();
+    for &(x, y, w) in cells {
+        check_weight(w, "a matrix cell")?;
+        let slot = dense.entry((x, y)).or_insert(w);
+        if w < *slot {
+            *slot = w;
+        }
+    }
+    let mut rows: Vec<u16> = dense.keys().map(|k| k.0).collect();
+    rows.sort_unstable();
+    rows.dedup();
+    let mut cols: Vec<u16> = dense.keys().map(|k| k.1).collect();
+    cols.sort_unstable();
+    cols.dedup();
+    let cell = |x: u16, y: u16| dense.get(&(x, y)).copied().unwrap_or(f32::INFINITY);
+    let default = most_common(
+        rows.iter()
+            .flat_map(|&x| cols.iter().map(move |&y| (x, y)))
+            .map(|(x, y)| cell(x, y)),
+    )
+    .unwrap_or(f32::INFINITY);
+    let mut colw: Vec<(u16, f32)> = Vec::new();
+    for &y in &cols {
+        if let Some(w) = most_common(rows.iter().map(|&x| cell(x, y)))
+            && w.to_bits() != default.to_bits()
+        {
+            colw.push((y, w));
+        }
+    }
+    let mut exceptions: Vec<(u16, u16, f32)> = Vec::new();
+    for &x in &rows {
+        for &y in &cols {
+            let expected = colw.iter().find(|c| c.0 == y).map_or(default, |c| c.1);
+            let actual = cell(x, y);
+            if actual.to_bits() != expected.to_bits() {
+                exceptions.push((x, y, actual));
+            }
+        }
+    }
+    let row_set = pool.intern(rows.iter().copied());
+    let col_set = pool.intern(cols.iter().copied());
+    let first_colw = arrays.colw.len() as u32;
+    arrays.colw.extend(colw.iter().copied());
+    let first_cell = arrays.cells.len() as u32;
+    arrays.cells.extend(exceptions.iter().copied());
+    arrays.matrices.push([
+        row_set,
+        col_set,
+        default.to_bits(),
+        first_colw,
+        colw.len() as u32,
+        first_cell,
+        exceptions.len() as u32,
+        0,
+    ]);
+    Ok((arrays.matrices.len() - 1) as u32)
+}
+
+/// A vector as default + exceptions over the set of its symbols.
+fn encode_vector(
+    cells: &[(u16, f32)],
+    pool: &mut SetPool,
+    arrays: &mut StageArrays,
+) -> Result<u32, WriteError> {
+    let mut dense: Vec<(u16, f32)> = Vec::new();
+    for &(x, w) in cells {
+        check_weight(w, "a vector entry")?;
+        if x == 0 {
+            return Err(WriteError::Unsupported("a vector names epsilon".into()));
+        }
+        match dense.iter_mut().find(|c| c.0 == x) {
+            Some(c) => c.1 = c.1.min(w),
+            None => dense.push((x, w)),
+        }
+    }
+    dense.sort_by_key(|c| c.0);
+    let default = most_common(dense.iter().map(|c| c.1)).unwrap_or(f32::INFINITY);
+    let set = pool.intern(dense.iter().map(|c| c.0));
+    let first = arrays.vcells.len() as u32;
+    let exceptions: Vec<(u16, f32)> = dense
+        .iter()
+        .copied()
+        .filter(|c| c.1.to_bits() != default.to_bits())
+        .collect();
+    arrays.vcells.extend(exceptions.iter().copied());
+    arrays
+        .vectors
+        .push([set, default.to_bits(), first, exceptions.len() as u32]);
+    Ok((arrays.vectors.len() - 1) as u32)
+}
+
+/// Substates per return state of a stage: its contexts, then two
+/// transposition-pending states per symbol for each table with transpositions.
+fn stage_substates(spec: &EditStageSpec, n_alphabet: u32) -> u32 {
+    spec.contexts.len() as u32
+        + 2 * n_alphabet * spec.tables.iter().filter(|t| !t.swap.is_empty()).count() as u32
+}
+
+/// Encode a `STAG` section.
+fn encode_stages(model: &SourceModel, spec: &StagesSpec) -> Result<Vec<u8>, WriteError> {
+    let n_symbols = model.symbols.len() as u32;
+    if spec.n_alphabet == 0 || spec.n_alphabet > n_symbols {
+        return Err(WriteError::Unsupported(
+            "stage alphabet size is out of range".into(),
+        ));
+    }
+    let words = (spec.n_alphabet as usize).div_ceil(64);
+    let in_alphabet = |s: u16| (s as u32) < spec.n_alphabet && s != 0;
+
+    let mut bodies: Vec<Vec<u8>> = Vec::new();
+    for (k, stage) in spec.stages.iter().enumerate() {
+        let st = &stage.table;
+        for s in [stage.call_input, stage.call_output] {
+            if (s as u32) < spec.n_alphabet || s as u32 >= n_symbols {
+                return Err(WriteError::Unsupported(format!(
+                    "stage {k}: call symbol {s} is not past the alphabet"
+                )));
+            }
+        }
+        if st.contexts.is_empty() || st.start as usize >= st.contexts.len() {
+            return Err(WriteError::Unsupported(format!(
+                "stage {k}: no valid start context"
+            )));
+        }
+        let mut pool = SetPool {
+            words,
+            sets: Vec::new(),
+        };
+        let mut arrays = StageArrays::default();
+        let mut idents: Vec<(u32, u32)> = Vec::new();
+        let mut contexts: Vec<(f32, u32, u32, u32)> = Vec::new();
+        for (c, ctx) in st.contexts.iter().enumerate() {
+            let first = idents.len() as u32;
+            for (symbols, target) in &ctx.ident {
+                if symbols.iter().any(|s| !in_alphabet(*s)) || *target as usize >= st.contexts.len()
+                {
+                    return Err(WriteError::Unsupported(format!(
+                        "stage {k} context {c}: identity transition out of range"
+                    )));
+                }
+                idents.push((pool.intern(symbols.iter().copied()), *target));
+            }
+            let final_weight = ctx.final_weight.unwrap_or(f32::INFINITY);
+            check_weight(final_weight, "a context")?;
+            let table = match ctx.table {
+                Some(t) if (t as usize) < st.tables.len() => t,
+                Some(_) => {
+                    return Err(WriteError::Unsupported(format!(
+                        "stage {k} context {c}: table out of range"
+                    )));
+                }
+                None => NONE,
+            };
+            contexts.push((final_weight, first, idents.len() as u32 - first, table));
+        }
+        let mut tables: Vec<[u32; 6]> = Vec::new();
+        for (t, table) in st.tables.iter().enumerate() {
+            let symbols_ok = table
+                .sub
+                .iter()
+                .all(|c| in_alphabet(c.0) && in_alphabet(c.1))
+                && table
+                    .swap
+                    .iter()
+                    .all(|c| in_alphabet(c.0) && in_alphabet(c.1))
+                && table.del.iter().all(|c| in_alphabet(c.0))
+                && table.ins.iter().all(|c| in_alphabet(c.0));
+            if !symbols_ok || table.target as usize >= st.contexts.len() {
+                return Err(WriteError::Unsupported(format!(
+                    "stage {k} table {t}: a symbol or target is out of range"
+                )));
+            }
+            let sub = if table.sub.is_empty() {
+                NONE
+            } else {
+                encode_matrix(&table.sub, &mut pool, &mut arrays)?
+            };
+            let del = if table.del.is_empty() {
+                NONE
+            } else {
+                encode_vector(&table.del, &mut pool, &mut arrays)?
+            };
+            let ins = if table.ins.is_empty() {
+                NONE
+            } else {
+                encode_vector(&table.ins, &mut pool, &mut arrays)?
+            };
+            let swap = if table.swap.is_empty() {
+                NONE
+            } else {
+                encode_matrix(&table.swap, &mut pool, &mut arrays)?
+            };
+            tables.push([table.target, sub, del, ins, swap, 0]);
+        }
+
+        let mut body: Vec<u8> = Vec::new();
+        for v in [
+            pool.sets.len() as u32,
+            contexts.len() as u32,
+            st.start,
+            idents.len() as u32,
+            tables.len() as u32,
+            arrays.matrices.len() as u32,
+            arrays.vectors.len() as u32,
+            arrays.colw.len() as u32,
+            arrays.cells.len() as u32,
+            arrays.vcells.len() as u32,
+            0,
+            0,
+        ] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        debug_assert_eq!(body.len(), EDIT_TABLE_HEADER_LEN);
+        for set in &pool.sets {
+            for w in set {
+                body.extend_from_slice(&w.to_le_bytes());
+            }
+        }
+        for (f, first, n, table) in &contexts {
+            body.extend_from_slice(&f.to_bits().to_le_bytes());
+            body.extend_from_slice(&first.to_le_bytes());
+            body.extend_from_slice(&n.to_le_bytes());
+            body.extend_from_slice(&table.to_le_bytes());
+        }
+        for (set, target) in &idents {
+            body.extend_from_slice(&set.to_le_bytes());
+            body.extend_from_slice(&target.to_le_bytes());
+        }
+        for record in tables
+            .iter()
+            .map(|t| &t[..])
+            .chain(arrays.matrices.iter().map(|m| &m[..]))
+            .chain(arrays.vectors.iter().map(|v| &v[..]))
+        {
+            for v in record {
+                body.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        for (symbol, w) in &arrays.colw {
+            body.extend_from_slice(&symbol.to_le_bytes());
+            body.extend_from_slice(&0u16.to_le_bytes());
+            body.extend_from_slice(&w.to_bits().to_le_bytes());
+        }
+        for (x, y, w) in &arrays.cells {
+            body.extend_from_slice(&x.to_le_bytes());
+            body.extend_from_slice(&y.to_le_bytes());
+            body.extend_from_slice(&w.to_bits().to_le_bytes());
+        }
+        for (symbol, w) in &arrays.vcells {
+            body.extend_from_slice(&symbol.to_le_bytes());
+            body.extend_from_slice(&0u16.to_le_bytes());
+            body.extend_from_slice(&w.to_bits().to_le_bytes());
+        }
+        bodies.push(body);
+    }
+
+    let mut out: Vec<u8> = Vec::new();
+    out.extend_from_slice(&spec.n_alphabet.to_le_bytes());
+    out.extend_from_slice(&(spec.stages.len() as u32).to_le_bytes());
+    let mut offset = 8 + STAGE_HEADER_LEN * spec.stages.len();
+    for (stage, body) in spec.stages.iter().zip(&bodies) {
+        out.extend_from_slice(&stage.call_input.to_le_bytes());
+        out.extend_from_slice(&stage.call_output.to_le_bytes());
+        out.extend_from_slice(&STAGE_EDIT_TABLE.to_le_bytes());
+        out.extend_from_slice(&(offset as u64).to_le_bytes());
+        out.extend_from_slice(&(body.len() as u64).to_le_bytes());
+        out.extend_from_slice(&stage_substates(&stage.table, spec.n_alphabet).to_le_bytes());
+        out.extend_from_slice(&0u32.to_le_bytes());
+        offset = (offset + body.len()).div_ceil(8) * 8;
+    }
+    for body in &bodies {
+        while !out.len().is_multiple_of(8) {
+            out.push(0);
+        }
+        out.extend_from_slice(body);
+    }
+    Ok(out)
+}
+
+/// Check every table cell, and every context and transposition substate of
+/// every stage walked through the reader, against the spec. Answers the
+/// number of `(stage state, input)` queries compared.
+fn verify_stages(spec: &StagesSpec, reader: &DhfstTransducer) -> Result<u64, WriteError> {
+    let n = spec.n_alphabet as u16;
+    let fail = |msg: String| WriteError::Verification(msg);
+    let mut queries = 0u64;
+    let mut base = reader.state_count() as u64;
+    let ret = 0u32;
+    for (k, stage) in spec.stages.iter().enumerate() {
+        let st = &stage.table;
+        let substates = stage_substates(st, spec.n_alphabet) as u64;
+        let virt = |sub: u32| (base + ret as u64 * substates + sub as u64) as u32;
+        // The cells.
+        for (t, table) in st.tables.iter().enumerate() {
+            let mut sub: HashMap<(u16, u16), f32> = HashMap::new();
+            for &(x, y, w) in &table.sub {
+                let e = sub.entry((x, y)).or_insert(w);
+                *e = e.min(w);
+            }
+            let mut swap: HashMap<(u16, u16), f32> = HashMap::new();
+            for &(x, y, w) in &table.swap {
+                let e = swap.entry((x, y)).or_insert(w);
+                *e = e.min(w);
+            }
+            let del: HashMap<u16, f32> = table.del.iter().copied().collect();
+            let ins: HashMap<u16, f32> = table.ins.iter().copied().collect();
+            for x in 0..n {
+                for (kind, want, got) in [
+                    (1u8, del.get(&x), reader.stage_edit_weight(k, t, 1, x, 0)),
+                    (2, ins.get(&x), reader.stage_edit_weight(k, t, 2, x, 0)),
+                ] {
+                    let want = want.copied().unwrap_or(f32::INFINITY);
+                    if want.to_bits() != got.to_bits() {
+                        return Err(fail(format!(
+                            "stage {k} table {t} kind {kind} symbol {x}: {got} for {want}"
+                        )));
+                    }
+                }
+                for y in 0..n {
+                    for (kind, map) in [(0u8, &sub), (3, &swap)] {
+                        let want = map.get(&(x, y)).copied().unwrap_or(f32::INFINITY);
+                        let got = reader.stage_edit_weight(k, t, kind, x, y);
+                        if want.to_bits() != got.to_bits() {
+                            return Err(fail(format!(
+                                "stage {k} table {t} kind {kind} cell {x}:{y}: {got} for {want}"
+                            )));
+                        }
+                    }
+                }
+            }
+        }
+        // The walks.
+        let mut swap_base = st.contexts.len() as u32;
+        let mut swap_bases: Vec<Option<u32>> = Vec::new();
+        for table in &st.tables {
+            if table.swap.is_empty() {
+                swap_bases.push(None);
+            } else {
+                swap_bases.push(Some(swap_base));
+                swap_base += 2 * spec.n_alphabet;
+            }
+        }
+        let collect =
+            |state: u32, input: u16| {
+                let mut got: Vec<(u16, u32, u32)> = Vec::new();
+                reader.for_each_arc_group(TransitionTableIndex(state), SymbolNumber(input), |g| {
+                    match g {
+                        ArcGroup::One {
+                            output,
+                            target,
+                            weight,
+                        } => got.push((output.0, target.0, weight.0.to_bits())),
+                        ArcGroup::Each {
+                            outputs,
+                            target,
+                            weight,
+                        } => {
+                            for o in outputs.iter() {
+                                got.push((o.0, target.0, weight.0.to_bits()));
+                            }
+                        }
+                    }
+                });
+                got.sort_unstable();
+                got
+            };
+        for (c, ctx) in st.contexts.iter().enumerate() {
+            for x in 0..n {
+                let mut want: Vec<(u16, u32, u32)> = Vec::new();
+                let table = ctx.table.map(|t| (t as usize, &st.tables[t as usize]));
+                if x == 0 {
+                    if let Some(f) = ctx.final_weight {
+                        want.push((0, ret, f.to_bits()));
+                    }
+                    if let Some((t, table)) = table {
+                        for y in 1..n {
+                            let w = reader.stage_edit_weight(k, t, 2, y, 0);
+                            if w.is_finite() {
+                                want.push((y, virt(table.target), w.to_bits()));
+                            }
+                        }
+                    }
+                } else {
+                    for (symbols, target) in &ctx.ident {
+                        if symbols.contains(&x) {
+                            want.push((x, virt(*target), 0f32.to_bits()));
+                        }
+                    }
+                    if let Some((t, table)) = table {
+                        for y in 1..n {
+                            let w = reader.stage_edit_weight(k, t, 0, x, y);
+                            if w.is_finite() {
+                                want.push((y, virt(table.target), w.to_bits()));
+                            }
+                        }
+                        let w = reader.stage_edit_weight(k, t, 1, x, 0);
+                        if w.is_finite() {
+                            want.push((0, virt(table.target), w.to_bits()));
+                        }
+                        if let Some(sb) = swap_bases[t]
+                            && (1..n).any(|y| reader.stage_edit_weight(k, t, 3, x, y).is_finite())
+                        {
+                            want.push((0, virt(sb + 2 * x as u32), 0f32.to_bits()));
+                        }
+                    }
+                }
+                want.sort_unstable();
+                queries += 1;
+                if collect(virt(c as u32), x) != want {
+                    return Err(fail(format!(
+                        "stage {k} context {c} input {x}: the walk differs from the spec"
+                    )));
+                }
+            }
+        }
+        for (t, table) in st.tables.iter().enumerate() {
+            let Some(sb) = swap_bases[t] else {
+                continue;
+            };
+            for x in 1..n {
+                for y in 0..n {
+                    let mut want: Vec<(u16, u32, u32)> = Vec::new();
+                    if y != 0 {
+                        let w = reader.stage_edit_weight(k, t, 3, x, y);
+                        if w.is_finite() {
+                            want.push((y, virt(sb + 2 * x as u32 + 1), w.to_bits()));
+                        }
+                    }
+                    queries += 1;
+                    if collect(virt(sb + 2 * x as u32), y) != want {
+                        return Err(fail(format!(
+                            "stage {k} pending swap {x} input {y}: the walk differs"
+                        )));
+                    }
+                    let mut want: Vec<(u16, u32, u32)> = Vec::new();
+                    if y == 0 {
+                        want.push((x, virt(table.target), 0f32.to_bits()));
+                    }
+                    queries += 1;
+                    if collect(virt(sb + 2 * x as u32 + 1), y) != want {
+                        return Err(fail(format!(
+                            "stage {k} copied swap {x} input {y}: the walk differs"
+                        )));
+                    }
+                }
+            }
+        }
+        base += reader.state_count() as u64 * substates;
+    }
+    Ok(queries)
 }

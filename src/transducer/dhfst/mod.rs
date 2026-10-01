@@ -95,13 +95,21 @@ use crate::transducer::{
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use crate::vfs::{self, Filesystem};
 
+pub(crate) mod stage;
 #[cfg(any(test, feature = "dhfst-writer"))]
 pub mod writer;
 
 /// The first five bytes of a DHFST file.
 pub const MAGIC: &[u8; 5] = b"DHFST";
-/// The format version this reader reads and the writer writes.
-pub const VERSION: u8 = 1;
+/// The newest format version: this reader reads it, and the writer writes it
+/// for a file with stages.
+pub const VERSION: u8 = 2;
+/// The format version of a file without stages.
+pub const VERSION_1: u8 = 1;
+/// Whether this reader reads a format version.
+pub fn supported_version(version: u8) -> bool {
+    (VERSION_1..=VERSION).contains(&version)
+}
 /// Bytes before the section table.
 pub const HEADER_LEN: usize = 24;
 /// Bytes per section table entry.
@@ -125,7 +133,9 @@ pub const FLAG_FALLBACK: u32 = 1 << 1;
 pub const FLAG_DEFAULTS: u32 = 1 << 2;
 /// Header flag: a `RULE` section is present.
 pub const FLAG_RULES: u32 = 1 << 3;
-const KNOWN_FLAGS: u32 = FLAG_TROPICAL | FLAG_FALLBACK | FLAG_DEFAULTS | FLAG_RULES;
+/// Header flag: a `STAG` section is present (version 2).
+pub const FLAG_STAGES: u32 = 1 << 4;
+const KNOWN_FLAGS: u32 = FLAG_TROPICAL | FLAG_FALLBACK | FLAG_DEFAULTS | FLAG_RULES | FLAG_STAGES;
 
 /// Section tags.
 pub mod tag {
@@ -141,6 +151,8 @@ pub mod tag {
     pub const ENTR: [u8; 4] = *b"ENTR";
     /// rule tries (reserved)
     pub const RULE: [u8; 4] = *b"RULE";
+    /// stages the stored automaton calls (version 2)
+    pub const STAG: [u8; 4] = *b"STAG";
     /// writer metadata
     pub const META: [u8; 4] = *b"meta";
 }
@@ -212,17 +224,17 @@ pub fn pair_kind(
 }
 
 #[inline(always)]
-fn u16_at(b: &[u8], at: usize) -> u16 {
+pub(crate) fn u16_at(b: &[u8], at: usize) -> u16 {
     u16::from_le_bytes([b[at], b[at + 1]])
 }
 
 #[inline(always)]
-fn u32_at(b: &[u8], at: usize) -> u32 {
+pub(crate) fn u32_at(b: &[u8], at: usize) -> u32 {
     u32::from_le_bytes([b[at], b[at + 1], b[at + 2], b[at + 3]])
 }
 
 #[inline(always)]
-fn u64_at(b: &[u8], at: usize) -> u64 {
+pub(crate) fn u64_at(b: &[u8], at: usize) -> u64 {
     let mut bytes = [0u8; 8];
     bytes.copy_from_slice(&b[at..at + 8]);
     u64::from_le_bytes(bytes)
@@ -257,6 +269,7 @@ struct Layout {
     n_entries: u32,
     max_fallback_depth: u32,
     flags: u32,
+    version: u8,
 }
 
 /// A validated DHFST error model, read in place from a memory map.
@@ -268,6 +281,7 @@ pub struct DhfstTransducer {
     alphabet: TransducerAlphabet,
     symbol_names: Vec<String>,
     meta: Option<String>,
+    stages: Option<stage::Stages>,
 }
 
 impl std::fmt::Debug for DhfstTransducer {
@@ -284,7 +298,7 @@ impl std::fmt::Debug for DhfstTransducer {
 }
 
 /// How many bitset words fit inline before the arc walk allocates.
-const INLINE_WORDS: usize = 8;
+pub(crate) const INLINE_WORDS: usize = 8;
 
 impl DhfstTransducer {
     /// Parse and validate a DHFST file out of a memory-mapped buffer.
@@ -305,6 +319,7 @@ impl DhfstTransducer {
             regular: parsed.regular,
             symbol_names: parsed.names,
             meta: parsed.meta,
+            stages: parsed.stages,
             alphabet,
             buf,
         })
@@ -368,6 +383,90 @@ impl DhfstTransducer {
     /// The header flags.
     pub fn flags(&self) -> u32 {
         self.layout.flags
+    }
+
+    /// The format version the file declares.
+    pub fn version(&self) -> u8 {
+        self.layout.version
+    }
+
+    /// How many symbols form the alphabet; the rest of the symbol table are
+    /// call symbols.
+    pub fn alphabet_len(&self) -> u32 {
+        self.stages
+            .as_ref()
+            .map_or(self.layout.n_symbols, |s| s.n_alphabet)
+    }
+
+    /// Stages the file declares, as `(call input, call output, contexts,
+    /// tables, substates)`.
+    pub fn stage_summary(&self) -> Vec<(u16, u16, usize, usize, u32)> {
+        self.stages
+            .as_ref()
+            .map(|s| {
+                s.stages
+                    .iter()
+                    .map(|st| {
+                        (
+                            st.call_input,
+                            st.call_output,
+                            st.contexts.len(),
+                            st.tables.len(),
+                            st.substates,
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// The weight of an edit of table `table` in stage `stage`: substitution
+    /// `x:y` for `kind` 0, deletion `x:ε` for 1, insertion `ε:x` for 2,
+    /// transposition `x y → y x` for 3; `+inf` for none. For tools that check
+    /// a written table against its source.
+    pub fn stage_edit_weight(&self, stage: usize, table: usize, kind: u8, x: u16, y: u16) -> f32 {
+        let Some(st) = self.stages.as_ref().and_then(|s| s.stages.get(stage)) else {
+            return f32::INFINITY;
+        };
+        let Some(t) = st.tables.get(table) else {
+            return f32::INFINITY;
+        };
+        match kind {
+            0 => t.sub.map_or(f32::INFINITY, |m| st.matrix_weight(m, x, y)),
+            1 => t.del.map_or(f32::INFINITY, |v| st.vector_weight(v, x)),
+            2 => t.ins.map_or(f32::INFINITY, |v| st.vector_weight(v, x)),
+            3 => t.swap.map_or(f32::INFINITY, |m| st.matrix_weight(m, x, y)),
+            _ => f32::INFINITY,
+        }
+    }
+
+    /// Hand `visit` the arcs of a stored state on `input` exactly as the
+    /// stored automaton holds them: call arcs on their call symbols, and
+    /// nothing of the stages they call.
+    pub fn for_each_stored_arc<V>(
+        &self,
+        state: TransitionTableIndex,
+        input: SymbolNumber,
+        mut visit: V,
+    ) where
+        V: FnMut(SymbolNumber, TransitionTableIndex, Weight),
+    {
+        self.walk_stored(state.0, input.0, &mut |group: ArcGroup<'_>| match group {
+            ArcGroup::One {
+                output,
+                target,
+                weight,
+            } => visit(output, target, weight),
+            ArcGroup::Each {
+                outputs,
+                target,
+                weight,
+            } => {
+                for output in outputs.iter() {
+                    visit(output, target, weight);
+                }
+            }
+        });
     }
 
     /// Symbol names as stored, `@_EPSILON_SYMBOL_@` first.
@@ -484,11 +583,54 @@ impl DhfstTransducer {
         })
     }
 
-    /// Walk the arcs of `state` (as callers number it) on `input`, level by
-    /// level down the fallback chain, handing each answered pair to `visit`
-    /// once.
+    /// Walk the arcs of `state` (as callers number it) on `input`: a stored
+    /// state's own arcs, with its calls into stages as `ε:ε` moves on an
+    /// epsilon input, or a virtual state's arcs inside a stage.
     #[inline]
     fn walk<V>(&self, state: u32, input: u16, visit: &mut V)
+    where
+        V: FnMut(ArcGroup<'_>),
+    {
+        let Some(stages) = &self.stages else {
+            self.walk_stored(state, input, visit);
+            return;
+        };
+        if state >= self.layout.n_states {
+            if let Some((stage, ret, sub)) = stages.decode(state, self.layout.n_states) {
+                stage.walk(ret, sub, input, visit);
+            }
+            return;
+        }
+        if input as u32 >= stages.n_alphabet {
+            return;
+        }
+        self.walk_stored(state, input, visit);
+        if input == 0 {
+            for stage in &stages.stages {
+                self.walk_stored(state, stage.call_input, &mut |group: ArcGroup<'_>| {
+                    if let ArcGroup::One {
+                        output,
+                        target,
+                        weight,
+                    } = group
+                        && output.0 == stage.call_output
+                    {
+                        visit(ArcGroup::One {
+                            output: SymbolNumber::ZERO,
+                            target: stage.virtual_state(target.0, stage.start),
+                            weight,
+                        });
+                    }
+                });
+            }
+        }
+    }
+
+    /// Walk the arcs of stored `state` (as callers number it) on `input`,
+    /// level by level down the fallback chain, handing each answered pair to
+    /// `visit` once.
+    #[inline]
+    fn walk_stored<V>(&self, state: u32, input: u16, visit: &mut V)
     where
         V: FnMut(ArcGroup<'_>),
     {
@@ -718,6 +860,7 @@ struct Parsed {
     regular: Vec<u64>,
     names: Vec<String>,
     meta: Option<String>,
+    stages: Option<stage::Stages>,
 }
 
 fn corrupt(path: &Path, detail: impl Into<Cow<'static, str>>) -> TransducerError {
@@ -807,6 +950,7 @@ impl Parsed {
                 tag::STAT,
                 tag::ENTR,
                 tag::META,
+                tag::STAG,
             ];
             if tag[0].is_ascii_uppercase() && !known.contains(&tag) {
                 return Err(corrupt(
@@ -876,10 +1020,31 @@ impl Parsed {
         if names[0] != "@_EPSILON_SYMBOL_@" {
             return Err(corrupt(path, "symbol 0 is not @_EPSILON_SYMBOL_@"));
         }
+        // Stages (version 2): the symbols past the alphabet are call symbols,
+        // never regular and never part of the alphabet.
+        let version = b[MAGIC.len()];
+        let stag = find(tag::STAG);
+        match (stag.is_some(), flags & FLAG_STAGES != 0, version >= VERSION) {
+            (false, false, _) | (true, true, true) => {}
+            _ => {
+                return Err(corrupt(
+                    path,
+                    "STAG section, stages flag and format version disagree",
+                ));
+            }
+        }
+        let n_alphabet = match stag {
+            Some((start, end)) if end - start >= 8 => u32_at(b, start),
+            Some(_) => return Err(corrupt(path, "STAG is truncated")),
+            None => n_symbols,
+        };
+        if n_alphabet == 0 || n_alphabet > n_symbols {
+            return Err(corrupt(path, "STAG alphabet size is out of range"));
+        }
         let words = (n_symbols as usize).div_ceil(64);
         let mut regular = vec![0u64; words];
         for (s, name) in names.iter().enumerate() {
-            if is_regular_name(s, name) {
+            if (s as u32) < n_alphabet && is_regular_name(s, name) {
                 regular[s / 64] |= 1u64 << (s % 64);
             }
         }
@@ -988,6 +1153,7 @@ impl Parsed {
             n_entries,
             max_fallback_depth,
             flags,
+            version,
         };
 
         let mut any_fallback = false;
@@ -1148,24 +1314,38 @@ impl Parsed {
             .and_then(|(start, end)| std::str::from_utf8(&b[start..end]).ok())
             .map(|s| s.trim_end_matches('\0').to_string());
 
+        let stages = match stag {
+            Some((start, end)) => Some(stage::Stages::parse(
+                b, start, end, n_symbols, n_states, path,
+            )?),
+            None => None,
+        };
+
         Ok(Parsed {
             layout,
             regular,
             names,
             meta,
+            stages,
         })
     }
 
     /// The alphabet, parsed exactly as an HFST file with the same symbol table
     /// would be, so that tokenisation and the lexicon translator see the same
     /// symbols whichever format the error model came in.
+    ///
+    /// Call symbols are not part of it.
     fn alphabet(&self, path: &Path) -> Result<TransducerAlphabet, TransducerError> {
+        let n = self
+            .stages
+            .as_ref()
+            .map_or(self.names.len(), |s| s.n_alphabet as usize);
         let mut buf = Vec::new();
-        for name in &self.names {
+        for name in &self.names[..n] {
             buf.extend_from_slice(name.as_bytes());
             buf.push(0);
         }
-        TransducerAlphabetParser::parse(&buf, SymbolNumber(self.names.len() as u16), path)
+        TransducerAlphabetParser::parse(&buf, SymbolNumber(n as u16), path)
     }
 }
 

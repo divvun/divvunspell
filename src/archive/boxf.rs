@@ -499,7 +499,7 @@ mod tests {
         #[test]
         fn without_the_key_the_thfst_member_is_read() {
             let dir = tempfile::tempdir().expect("tempdir");
-            for (i, extra) in ["", r#", "format": "dhfst", "formatVersion": "2""#]
+            for (i, extra) in ["", r#", "format": "dhfst", "formatVersion": "3""#]
                 .iter()
                 .enumerate()
             {

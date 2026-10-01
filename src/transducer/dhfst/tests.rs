@@ -4,7 +4,10 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use super::writer::{SourceArc, SourceModel, SourceState, WriteOptions, write};
+use super::writer::{
+    ContextSpec, EditStageSpec, SourceArc, SourceModel, SourceState, StageSpec, StagesSpec,
+    TableSpec, WriteOptions, write,
+};
 use super::*;
 use crate::speller::{HfstSpeller, Speller, SpellerConfig};
 use crate::transducer::thfst::MmapThfstTransducer;
@@ -61,7 +64,7 @@ impl Raw {
             flags: None,
             extra: Vec::new(),
             drop: Vec::new(),
-            version: VERSION,
+            version: VERSION_1,
         }
     }
 
@@ -316,7 +319,17 @@ fn the_header_says_which_format_a_file_is() {
         TransducerFormat::detect(b"DHFST\x01\0\0", path).ok(),
         Some(TransducerFormat::Dhfst { version: 1 })
     );
-    for bad in [&b"DHFST\x02\0\0"[..], b"DHFST", b"HFSX\0\0\0\0", b""] {
+    assert_eq!(
+        TransducerFormat::detect(b"DHFST\x02\0\0", path).ok(),
+        Some(TransducerFormat::Dhfst { version: 2 })
+    );
+    for bad in [
+        &b"DHFST\x03\0\0"[..],
+        b"DHFST\x00",
+        b"DHFST",
+        b"HFSX\0\0\0\0",
+        b"",
+    ] {
         assert!(
             matches!(
                 TransducerFormat::detect(bad, path),
@@ -368,8 +381,11 @@ fn corrupt_files_are_refused() {
 
     let mut cases: Vec<(&str, Raw)> = Vec::new();
     let mut r = good.clone();
-    r.version = 2;
+    r.version = 3;
     cases.push(("unknown version", r));
+    let mut r = good.clone();
+    r.flags = Some(FLAG_TROPICAL | FLAG_FALLBACK | FLAG_DEFAULTS | FLAG_STAGES);
+    cases.push(("stages flag without a STAG section", r));
     let mut r = good.clone();
     r.drop.push(tag::STAT);
     cases.push(("no STAT", r));
@@ -836,6 +852,7 @@ fn the_writer_writes_what_it_was_given() {
                 max_fallback_depth: depth,
                 threads: 2,
                 source_name: "random".into(),
+                stages: None,
             };
             // `write` checks every (state, pair) of the encoding and every
             // (state, input) of the bytes against the model.
@@ -1003,4 +1020,297 @@ fn converted_fixtures_use_defaults() {
     let t = DhfstTransducer::from_bytes(&dhfst_from_fixture("mutator.thfst"), "mutator")
         .expect("loads");
     assert!(t.flags() & FLAG_DEFAULTS != 0);
+}
+
+/// Symbols of the stage tests: the fixture lexicon's letters, and for the
+/// staged model a call pair past them.
+fn stage_symbols(with_calls: bool) -> Vec<String> {
+    let mut symbols: Vec<String> = ["@_EPSILON_SYMBOL_@", "c", "a", "t", "r", "e"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    if with_calls {
+        symbols.push("@DHFST_CALL_1_IN@".into());
+        symbols.push("@DHFST_CALL_1_OUT@".into());
+    }
+    symbols
+}
+
+const LETTERS: [u16; 5] = [1, 2, 3, 4, 5];
+
+/// At most one edit anywhere: substitution 5 (a:e 2), deletion 7 (t 3),
+/// insertion 9, transposition 4 starting at `a` or `r`.
+fn edit_table() -> TableSpec {
+    let mut table = TableSpec {
+        target: 1,
+        ..TableSpec::default()
+    };
+    for &x in &LETTERS {
+        for &y in &LETTERS {
+            if x != y {
+                table
+                    .sub
+                    .push((x, y, if (x, y) == (2, 5) { 2.0 } else { 5.0 }));
+            }
+        }
+        table.del.push((x, if x == 3 { 3.0 } else { 7.0 }));
+        table.ins.push((x, 9.0));
+        if x == 2 || x == 4 {
+            for &y in &LETTERS {
+                table.swap.push((x, y, 4.0));
+            }
+        }
+    }
+    table
+}
+
+/// The same relation stored: identity loops round an edit.
+fn stored_edits() -> SourceModel {
+    let table = edit_table();
+    let mut states = vec![
+        SourceState {
+            final_weight: Some(0.0),
+            arcs: Vec::new(),
+        },
+        SourceState {
+            final_weight: Some(0.0),
+            arcs: Vec::new(),
+        },
+    ];
+    for &x in &LETTERS {
+        for q in 0..2u32 {
+            states[q as usize].arcs.push(SourceArc {
+                input: x,
+                output: x,
+                target: q,
+                weight: 0.0,
+            });
+        }
+    }
+    for &(x, y, w) in &table.sub {
+        states[0].arcs.push(SourceArc {
+            input: x,
+            output: y,
+            target: 1,
+            weight: w,
+        });
+    }
+    for &(x, w) in &table.del {
+        states[0].arcs.push(SourceArc {
+            input: x,
+            output: 0,
+            target: 1,
+            weight: w,
+        });
+    }
+    for &(y, w) in &table.ins {
+        states[0].arcs.push(SourceArc {
+            input: 0,
+            output: y,
+            target: 1,
+            weight: w,
+        });
+    }
+    let mut pending: Vec<(u16, u32)> = Vec::new();
+    for &(x, y, w) in &table.swap {
+        let m1 = match pending.iter().find(|p| p.0 == x) {
+            Some(p) => p.1,
+            None => {
+                let m1 = states.len() as u32;
+                states.push(SourceState::default());
+                states.push(SourceState::default());
+                states[0].arcs.push(SourceArc {
+                    input: x,
+                    output: 0,
+                    target: m1,
+                    weight: 0.0,
+                });
+                states[m1 as usize + 1].arcs.push(SourceArc {
+                    input: 0,
+                    output: x,
+                    target: 1,
+                    weight: 0.0,
+                });
+                pending.push((x, m1));
+                m1
+            }
+        };
+        states[m1 as usize].arcs.push(SourceArc {
+            input: y,
+            output: y,
+            target: m1 + 1,
+            weight: w,
+        });
+    }
+    SourceModel::new(stage_symbols(false), states).expect("valid model")
+}
+
+/// The same relation as one call arc into an edit-table stage.
+fn staged_edits() -> (SourceModel, StagesSpec) {
+    let model = SourceModel::new(
+        stage_symbols(true),
+        vec![
+            SourceState {
+                final_weight: None,
+                arcs: vec![SourceArc {
+                    input: 6,
+                    output: 7,
+                    target: 1,
+                    weight: 0.0,
+                }],
+            },
+            SourceState {
+                final_weight: Some(0.0),
+                arcs: Vec::new(),
+            },
+        ],
+    )
+    .expect("valid model");
+    let stage = EditStageSpec {
+        contexts: vec![
+            ContextSpec {
+                final_weight: Some(0.0),
+                ident: vec![(LETTERS.to_vec(), 0)],
+                table: Some(0),
+            },
+            ContextSpec {
+                final_weight: Some(0.0),
+                ident: vec![(LETTERS.to_vec(), 1)],
+                table: None,
+            },
+        ],
+        start: 0,
+        tables: vec![edit_table()],
+    };
+    (
+        model,
+        StagesSpec {
+            n_alphabet: 6,
+            stages: vec![StageSpec {
+                call_input: 6,
+                call_output: 7,
+                table: stage,
+            }],
+        },
+    )
+}
+
+#[test]
+fn an_edit_table_stage_suggests_what_the_stored_edits_suggest() {
+    let options = WriteOptions {
+        threads: 1,
+        ..WriteOptions::default()
+    };
+    let stored = write(&stored_edits(), &options).expect("stored model writes");
+    let (model, stages) = staged_edits();
+    let staged = write(
+        &model,
+        &WriteOptions {
+            stages: Some(stages),
+            ..options.clone()
+        },
+    )
+    .expect("staged model writes and checks");
+    assert!(staged.report.stage_queries_checked > 0);
+    let staged_t = DhfstTransducer::from_bytes(&staged.bytes, "staged").expect("loads");
+    assert_eq!(staged_t.version(), VERSION);
+    assert_eq!(staged_t.alphabet_len(), 6);
+    assert_eq!(
+        staged_t.alphabet().key_table().len(),
+        6,
+        "call symbols are not alphabet"
+    );
+
+    let lexicon = || MmapThfstTransducer::from_path(&Fs, fixture("lexicon.thfst")).expect("loads");
+    let a = HfstSpeller::new(
+        DhfstTransducer::from_bytes(&stored.bytes, "stored").expect("loads"),
+        lexicon(),
+    );
+    let b = HfstSpeller::new(staged_t, lexicon());
+    let mut compared = 0;
+    for subsets in [true, false] {
+        let mut config = SpellerConfig::default();
+        config.n_best = None;
+        config.mutator_subsets = subsets;
+        config.verbose = true;
+        for word in [
+            "cat", "cet", "cta", "acr", "ca", "catt", "car", "cra", "caer", "crae", "tac", "ccat",
+            "re",
+        ] {
+            let want = rows(a.clone().suggest_with_config(word, &config));
+            let got = rows(b.clone().suggest_with_config(word, &config));
+            assert_eq!(got, want, "word {word}, subsets {subsets}");
+            compared += want.len();
+        }
+    }
+    assert!(compared > 10, "too few suggestions to compare");
+}
+
+#[test]
+fn corrupt_stages_are_refused() {
+    let (model, stages) = staged_edits();
+    let bytes = write(
+        &model,
+        &WriteOptions {
+            threads: 1,
+            stages: Some(stages.clone()),
+            ..WriteOptions::default()
+        },
+    )
+    .expect("writes")
+    .bytes;
+    DhfstTransducer::from_bytes(&bytes, "x").expect("the written file loads");
+
+    // The version byte says 1 while the file has stages.
+    let mut b = bytes.clone();
+    b[5] = VERSION_1;
+    assert!(
+        DhfstTransducer::from_bytes(&b, "x").is_err(),
+        "version 1 with stages loaded"
+    );
+
+    // A call symbol inside the alphabet.
+    let mut bad = stages.clone();
+    bad.stages[0].call_input = 3;
+    assert!(
+        write(
+            &model,
+            &WriteOptions {
+                threads: 1,
+                stages: Some(bad),
+                ..WriteOptions::default()
+            }
+        )
+        .is_err(),
+        "a call symbol inside the alphabet was written"
+    );
+
+    // Every byte of the STAG section flipped in turn: never a panic, and a
+    // load that succeeds must still answer every query.
+    let reader = DhfstTransducer::from_bytes(&bytes, "x").expect("loads");
+    let stag = {
+        let n = u32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]) as usize;
+        (0..n)
+            .map(|s| HEADER_LEN + SECTION_ENTRY_LEN * s)
+            .find(|at| bytes[*at..*at + 4] == tag::STAG)
+            .map(|at| {
+                let off = u64::from_le_bytes(bytes[at + 8..at + 16].try_into().expect("8"));
+                let len = u64::from_le_bytes(bytes[at + 16..at + 24].try_into().expect("8"));
+                (off as usize, len as usize)
+            })
+            .expect("a STAG section")
+    };
+    drop(reader);
+    for at in stag.0..stag.0 + stag.1 {
+        let mut b = bytes.clone();
+        b[at] ^= 0x5a;
+        if let Ok(t) = DhfstTransducer::from_bytes(&b, "x") {
+            let n = t.state_count();
+            for q in 0..n + 64 {
+                for x in 0..8u16 {
+                    t.for_each_arc(TransitionTableIndex(q), SymbolNumber(x), |_, _, _| {});
+                }
+            }
+        }
+    }
 }

@@ -160,6 +160,7 @@ fn cmd_write(
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default(),
+            stages: None,
         },
     )?;
     let encode_secs = encode_started.elapsed().as_secs_f64();
