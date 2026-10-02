@@ -49,7 +49,7 @@
 //! (the default cells as one group), so the search meets it against the
 //! lexicon the same way it meets a default arc.
 //!
-//! # Layout (`STAG` section, DHFST version 2)
+//! # Layout (`STAG` section)
 //!
 //! ```text
 //! u32 n_alphabet   symbols 0..n_alphabet are the alphabet; the rest are

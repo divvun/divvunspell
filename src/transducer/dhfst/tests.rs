@@ -64,7 +64,7 @@ impl Raw {
             flags: None,
             extra: Vec::new(),
             drop: Vec::new(),
-            version: VERSION_1,
+            version: VERSION,
         }
     }
 
@@ -319,12 +319,8 @@ fn the_header_says_which_format_a_file_is() {
         TransducerFormat::detect(b"DHFST\x01\0\0", path).ok(),
         Some(TransducerFormat::Dhfst { version: 1 })
     );
-    assert_eq!(
-        TransducerFormat::detect(b"DHFST\x02\0\0", path).ok(),
-        Some(TransducerFormat::Dhfst { version: 2 })
-    );
     for bad in [
-        &b"DHFST\x03\0\0"[..],
+        &b"DHFST\x02\0\0"[..],
         b"DHFST\x00",
         b"DHFST",
         b"HFSX\0\0\0\0",
@@ -381,7 +377,7 @@ fn corrupt_files_are_refused() {
 
     let mut cases: Vec<(&str, Raw)> = Vec::new();
     let mut r = good.clone();
-    r.version = 3;
+    r.version = 2;
     cases.push(("unknown version", r));
     let mut r = good.clone();
     r.flags = Some(FLAG_TROPICAL | FLAG_FALLBACK | FLAG_DEFAULTS | FLAG_STAGES);
@@ -1261,12 +1257,12 @@ fn corrupt_stages_are_refused() {
     .bytes;
     DhfstTransducer::from_bytes(&bytes, "x").expect("the written file loads");
 
-    // The version byte says 1 while the file has stages.
+    // The stages flag cleared while the file has a STAG section.
     let mut b = bytes.clone();
-    b[5] = VERSION_1;
+    b[8] &= !(FLAG_STAGES as u8);
     assert!(
         DhfstTransducer::from_bytes(&b, "x").is_err(),
-        "version 1 with stages loaded"
+        "a STAG section without the stages flag loaded"
     );
 
     // A call symbol inside the alphabet.

@@ -143,7 +143,7 @@ pub(crate) fn readable_dhfst_version(version: &str) -> bool {
         .split('.')
         .next()
         .and_then(|major| major.parse::<u8>().ok())
-        .is_some_and(crate::transducer::dhfst::supported_version)
+        == Some(crate::transducer::dhfst::VERSION)
 }
 
 pub(crate) struct TempMmap {

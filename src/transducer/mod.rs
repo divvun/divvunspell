@@ -145,12 +145,11 @@ impl TransducerFormat {
                     detail: Cow::Borrowed("DHFST header is truncated before its version byte"),
                 }
             })?;
-            if !dhfst::supported_version(version) {
+            if version != dhfst::VERSION {
                 return Err(TransducerError::UnrecognisedFormat {
                     path: path.to_path_buf(),
                     detail: Cow::Owned(format!(
-                        "DHFST version {version}; this reader supports versions {} to {}",
-                        dhfst::VERSION_1,
+                        "DHFST version {version}; this reader supports version {}",
                         dhfst::VERSION
                     )),
                 });

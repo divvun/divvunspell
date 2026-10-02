@@ -101,15 +101,8 @@ pub mod writer;
 
 /// The first five bytes of a DHFST file.
 pub const MAGIC: &[u8; 5] = b"DHFST";
-/// The newest format version: this reader reads it, and the writer writes it
-/// for a file with stages.
-pub const VERSION: u8 = 2;
-/// The format version of a file without stages.
-pub const VERSION_1: u8 = 1;
-/// Whether this reader reads a format version.
-pub fn supported_version(version: u8) -> bool {
-    (VERSION_1..=VERSION).contains(&version)
-}
+/// The format version this reader reads and the writer writes.
+pub const VERSION: u8 = 1;
 /// Bytes before the section table.
 pub const HEADER_LEN: usize = 24;
 /// Bytes per section table entry.
@@ -133,7 +126,7 @@ pub const FLAG_FALLBACK: u32 = 1 << 1;
 pub const FLAG_DEFAULTS: u32 = 1 << 2;
 /// Header flag: a `RULE` section is present.
 pub const FLAG_RULES: u32 = 1 << 3;
-/// Header flag: a `STAG` section is present (version 2).
+/// Header flag: a `STAG` section is present.
 pub const FLAG_STAGES: u32 = 1 << 4;
 const KNOWN_FLAGS: u32 = FLAG_TROPICAL | FLAG_FALLBACK | FLAG_DEFAULTS | FLAG_RULES | FLAG_STAGES;
 
@@ -151,7 +144,7 @@ pub mod tag {
     pub const ENTR: [u8; 4] = *b"ENTR";
     /// rule tries (reserved)
     pub const RULE: [u8; 4] = *b"RULE";
-    /// stages the stored automaton calls (version 2)
+    /// stages the stored automaton calls
     pub const STAG: [u8; 4] = *b"STAG";
     /// writer metadata
     pub const META: [u8; 4] = *b"meta";
@@ -1022,18 +1015,12 @@ impl Parsed {
         if names[0] != "@_EPSILON_SYMBOL_@" {
             return Err(corrupt(path, "symbol 0 is not @_EPSILON_SYMBOL_@"));
         }
-        // Stages (version 2): the symbols past the alphabet are call symbols,
-        // never regular and never part of the alphabet.
+        // Stages: the symbols past the alphabet are call symbols, never
+        // regular and never part of the alphabet.
         let version = b[MAGIC.len()];
         let stag = find(tag::STAG);
-        match (stag.is_some(), flags & FLAG_STAGES != 0, version >= VERSION) {
-            (false, false, _) | (true, true, true) => {}
-            _ => {
-                return Err(corrupt(
-                    path,
-                    "STAG section, stages flag and format version disagree",
-                ));
-            }
+        if stag.is_some() != (flags & FLAG_STAGES != 0) {
+            return Err(corrupt(path, "STAG section and stages flag disagree"));
         }
         let n_alphabet = match stag {
             Some((start, end)) if end - start >= 8 => u32_at(b, start),

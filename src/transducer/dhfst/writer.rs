@@ -22,8 +22,7 @@ use crate::transducer::ArcGroup;
 use crate::transducer::dhfst::stage::{EDIT_TABLE_HEADER_LEN, STAGE_EDIT_TABLE, STAGE_HEADER_LEN};
 use crate::transducer::dhfst::{
     DEFAULT_BASE, DefaultKind, DhfstTransducer, FLAG_DEFAULTS, FLAG_FALLBACK, FLAG_STAGES,
-    FLAG_TROPICAL, HEADER_LEN, MAGIC, NONE, SECTION_ENTRY_LEN, VERSION, VERSION_1, is_regular_name,
-    tag,
+    FLAG_TROPICAL, HEADER_LEN, MAGIC, NONE, SECTION_ENTRY_LEN, VERSION, is_regular_name, tag,
 };
 use crate::transducer::{Transducer, TransducerError};
 use crate::types::{SymbolNumber, TransitionTableIndex};
@@ -255,7 +254,7 @@ pub struct WriteOptions {
     pub threads: usize,
     /// A name for the source, recorded in the `meta` section.
     pub source_name: String,
-    /// Stages the model's call arcs call into; written as a version 2 file.
+    /// Stages the model's call arcs call into.
     pub stages: Option<StagesSpec>,
 }
 
@@ -1304,20 +1303,14 @@ fn serialise(
     }
     sections.push((tag::STAT, stat));
     sections.push((tag::ENTR, entr));
-    let version = match stages {
-        Some(stag) => {
-            report.stage_bytes = stag.len();
-            sections.push((tag::STAG, stag));
-            VERSION
-        }
-        None => VERSION_1,
-    };
-    sections.push((tag::META, meta));
-
     let mut flags = FLAG_TROPICAL;
-    if version == VERSION {
+    if let Some(stag) = stages {
+        report.stage_bytes = stag.len();
+        sections.push((tag::STAG, stag));
         flags |= FLAG_STAGES;
     }
+    sections.push((tag::META, meta));
+
     if report.states_with_fallback > 0 {
         flags |= FLAG_FALLBACK;
     }
@@ -1328,7 +1321,7 @@ fn serialise(
     let table_len = sections.len() * SECTION_ENTRY_LEN;
     let mut out: Vec<u8> = Vec::new();
     out.extend_from_slice(MAGIC);
-    out.push(version);
+    out.push(VERSION);
     out.extend_from_slice(&[0u8; 2]);
     out.extend_from_slice(&flags.to_le_bytes());
     out.extend_from_slice(&(sections.len() as u32).to_le_bytes());

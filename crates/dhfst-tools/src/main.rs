@@ -66,7 +66,7 @@ enum Opts {
         path: PathBuf,
     },
 
-    /// Write a staged DHFST file (version 2): a stored model whose call arcs
+    /// Write a staged DHFST file: a stored model whose call arcs
     /// call an edit-table stage
     ///
     /// The stored model is the error model rebuilt with the table-shaped
