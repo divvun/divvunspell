@@ -1424,6 +1424,11 @@ where
 /// there the memo is not earning the memory it holds.
 const SUBSET_POOL_LIMIT: usize = 1 << 16;
 
+/// The most entries a search's tables may have room for and still be kept
+/// for the next search: a few megabytes. A word that ran into its search
+/// budget grows them far past this, and its tables go.
+const SCRATCH_POOL_LIMIT: usize = 1 << 18;
+
 #[derive(Debug)]
 pub struct HfstSpeller<T, U>
 where
@@ -1452,6 +1457,8 @@ where
     /// word, not once per node. Passing them round a pool rather than sharing
     /// one is what buys that, at the price of warming up once per thread.
     subset_pool: parking_lot::Mutex<Vec<subset::MutatorSubsets>>,
+    /// Search tables kept between searches, so they keep their capacity.
+    scratch_pool: parking_lot::Mutex<Vec<worker::SearchScratch>>,
 }
 
 impl<T, U> HfstSpeller<T, U>
@@ -1496,6 +1503,7 @@ where
             flag_operations,
             bundled_config,
             subset_pool: parking_lot::Mutex::new(Vec::new()),
+            scratch_pool: parking_lot::Mutex::new(Vec::new()),
         })
     }
 
@@ -1526,6 +1534,27 @@ where
         match taken {
             Some(subsets) => Some(subsets),
             None => subset::MutatorSubsets::new(&self.mutator, track_distance),
+        }
+    }
+
+    /// Borrow a search's tables, emptied, from an earlier search where one is
+    /// going spare.
+    pub(crate) fn take_search_scratch(&self, flag_width: usize) -> worker::SearchScratch {
+        let taken = self.scratch_pool.lock().pop();
+        match taken {
+            Some(mut scratch) => {
+                scratch.reset(flag_width);
+                scratch
+            }
+            None => worker::SearchScratch::new(flag_width),
+        }
+    }
+
+    /// Hand a search's tables back, unless a large search has left them
+    /// holding more memory than is worth keeping between words.
+    pub(crate) fn give_search_scratch(&self, scratch: worker::SearchScratch) {
+        if scratch.capacity() <= SCRATCH_POOL_LIMIT {
+            self.scratch_pool.lock().push(scratch);
         }
     }
 

@@ -90,6 +90,57 @@ impl Ord for QueueEntry {
     }
 }
 
+/// What a search allocates, kept between searches so that its tables keep
+/// their capacity: a search grows them to the size it needs once rather than
+/// by doubling from nothing every word.
+pub(crate) struct SearchScratch {
+    tables: NodeTables,
+    queue: BinaryHeap<QueueEntry>,
+    parked: Parked,
+    children: Vec<TreeNode>,
+    closed: Closed,
+}
+
+impl std::fmt::Debug for SearchScratch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SearchScratch")
+            .field("capacity", &self.capacity())
+            .finish()
+    }
+}
+
+impl SearchScratch {
+    pub(crate) fn new(flag_width: usize) -> SearchScratch {
+        SearchScratch {
+            tables: NodeTables::new(flag_width),
+            queue: BinaryHeap::with_capacity(256),
+            parked: Parked::new(),
+            children: Vec::with_capacity(256),
+            closed: Closed::new(),
+        }
+    }
+
+    /// Empty it for the next search, keeping the capacity.
+    pub(crate) fn reset(&mut self, flag_width: usize) {
+        self.tables.reset(flag_width);
+        self.queue.clear();
+        self.parked.slots.clear();
+        self.parked.free.clear();
+        self.children.clear();
+        self.closed.table.clear();
+    }
+
+    /// How many entries the largest of its tables has room for, for
+    /// deciding whether it is worth keeping.
+    pub(crate) fn capacity(&self) -> usize {
+        self.closed
+            .table
+            .capacity()
+            .max(self.queue.capacity())
+            .max(self.tables.capacity())
+    }
+}
+
 /// The queued nodes, by slot, with the free slots kept for reuse.
 struct Parked {
     slots: Vec<TreeNode>,
@@ -1417,24 +1468,39 @@ where
             .expect("the NFA walk has no subset caps to breach")
     }
 
-    fn search(&self, mut subsets: Option<&mut MutatorSubsets>) -> Option<Vec<Suggestion>> {
+    fn search(&self, subsets: Option<&mut MutatorSubsets>) -> Option<Vec<Suggestion>> {
+        let mut scratch = self.speller.take_search_scratch(self.state_size());
+        let result = self.search_with(&mut scratch, subsets);
+        self.speller.give_search_scratch(scratch);
+        result
+    }
+
+    fn search_with(
+        &self,
+        work: &mut SearchScratch,
+        mut subsets: Option<&mut MutatorSubsets>,
+    ) -> Option<Vec<Suggestion>> {
         tracing::trace!("Beginning suggest");
 
-        let tables = NodeTables::new(self.state_size());
+        let SearchScratch {
+            tables,
+            queue,
+            parked,
+            children: scratch,
+            closed: dedup,
+        } = work;
+        let tables = &*tables;
         // A*: always expand the node with the cheapest `weight + heuristic`.
         // Arc weights are non-negative and the heuristic is admissible, so the
         // first time a final configuration is reached it is via a least-weight
         // path, the n-best heap fills with good candidates early (tightening
         // the cutoff), and the whole search can stop when the cheapest open
         // estimate exceeds the cutoff.
-        let mut queue: BinaryHeap<QueueEntry> = BinaryHeap::with_capacity(256);
-        let mut parked = Parked::new();
         queue.extend(
             speller_start_node()
                 .into_iter()
                 .map(|node| parked.park(self.ordered(subsets.as_deref(), node))),
         );
-        let mut scratch: Vec<TreeNode> = Vec::with_capacity(256);
         // Key on symbol sequences to avoid string_from_symbols in the hot loop.
         // Converted to SmolStr once after the loop.
         // Total weight and the error model's share of it, keyed by output form.
@@ -1456,7 +1522,7 @@ where
 
         let mut iteration_count = 0u64;
         let mut stats = SEARCH_STATS.then(SearchStats::default);
-        let mut closed = self.config.search_dedup.then(Closed::new);
+        let mut closed = self.config.search_dedup.then_some(dedup);
         // Every node the search takes off the queue is counted, whichever kind
         // of expansion put it there, so the budget bounds the work the search
         // does rather than one variety of it.
@@ -1507,14 +1573,14 @@ where
 
             // `scratch` is drained at the end of every iteration, so these marks
             // attribute each child to the expansion that produced it.
-            self.lexicon_epsilons(&tables, max_weight, &next_node, &mut scratch);
+            self.lexicon_epsilons(tables, max_weight, &next_node, scratch);
             let lexicon_eps_mark = scratch.len();
             if !self.mutator_epsilons(
-                &tables,
+                tables,
                 max_weight,
                 &next_node,
                 subsets.as_deref_mut(),
-                &mut scratch,
+                scratch,
             ) {
                 return None;
             }
@@ -1527,11 +1593,11 @@ where
             let at_input_end = next_node.input_state.0 as usize == self.input.len();
             if !at_input_end
                 && !self.consume_input(
-                    &tables,
+                    tables,
                     max_weight,
                     &next_node,
                     subsets.as_deref_mut(),
-                    &mut scratch,
+                    scratch,
                 )
             {
                 return None;

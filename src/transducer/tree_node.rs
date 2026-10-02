@@ -78,6 +78,27 @@ impl NodeTables {
         }
     }
 
+    /// Empty the tables for another search, keeping their capacity.
+    pub(crate) fn reset(&mut self, width: usize) {
+        let strings = self.strings.get_mut();
+        strings.parent.truncate(1);
+        strings.symbol.truncate(1);
+        strings.children.clear();
+        let flags = self.flags.get_mut();
+        flags.width = width;
+        flags.values.clear();
+        flags.values.resize(width, ValueNumber::ZERO);
+        flags.index.clear();
+        flags.changes.clear();
+        let hash = flags.hasher.hash_one(&flags.values[..]);
+        flags.index.insert_unique(hash, ROOT, |_| hash);
+    }
+
+    /// How many strings the tables have room for.
+    pub(crate) fn capacity(&self) -> usize {
+        self.strings.borrow().children.capacity()
+    }
+
     /// The number of `string` with `symbol` appended.
     #[inline]
     fn push(&self, string: u32, symbol: SymbolNumber) -> u32 {
