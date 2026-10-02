@@ -5,8 +5,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use super::writer::{
-    ContextSpec, EditStageSpec, SourceArc, SourceModel, SourceState, StageSpec, StagesSpec,
-    TableSpec, WriteOptions, write,
+    ContextSpec, EditStageSpec, SourceArc, SourceModel, SourceState, StageKind, StageSpec,
+    StagesSpec, TableSpec, WriteOptions, write,
 };
 use super::*;
 use crate::speller::{HfstSpeller, Speller, SpellerConfig};
@@ -1182,10 +1182,11 @@ fn staged_edits() -> (SourceModel, StagesSpec) {
         model,
         StagesSpec {
             n_alphabet: 6,
+            n_top: 2,
             stages: vec![StageSpec {
                 call_input: 6,
                 call_output: 7,
-                table: stage,
+                kind: StageKind::Table(stage),
             }],
         },
     )
@@ -1347,8 +1348,11 @@ fn a_pushed_stage_suggests_what_the_stored_edits_suggest() {
     let mut states: Vec<SourceState> = model.states().to_vec();
     states[0].arcs[0].weight = m;
     model = SourceModel::new(stage_symbols(true), states).expect("valid");
-    stages.stages[0].table.contexts[0].final_weight = None;
-    stages.stages[0].table.tables = vec![pushed];
+    let StageKind::Table(stage) = &mut stages.stages[0].kind else {
+        panic!("staged_edits has an edit table");
+    };
+    stage.contexts[0].final_weight = None;
+    stage.tables = vec![pushed];
 
     let options = WriteOptions {
         threads: 1,
@@ -1389,4 +1393,335 @@ fn a_pushed_stage_suggests_what_the_stored_edits_suggest() {
         }
     }
     assert!(compared > 10, "too few suggestions to compare");
+}
+
+/// A top level of call arcs over stored components, as `(from, stage,
+/// return, weight)`, with the top level's final weights.
+struct Recipe {
+    top_finals: Vec<Option<f32>>,
+    calls: Vec<(u32, usize, u32, f32)>,
+}
+
+/// Final-strings component: drop a final `e` at 1.5, or nothing.
+fn final_strings() -> Vec<SourceState> {
+    vec![
+        SourceState {
+            final_weight: Some(0.0),
+            arcs: vec![SourceArc {
+                input: 5,
+                output: 0,
+                target: 1,
+                weight: 1.5,
+            }],
+        },
+        SourceState {
+            final_weight: Some(0.0),
+            arcs: Vec::new(),
+        },
+    ]
+}
+
+/// The edits component of [`stored_edits`], with its final weights raised
+/// so that returning costs something.
+fn edits_component() -> Vec<SourceState> {
+    let mut states = stored_edits().states().to_vec();
+    for s in &mut states {
+        if let Some(f) = &mut s.final_weight {
+            *f += 0.5;
+        }
+    }
+    states
+}
+
+/// `edits^{1..2} final?` as a recipe over two components.
+fn repeat_recipe() -> Recipe {
+    Recipe {
+        top_finals: vec![None, Some(0.0), Some(0.25), Some(0.0)],
+        calls: vec![
+            (0, 0, 1, 0.0),
+            (1, 0, 2, 1.0),
+            (1, 1, 3, 0.0),
+            (2, 1, 3, 0.0),
+        ],
+    }
+}
+
+/// The recipe compiled: every call replaced by a copy of its component,
+/// entered by an epsilon arc carrying the call's weight and left by an
+/// epsilon arc from each final state carrying its final weight.
+fn inlined(recipe: &Recipe, components: &[Vec<SourceState>]) -> SourceModel {
+    let mut states: Vec<SourceState> = recipe
+        .top_finals
+        .iter()
+        .map(|f| SourceState {
+            final_weight: *f,
+            arcs: Vec::new(),
+        })
+        .collect();
+    for &(from, k, ret, w) in &recipe.calls {
+        let at = states.len() as u32;
+        states[from as usize].arcs.push(SourceArc {
+            input: 0,
+            output: 0,
+            target: at,
+            weight: w,
+        });
+        for state in &components[k] {
+            let mut arcs: Vec<SourceArc> = state
+                .arcs
+                .iter()
+                .map(|a| SourceArc {
+                    target: a.target + at,
+                    ..*a
+                })
+                .collect();
+            if let Some(f) = state.final_weight {
+                arcs.push(SourceArc {
+                    input: 0,
+                    output: 0,
+                    target: ret,
+                    weight: f,
+                });
+            }
+            states.push(SourceState {
+                final_weight: None,
+                arcs,
+            });
+        }
+    }
+    SourceModel::new(stage_symbols(false), states).expect("valid model")
+}
+
+/// The recipe staged: its top level, then each component once.
+fn staged(recipe: &Recipe, components: &[Vec<SourceState>]) -> (SourceModel, StagesSpec) {
+    let mut symbols = stage_symbols(false);
+    let n_alphabet = symbols.len() as u32;
+    for k in 0..components.len() {
+        symbols.push(format!("@DHFST_CALL_{k}_IN@"));
+        symbols.push(format!("@DHFST_CALL_{k}_OUT@"));
+    }
+    let call = |k: usize| {
+        (
+            (n_alphabet + 2 * k as u32) as u16,
+            (n_alphabet + 2 * k as u32 + 1) as u16,
+        )
+    };
+    let n_top = recipe.top_finals.len() as u32;
+    let mut states: Vec<SourceState> = recipe
+        .top_finals
+        .iter()
+        .map(|f| SourceState {
+            final_weight: *f,
+            arcs: Vec::new(),
+        })
+        .collect();
+    for &(from, k, ret, w) in &recipe.calls {
+        let (input, output) = call(k);
+        states[from as usize].arcs.push(SourceArc {
+            input,
+            output,
+            target: ret,
+            weight: w,
+        });
+    }
+    let mut stages: Vec<StageSpec> = Vec::new();
+    for (k, component) in components.iter().enumerate() {
+        let first = states.len() as u32;
+        for state in component {
+            states.push(SourceState {
+                final_weight: state.final_weight,
+                arcs: state
+                    .arcs
+                    .iter()
+                    .map(|a| SourceArc {
+                        target: a.target + first,
+                        ..*a
+                    })
+                    .collect(),
+            });
+        }
+        let (call_input, call_output) = call(k);
+        stages.push(StageSpec {
+            call_input,
+            call_output,
+            kind: StageKind::Stored {
+                start: first,
+                first,
+                count: component.len() as u32,
+            },
+        });
+    }
+    (
+        SourceModel::new(symbols, states).expect("valid model"),
+        StagesSpec {
+            n_alphabet,
+            n_top,
+            stages,
+        },
+    )
+}
+
+#[test]
+fn stored_stages_suggest_what_the_compiled_model_suggests() {
+    let components = [edits_component(), final_strings()];
+    let recipe = repeat_recipe();
+    let options = WriteOptions {
+        threads: 1,
+        ..WriteOptions::default()
+    };
+    let compiled = write(&inlined(&recipe, &components), &options).expect("compiled writes");
+    let (model, stages) = staged(&recipe, &components);
+    let written = write(
+        &model,
+        &WriteOptions {
+            stages: Some(stages),
+            ..options
+        },
+    )
+    .expect("staged model writes and checks");
+    assert!(written.report.stage_queries_checked > 0);
+    let staged_t = DhfstTransducer::from_bytes(&written.bytes, "staged").expect("loads");
+    assert_eq!(staged_t.top_level_len(), 4);
+    assert_eq!(staged_t.stage_summary().len(), 2);
+
+    let lexicon = || MmapThfstTransducer::from_path(&Fs, fixture("lexicon.thfst")).expect("loads");
+    let a = HfstSpeller::new(
+        DhfstTransducer::from_bytes(&compiled.bytes, "compiled").expect("loads"),
+        lexicon(),
+    );
+    let b = HfstSpeller::new(staged_t, lexicon());
+    let mut compared = 0;
+    for subsets in [true, false] {
+        let mut config = SpellerConfig::default();
+        config.n_best = None;
+        config.mutator_subsets = subsets;
+        config.verbose = true;
+        for word in [
+            "cat", "cet", "cta", "acr", "ca", "catt", "car", "cra", "caer", "crae", "tac", "ccat",
+            "re", "cate", "carre", "tace", "ctae",
+        ] {
+            let want = rows(a.clone().suggest_with_config(word, &config));
+            let got = rows(b.clone().suggest_with_config(word, &config));
+            assert_eq!(got, want, "word {word}, subsets {subsets}");
+            compared += want.len();
+        }
+    }
+    assert!(compared > 20, "too few suggestions to compare");
+}
+
+#[test]
+fn a_model_its_stages_do_not_describe_is_refused() {
+    let components = [edits_component(), final_strings()];
+    let (model, stages) = staged(&repeat_recipe(), &components);
+    let try_write = |model: &SourceModel, stages: StagesSpec| {
+        write(
+            model,
+            &WriteOptions {
+                threads: 1,
+                stages: Some(stages),
+                ..WriteOptions::default()
+            },
+        )
+    };
+    try_write(&model, stages.clone()).expect("the staged model writes");
+
+    let edit = |f: &dyn Fn(&mut Vec<SourceState>)| {
+        let mut states = model.states().to_vec();
+        f(&mut states);
+        SourceModel::new(model.symbols().to_vec(), states).expect("valid model")
+    };
+    let first_final = 4 + components[0].len() as u32;
+    // A component arc into another component.
+    let leaks = edit(&|states| states[4].arcs[0].target = first_final);
+    assert!(
+        try_write(&leaks, stages.clone()).is_err(),
+        "a leaking component was written"
+    );
+    // A top-level arc into a component.
+    let enters = edit(&|states| {
+        states[1].arcs.push(SourceArc {
+            input: 1,
+            output: 1,
+            target: 4,
+            weight: 0.0,
+        })
+    });
+    assert!(
+        try_write(&enters, stages.clone()).is_err(),
+        "a jump into a component was written"
+    );
+    // A call from inside a component.
+    let nested = edit(&|states| {
+        let (input, output) = (stages.stages[1].call_input, stages.stages[1].call_output);
+        states[4].arcs.push(SourceArc {
+            input,
+            output,
+            target: 4,
+            weight: 0.0,
+        })
+    });
+    assert!(
+        try_write(&nested, stages.clone()).is_err(),
+        "a nested call was written"
+    );
+    // States that belong nowhere.
+    let mut short = stages.clone();
+    let StageKind::Stored { count, .. } = &mut short.stages[1].kind else {
+        panic!("stored");
+    };
+    *count -= 1;
+    assert!(
+        try_write(&model, short).is_err(),
+        "an orphan state was written"
+    );
+    // Two components over the same states.
+    let mut overlap = stages.clone();
+    overlap.stages[1].kind = stages.stages[0].kind.clone();
+    assert!(
+        try_write(&model, overlap).is_err(),
+        "overlapping components were written"
+    );
+}
+
+#[test]
+fn corrupt_stored_stages_never_panic() {
+    let components = [edits_component(), final_strings()];
+    let (model, stages) = staged(&repeat_recipe(), &components);
+    let bytes = write(
+        &model,
+        &WriteOptions {
+            threads: 1,
+            stages: Some(stages),
+            ..WriteOptions::default()
+        },
+    )
+    .expect("writes")
+    .bytes;
+    let n = u32::from_le_bytes([bytes[12], bytes[13], bytes[14], bytes[15]]) as usize;
+    let (off, len) = (0..n)
+        .map(|s| HEADER_LEN + SECTION_ENTRY_LEN * s)
+        .find(|at| bytes[*at..*at + 4] == tag::STAG)
+        .map(|at| {
+            let off = u64::from_le_bytes(bytes[at + 8..at + 16].try_into().expect("8"));
+            let len = u64::from_le_bytes(bytes[at + 16..at + 24].try_into().expect("8"));
+            (off as usize, len as usize)
+        })
+        .expect("a STAG section");
+    let mut loaded = 0;
+    for at in off..off + len {
+        let mut b = bytes.clone();
+        b[at] ^= 0x5a;
+        if let Ok(t) = DhfstTransducer::from_bytes(&b, "x") {
+            loaded += 1;
+            for q in 0..t.state_count() + 4 * 64 {
+                for x in 0..t.alphabet_len() as u16 + 2 {
+                    t.for_each_arc(TransitionTableIndex(q), SymbolNumber(x), |_, _, _| {});
+                }
+            }
+        }
+    }
+    assert!(
+        loaded > 0,
+        "every flip was refused, so the walk went untested"
+    );
 }

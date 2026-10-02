@@ -13,8 +13,8 @@ use divvun_fst::transducer::Transducer;
 use divvun_fst::transducer::dhfst::{
     self, DefaultKind, DhfstTransducer,
     writer::{
-        ContextSpec, EditStageSpec, SourceArc, SourceModel, SourceState, StageSpec, StagesSpec,
-        TableSpec, WriteOptions, verify_reader, write,
+        ContextSpec, EditStageSpec, SourceArc, SourceModel, SourceState, StageKind, StageSpec,
+        StagesSpec, TableSpec, WriteOptions, verify_reader, write,
     },
 };
 use divvun_fst::transducer::hfst::HfstTransducer;
@@ -66,23 +66,33 @@ enum Opts {
         path: PathBuf,
     },
 
-    /// Write a staged DHFST file: a stored model whose call arcs
-    /// call an edit-table stage
+    /// Write a DHFST file that combines components at search time: a top
+    /// level whose call arcs call stages, each component stored once
     ///
-    /// The stored model is the error model rebuilt with the table-shaped
-    /// component replaced by one arc "<DHFST_CALL_IN>":"<DHFST_CALL_OUT>".
-    /// Other arcs on those symbols (identities hfst's harmonisation adds to
-    /// `?` loops) are dropped. The file keeps the reference model's symbol
+    /// The top level is an error model in which every component is one
+    /// placeholder arc "<DHFST_CALL_NAME_IN>":"<DHFST_CALL_NAME_OUT>"
+    /// ("<DHFST_CALL_IN>":"<DHFST_CALL_OUT>" for the empty name), whose
+    /// target is where the component returns to. Each name is a stage: a
+    /// stored component (`--stored NAME=FILE`, HFST optimized lookup) or an
+    /// edit table (`--table NAME=FILE`, JSON). Other arcs on placeholder
+    /// symbols (identities hfst's harmonisation adds to `?` loops) are
+    /// dropped. A stored component is trimmed and weight-pushed towards its
+    /// start with the least cost through it taken out, as the top level's
+    /// placeholder carries it. The file keeps the reference model's symbol
     /// numbering, with the call symbols after it.
-    Stage {
-        /// the stored model, HFST optimized lookup
-        stored: PathBuf,
-        /// the edit table, as JSON from derive_table.py
-        table: PathBuf,
-        /// the original error model, HFST optimized lookup
+    Combine {
+        /// the top level, HFST optimized lookup
+        top: PathBuf,
+        /// the original error model, HFST optimized lookup, for its symbols
         reference: PathBuf,
         /// the DHFST file to write
         output: PathBuf,
+        /// a stored component, NAME=FILE
+        #[arg(long = "stored", value_name = "NAME=FILE")]
+        stored: Vec<String>,
+        /// an edit table, NAME=FILE
+        #[arg(long = "table", value_name = "NAME=FILE")]
+        table: Vec<String>,
         /// longest fallback chain to allow
         #[arg(long, default_value_t = 4)]
         max_depth: u32,
@@ -355,6 +365,46 @@ fn cmd_info(path: &Path) -> anyhow::Result<()> {
         defaults[2],
         defaults[3]
     );
+    // What each part of the model costs: 16 bytes per state record and 12
+    // per entry.
+    let part_bytes = |from: u32, to: u32| -> (u64, u64) {
+        let mut entries = 0u64;
+        for q in from..to {
+            if let Some(state) = reader.stored_state(q) {
+                entries += state.len as u64;
+            }
+        }
+        (entries, 16 * (to - from) as u64 + 12 * entries)
+    };
+    let summary = reader.stage_summary();
+    if !summary.is_empty() {
+        let n_top = reader.top_level_len();
+        let (entries, bytes) = part_bytes(0, n_top);
+        println!(
+            "top level: {n_top} states, {entries} entries, {bytes} bytes of states and entries"
+        );
+        for (k, stage) in summary.iter().enumerate() {
+            match *stage {
+                dhfst::StageSummary::Stored {
+                    call, first, count, ..
+                } => {
+                    let (entries, bytes) = part_bytes(first, first + count);
+                    println!(
+                        "stage {k} ({}): stored, {count} states, {entries} entries, {bytes} bytes of states and entries",
+                        reader.symbol_names()[call.0 as usize]
+                    );
+                }
+                dhfst::StageSummary::EditTable {
+                    call,
+                    contexts,
+                    tables,
+                } => println!(
+                    "stage {k} ({}): edit table, {contexts} contexts, {tables} tables",
+                    reader.symbol_names()[call.0 as usize]
+                ),
+            }
+        }
+    }
     if let Some(meta) = reader.meta() {
         println!("meta: {meta}");
     }
@@ -447,14 +497,24 @@ fn cmd_bhfst(archive_path: &Path, dhfst_path: &Path, output: &Path) -> anyhow::R
     Ok(())
 }
 
-/// Name of the placeholder arc's input symbol in the stored model.
-const CALL_IN: &str = "<DHFST_CALL_IN>";
-/// Name of the placeholder arc's output symbol in the stored model.
-const CALL_OUT: &str = "<DHFST_CALL_OUT>";
+/// The placeholder pair that stands for component `name` in the top level.
+fn placeholder(name: &str) -> (String, String) {
+    if name.is_empty() {
+        ("<DHFST_CALL_IN>".into(), "<DHFST_CALL_OUT>".into())
+    } else {
+        (
+            format!("<DHFST_CALL_{name}_IN>"),
+            format!("<DHFST_CALL_{name}_OUT>"),
+        )
+    }
+}
+
+fn is_placeholder(name: &str) -> bool {
+    name.starts_with("<DHFST_CALL_") && name.ends_with('>')
+}
 
 #[derive(serde::Deserialize)]
 struct TableJson {
-    symbols: Vec<String>,
     start: u32,
     contexts: Vec<ContextJson>,
     tables: Vec<EditTableJson>,
@@ -479,96 +539,13 @@ struct EditTableJson {
     swap_entry: Vec<(String, f32)>,
 }
 
-fn cmd_stage(
-    stored: &Path,
-    table: &Path,
-    reference: &Path,
-    output: &Path,
-    max_depth: u32,
-    threads: usize,
-) -> anyhow::Result<()> {
-    let started = Instant::now();
-    let stored_t = HfstTransducer::from_path(&Fs, stored)
-        .with_context(|| format!("failed to load '{}'", stored.display()))?;
-    let stored_names = hfst_symbol_names(&stored_t)?;
-    let source = SourceModel::from_transducer(&stored_t, stored_names.clone())?;
-    let reference_t = HfstTransducer::from_path(&Fs, reference)
-        .with_context(|| format!("failed to load '{}'", reference.display()))?;
-    let mut symbols = hfst_symbol_names(&reference_t)?;
-    let n_alphabet = symbols.len() as u16;
-    symbols.push("@DHFST_CALL_1_IN@".into());
-    symbols.push("@DHFST_CALL_1_OUT@".into());
-    let index_of = |name: &str| {
-        symbols[..n_alphabet as usize]
-            .iter()
-            .position(|s| s == name)
-    };
-
-    let call_in = stored_names.iter().position(|s| s == CALL_IN);
-    let call_out = stored_names.iter().position(|s| s == CALL_OUT);
-    let mut map: Vec<Option<u16>> = Vec::with_capacity(stored_names.len());
-    let mut missing: Vec<&str> = Vec::new();
-    for (i, name) in stored_names.iter().enumerate() {
-        if Some(i) == call_in {
-            map.push(Some(n_alphabet));
-        } else if Some(i) == call_out {
-            map.push(Some(n_alphabet + 1));
-        } else {
-            match index_of(name) {
-                Some(at) => map.push(Some(at as u16)),
-                None => {
-                    missing.push(name);
-                    map.push(None);
-                }
-            }
-        }
-    }
-    if !missing.is_empty() {
-        bail!("symbols of the stored model missing from the reference: {missing:?}");
-    }
-    let unused = symbols[..n_alphabet as usize]
-        .iter()
-        .filter(|s| !stored_names.contains(s))
-        .count();
-
-    let (mut calls, mut dropped) = (0u64, 0u64);
-    let mut states: Vec<SourceState> = Vec::new();
-    for state in source.states() {
-        let mut arcs = Vec::with_capacity(state.arcs.len());
-        for arc in &state.arcs {
-            let (Some(i), Some(o)) = (map[arc.input as usize], map[arc.output as usize]) else {
-                bail!("an arc names a symbol with no place in the reference");
-            };
-            let is_call = |s: u16| s >= n_alphabet;
-            if is_call(i) || is_call(o) {
-                if (i, o) == (n_alphabet, n_alphabet + 1) {
-                    calls += 1;
-                } else {
-                    dropped += 1;
-                    continue;
-                }
-            }
-            arcs.push(SourceArc {
-                input: i,
-                output: o,
-                target: arc.target,
-                weight: arc.weight,
-            });
-        }
-        states.push(SourceState {
-            final_weight: state.final_weight,
-            arcs,
-        });
-    }
-    let model = SourceModel::new(symbols.clone(), states)?;
-
-    let spec: TableJson = serde_json::from_reader(std::fs::File::open(table)?)
-        .with_context(|| format!("failed to read '{}'", table.display()))?;
-    let sym = |name: &str| -> anyhow::Result<u16> {
-        index_of(name)
-            .map(|i| i as u16)
-            .with_context(|| format!("table symbol {name:?} is not in the reference alphabet"))
-    };
+/// An edit table read from JSON, in the alphabet `sym` numbers.
+fn read_table(
+    path: &Path,
+    sym: &dyn Fn(&str) -> anyhow::Result<u16>,
+) -> anyhow::Result<EditStageSpec> {
+    let spec: TableJson = serde_json::from_reader(std::fs::File::open(path)?)
+        .with_context(|| format!("failed to read '{}'", path.display()))?;
     let mut contexts = Vec::new();
     for c in &spec.contexts {
         let mut ident = Vec::new();
@@ -618,50 +595,294 @@ fn cmd_stage(
                 .collect::<anyhow::Result<_>>()?,
         });
     }
-    let _ = &spec.symbols;
-    let stages = StagesSpec {
-        n_alphabet: n_alphabet as u32,
-        stages: vec![StageSpec {
-            call_input: n_alphabet,
-            call_output: n_alphabet + 1,
-            table: EditStageSpec {
-                contexts,
-                start: spec.start,
-                tables,
-            },
-        }],
+    Ok(EditStageSpec {
+        contexts,
+        start: spec.start,
+        tables,
+    })
+}
+
+/// How a model's symbol pair is renumbered: `None` drops the arc, an error
+/// refuses the model.
+type Renumber<'a> = &'a dyn Fn(&str, &str) -> anyhow::Result<Option<(u16, u16)>>;
+
+/// An HFST optimized-lookup model's states with its symbols renumbered by
+/// `number`, which answers `None` to drop an arc and an error to refuse it.
+fn renumbered(path: &Path, number: Renumber<'_>) -> anyhow::Result<(Vec<SourceState>, u64)> {
+    let t = HfstTransducer::from_path(&Fs, path)
+        .with_context(|| format!("failed to load '{}'", path.display()))?;
+    let names = hfst_symbol_names(&t)?;
+    let model = SourceModel::from_transducer(&t, names.clone())?;
+    let mut dropped = 0u64;
+    let mut states = Vec::with_capacity(model.states().len());
+    for state in model.states() {
+        let mut arcs = Vec::with_capacity(state.arcs.len());
+        for arc in &state.arcs {
+            match number(&names[arc.input as usize], &names[arc.output as usize])
+                .with_context(|| format!("in '{}'", path.display()))?
+            {
+                Some((input, output)) => arcs.push(SourceArc {
+                    input,
+                    output,
+                    ..*arc
+                }),
+                None => dropped += 1,
+            }
+        }
+        states.push(SourceState {
+            final_weight: state.final_weight,
+            arcs,
+        });
+    }
+    Ok((states, dropped))
+}
+
+/// A component trimmed to the states on some path from its start (state 0)
+/// to a final state, numbered from its start in breadth-first order, and
+/// weight-pushed towards the start: each arc `s -> t` gains `d(t) - d(s)`
+/// and each final weight loses `d(s)`, `d` being the least cost from a state
+/// to the end. Answers the states and `d(start)`, the cost taken out.
+fn pushed(states: &[SourceState]) -> anyhow::Result<(Vec<SourceState>, f64)> {
+    let n = states.len();
+    // Least cost to the end, by Bellman-Ford over the reversed arcs; the
+    // components are acyclic or have nonnegative cycles.
+    let mut d: Vec<f64> = states
+        .iter()
+        .map(|s| s.final_weight.map_or(f64::INFINITY, f64::from))
+        .collect();
+    let mut changed = true;
+    let mut rounds = 0;
+    while changed {
+        changed = false;
+        rounds += 1;
+        if rounds > n + 1 {
+            bail!("a component has a negative cycle");
+        }
+        for (q, state) in states.iter().enumerate() {
+            for arc in &state.arcs {
+                let via = arc.weight as f64 + d[arc.target as usize];
+                if via < d[q] {
+                    d[q] = via;
+                    changed = true;
+                }
+            }
+        }
+    }
+    if !d[0].is_finite() {
+        bail!("a component accepts nothing");
+    }
+    let mut id: Vec<Option<u32>> = vec![None; n];
+    let mut order: Vec<usize> = vec![0];
+    id[0] = Some(0);
+    let mut at = 0;
+    while at < order.len() {
+        let q = order[at];
+        at += 1;
+        for arc in &states[q].arcs {
+            let t = arc.target as usize;
+            if d[t].is_finite() && id[t].is_none() {
+                id[t] = Some(order.len() as u32);
+                order.push(t);
+            }
+        }
+    }
+    let mut out = Vec::with_capacity(order.len());
+    for &q in &order {
+        let state = &states[q];
+        let mut arcs = Vec::with_capacity(state.arcs.len());
+        for arc in &state.arcs {
+            let t = arc.target as usize;
+            if let Some(target) = id[t] {
+                arcs.push(SourceArc {
+                    target,
+                    weight: (arc.weight as f64 + d[t] - d[q]) as f32,
+                    ..*arc
+                });
+            }
+        }
+        out.push(SourceState {
+            final_weight: state.final_weight.map(|f| (f as f64 - d[q]) as f32),
+            arcs,
+        });
+    }
+    Ok((out, d[0]))
+}
+
+/// Split `NAME=FILE`.
+fn named(arg: &str) -> anyhow::Result<(String, PathBuf)> {
+    let (name, file) = arg
+        .split_once('=')
+        .with_context(|| format!("{arg:?} is not NAME=FILE"))?;
+    Ok((name.to_string(), PathBuf::from(file)))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn cmd_combine(
+    top: &Path,
+    reference: &Path,
+    output: &Path,
+    stored: &[String],
+    tables: &[String],
+    max_depth: u32,
+    threads: usize,
+) -> anyhow::Result<()> {
+    let started = Instant::now();
+    let reference_t = HfstTransducer::from_path(&Fs, reference)
+        .with_context(|| format!("failed to load '{}'", reference.display()))?;
+    let mut symbols = hfst_symbol_names(&reference_t)?;
+    let n_alphabet = symbols.len() as u16;
+    let alphabet = symbols.clone();
+    let index_of = |name: &str| alphabet.iter().position(|s| s == name).map(|i| i as u16);
+
+    // The stages in the order given: stored components, then tables.
+    let mut parts: Vec<(String, PathBuf, bool)> = Vec::new();
+    for arg in stored {
+        let (name, file) = named(arg)?;
+        parts.push((name, file, true));
+    }
+    for arg in tables {
+        let (name, file) = named(arg)?;
+        parts.push((name, file, false));
+    }
+    if parts.is_empty() {
+        bail!("no stages: give --stored or --table");
+    }
+    let mut calls: Vec<(String, String, u16, u16)> = Vec::new();
+    for (k, (name, _, _)) in parts.iter().enumerate() {
+        let (i, o) = placeholder(name);
+        if calls.iter().any(|c| c.0 == i) {
+            bail!("stage {name:?} is given twice");
+        }
+        let call_in = symbols.len() as u16;
+        symbols.push(format!("@DHFST_CALL_{}_IN@", k + 1));
+        symbols.push(format!("@DHFST_CALL_{}_OUT@", k + 1));
+        calls.push((i, o, call_in, call_in + 1));
+    }
+
+    let plain = |i: &str, o: &str| -> anyhow::Result<Option<(u16, u16)>> {
+        if is_placeholder(i) || is_placeholder(o) {
+            return Ok(None);
+        }
+        match (index_of(i), index_of(o)) {
+            (Some(i), Some(o)) => Ok(Some((i, o))),
+            _ => bail!("{i:?}:{o:?} is not in the reference alphabet"),
+        }
     };
+    let call_counts: std::cell::RefCell<Vec<u64>> = std::cell::RefCell::new(vec![0; calls.len()]);
+    let in_top = |i: &str, o: &str| -> anyhow::Result<Option<(u16, u16)>> {
+        if let Some(k) = calls.iter().position(|c| c.0 == i && c.1 == o) {
+            call_counts.borrow_mut()[k] += 1;
+            return Ok(Some((calls[k].2, calls[k].3)));
+        }
+        if (is_placeholder(i) || is_placeholder(o)) && i != o {
+            bail!("placeholder {i:?}:{o:?} names no stage");
+        }
+        plain(i, o)
+    };
+    let (mut states, top_dropped) = renumbered(top, &in_top)?;
+    let n_top = states.len() as u32;
+    let call_counts = call_counts.into_inner();
+    for (k, (name, _, _)) in parts.iter().enumerate() {
+        if call_counts[k] == 0 {
+            bail!("the top level never calls {name:?}");
+        }
+    }
+    println!(
+        "top level {}: {} states, {} arcs, calls {:?}, {} harmonisation arcs dropped",
+        top.display(),
+        n_top,
+        states.iter().map(|s| s.arcs.len()).sum::<usize>(),
+        parts
+            .iter()
+            .zip(&call_counts)
+            .map(|((n, _, _), c)| format!("{n}x{c}"))
+            .collect::<Vec<_>>(),
+        top_dropped
+    );
+
+    let sym = |name: &str| -> anyhow::Result<u16> {
+        index_of(name)
+            .with_context(|| format!("table symbol {name:?} is not in the reference alphabet"))
+    };
+    let mut stages: Vec<StageSpec> = Vec::new();
+    for (k, (name, file, is_stored)) in parts.iter().enumerate() {
+        let (_, _, call_input, call_output) = calls[k];
+        let kind = if *is_stored {
+            let (component, dropped) = renumbered(file, &plain)?;
+            let (component, removed) = pushed(&component)?;
+            let first = states.len() as u32;
+            let count = component.len() as u32;
+            println!(
+                "stage {name:?}: stored {}: {} states, {} arcs, least cost {} taken out, {} harmonisation arcs dropped",
+                file.display(),
+                count,
+                component.iter().map(|s| s.arcs.len()).sum::<usize>(),
+                removed,
+                dropped
+            );
+            for state in component {
+                states.push(SourceState {
+                    final_weight: state.final_weight,
+                    arcs: state
+                        .arcs
+                        .into_iter()
+                        .map(|a| SourceArc {
+                            target: a.target + first,
+                            ..a
+                        })
+                        .collect(),
+                });
+            }
+            StageKind::Stored {
+                start: first,
+                first,
+                count,
+            }
+        } else {
+            let table = read_table(file, &sym)?;
+            println!(
+                "stage {name:?}: edit table {}: {} contexts, {} tables",
+                file.display(),
+                table.contexts.len(),
+                table.tables.len()
+            );
+            StageKind::Table(table)
+        };
+        stages.push(StageSpec {
+            call_input,
+            call_output,
+            kind,
+        });
+    }
+    let model = SourceModel::new(symbols, states)?;
     let written = write(
         &model,
         &WriteOptions {
             max_fallback_depth: Some(max_depth),
             threads,
-            source_name: stored
+            source_name: top
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())
                 .unwrap_or_default(),
-            stages: Some(stages),
+            stages: Some(StagesSpec {
+                n_alphabet: n_alphabet as u32,
+                n_top,
+                stages,
+            }),
         },
     )?;
     std::fs::write(output, &written.bytes)?;
     let r = &written.report;
     println!(
-        "stored model: {} states, {} arcs; {} call arcs; {} harmonisation arcs on call symbols dropped; {} reference symbols unused by it",
-        model.states().len(),
-        model.arc_count(),
-        calls,
-        dropped,
-        unused
-    );
-    println!(
-        "checked: {} (state, pair) resolutions, {} stored (state, input) queries, {} stage (state, input) queries against the table",
+        "checked: {} (state, pair) resolutions, {} stored (state, input) queries, {} stage (state, input) queries",
         r.pairs_checked, r.queries_checked, r.stage_queries_checked
     );
     println!(
-        "wrote {}: {} bytes ({}), of which STAG {} bytes ({:.1} s)",
+        "wrote {}: {} bytes ({}), {} states, of which STAG {} bytes ({:.1} s)",
         output.display(),
         written.bytes.len(),
         human(written.bytes.len() as u64),
+        model.states().len(),
         r.stage_bytes,
         started.elapsed().as_secs_f64()
     );
@@ -784,14 +1005,17 @@ fn run() -> anyhow::Result<()> {
             dhfst,
             output,
         } => cmd_bhfst(&archive, &dhfst, &output),
-        Opts::Stage {
-            stored,
-            table,
+        Opts::Combine {
+            top,
             reference,
             output,
+            stored,
+            table,
             max_depth,
             threads,
-        } => cmd_stage(&stored, &table, &reference, &output, max_depth, threads),
+        } => cmd_combine(
+            &top, &reference, &output, &stored, &table, max_depth, threads,
+        ),
         Opts::Dump { input, output } => cmd_dump(&input, &output),
     }
 }

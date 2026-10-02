@@ -16,10 +16,12 @@
 //! rejects cycles and chains deeper than the bound). A better optimiser can
 //! only write a smaller file; it cannot change what the file means.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::transducer::ArcGroup;
-use crate::transducer::dhfst::stage::{EDIT_TABLE_HEADER_LEN, STAGE_EDIT_TABLE, STAGE_HEADER_LEN};
+use crate::transducer::dhfst::stage::{
+    EDIT_TABLE_HEADER_LEN, STAGE_EDIT_TABLE, STAGE_HEADER_LEN, STAGE_STORED, STAGES_HEADER_LEN,
+};
 use crate::transducer::dhfst::{
     DEFAULT_BASE, DefaultKind, DhfstTransducer, FLAG_DEFAULTS, FLAG_FALLBACK, FLAG_STAGES,
     FLAG_TROPICAL, HEADER_LEN, MAGIC, NONE, SECTION_ENTRY_LEN, VERSION, is_regular_name, tag,
@@ -275,11 +277,15 @@ pub struct StagesSpec {
     /// Symbols `0..n_alphabet` of the model are its alphabet; the rest are
     /// call symbols, which may appear only on call arcs.
     pub n_alphabet: u32,
+    /// States `0..n_top` are the top level: the only states with call arcs,
+    /// and their arcs stay among them. Every other state belongs to a stored
+    /// stage.
+    pub n_top: u32,
     /// Each stage with the call pair that calls it.
     pub stages: Vec<StageSpec>,
 }
 
-/// One edit-table stage and the call pair that reaches it.
+/// One stage and the call pair that reaches it.
 #[derive(Clone, Debug)]
 pub struct StageSpec {
     /// input symbol of the call arcs
@@ -287,7 +293,25 @@ pub struct StageSpec {
     /// output symbol of the call arcs
     pub call_output: u16,
     /// the stage
-    pub table: EditStageSpec,
+    pub kind: StageKind,
+}
+
+/// What a stage is.
+#[derive(Clone, Debug)]
+pub enum StageKind {
+    /// an edit table
+    Table(EditStageSpec),
+    /// a stored component: the model's states `first..first + count`, entered
+    /// at `start`; its arcs stay in the range and its final weights are what
+    /// returning costs
+    Stored {
+        /// entry state
+        start: u32,
+        /// first state of the range
+        first: u32,
+        /// states in the range
+        count: u32,
+    },
 }
 
 /// An edit-table stage, in the model's symbol numbers.
@@ -414,7 +438,7 @@ pub fn write(model: &SourceModel, options: &WriteOptions) -> Result<Written, Wri
     report.queries_checked = queries;
     report.arcs_checked = arcs;
     if let Some(spec) = &options.stages {
-        report.stage_queries_checked = verify_stages(spec, &reader)?;
+        report.stage_queries_checked = verify_stages(model, spec, &reader)?;
     }
 
     Ok(Written { bytes, report })
@@ -1504,188 +1528,273 @@ fn stage_substates(spec: &EditStageSpec, n_alphabet: u32) -> u32 {
         + 2 * n_alphabet * spec.tables.iter().filter(|t| !t.swap.is_empty()).count() as u32
 }
 
-/// Encode a `STAG` section.
+/// Encode an edit-table stage's body.
+fn encode_edit_stage(k: usize, st: &EditStageSpec, n_alphabet: u32) -> Result<Vec<u8>, WriteError> {
+    let words = (n_alphabet as usize).div_ceil(64);
+    let in_alphabet = |s: u16| (s as u32) < n_alphabet && s != 0;
+    if st.contexts.is_empty() || st.start as usize >= st.contexts.len() {
+        return Err(WriteError::Unsupported(format!(
+            "stage {k}: no valid start context"
+        )));
+    }
+    let mut pool = SetPool {
+        words,
+        sets: Vec::new(),
+    };
+    let mut arrays = StageArrays::default();
+    let mut idents: Vec<(u32, u32)> = Vec::new();
+    let mut contexts: Vec<(f32, u32, u32, u32)> = Vec::new();
+    for (c, ctx) in st.contexts.iter().enumerate() {
+        let first = idents.len() as u32;
+        for (symbols, target) in &ctx.ident {
+            if symbols.iter().any(|s| !in_alphabet(*s)) || *target as usize >= st.contexts.len() {
+                return Err(WriteError::Unsupported(format!(
+                    "stage {k} context {c}: identity transition out of range"
+                )));
+            }
+            idents.push((pool.intern(symbols.iter().copied()), *target));
+        }
+        let final_weight = ctx.final_weight.unwrap_or(f32::INFINITY);
+        check_weight(final_weight, "a context")?;
+        let table = match ctx.table {
+            Some(t) if (t as usize) < st.tables.len() => t,
+            Some(_) => {
+                return Err(WriteError::Unsupported(format!(
+                    "stage {k} context {c}: table out of range"
+                )));
+            }
+            None => NONE,
+        };
+        contexts.push((final_weight, first, idents.len() as u32 - first, table));
+    }
+    let mut tables: Vec<[u32; 6]> = Vec::new();
+    for (t, table) in st.tables.iter().enumerate() {
+        let symbols_ok = table
+            .sub
+            .iter()
+            .all(|c| in_alphabet(c.0) && in_alphabet(c.1))
+            && table
+                .swap
+                .iter()
+                .all(|c| in_alphabet(c.0) && in_alphabet(c.1))
+            && table.del.iter().all(|c| in_alphabet(c.0))
+            && table.ins.iter().all(|c| in_alphabet(c.0))
+            && table.swap_entry.iter().all(|c| in_alphabet(c.0));
+        if !symbols_ok || table.target as usize >= st.contexts.len() {
+            return Err(WriteError::Unsupported(format!(
+                "stage {k} table {t}: a symbol or target is out of range"
+            )));
+        }
+        let sub = if table.sub.is_empty() {
+            NONE
+        } else {
+            encode_matrix(&table.sub, &mut pool, &mut arrays)?
+        };
+        let del = if table.del.is_empty() {
+            NONE
+        } else {
+            encode_vector(&table.del, &mut pool, &mut arrays)?
+        };
+        let ins = if table.ins.is_empty() {
+            NONE
+        } else {
+            encode_vector(&table.ins, &mut pool, &mut arrays)?
+        };
+        let swap = if table.swap.is_empty() {
+            NONE
+        } else {
+            encode_matrix(&table.swap, &mut pool, &mut arrays)?
+        };
+        let swap_entry = if table.swap_entry.is_empty() {
+            NONE
+        } else {
+            // A symbol not listed starts its transposition for nothing.
+            let mut entry = table.swap_entry.clone();
+            for &(x, _, _) in &table.swap {
+                if !entry.iter().any(|e| e.0 == x) {
+                    entry.push((x, 0.0));
+                }
+            }
+            encode_vector(&entry, &mut pool, &mut arrays)?
+        };
+        tables.push([table.target, sub, del, ins, swap, swap_entry]);
+    }
+
+    let mut body: Vec<u8> = Vec::new();
+    for v in [
+        pool.sets.len() as u32,
+        contexts.len() as u32,
+        st.start,
+        idents.len() as u32,
+        tables.len() as u32,
+        arrays.matrices.len() as u32,
+        arrays.vectors.len() as u32,
+        arrays.colw.len() as u32,
+        arrays.cells.len() as u32,
+        arrays.vcells.len() as u32,
+        0,
+        0,
+    ] {
+        body.extend_from_slice(&v.to_le_bytes());
+    }
+    debug_assert_eq!(body.len(), EDIT_TABLE_HEADER_LEN);
+    for set in &pool.sets {
+        for w in set {
+            body.extend_from_slice(&w.to_le_bytes());
+        }
+    }
+    for (f, first, n, table) in &contexts {
+        body.extend_from_slice(&f.to_bits().to_le_bytes());
+        body.extend_from_slice(&first.to_le_bytes());
+        body.extend_from_slice(&n.to_le_bytes());
+        body.extend_from_slice(&table.to_le_bytes());
+    }
+    for (set, target) in &idents {
+        body.extend_from_slice(&set.to_le_bytes());
+        body.extend_from_slice(&target.to_le_bytes());
+    }
+    for record in tables
+        .iter()
+        .map(|t| &t[..])
+        .chain(arrays.matrices.iter().map(|m| &m[..]))
+        .chain(arrays.vectors.iter().map(|v| &v[..]))
+    {
+        for v in record {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+    }
+    for (symbol, w) in &arrays.colw {
+        body.extend_from_slice(&symbol.to_le_bytes());
+        body.extend_from_slice(&0u16.to_le_bytes());
+        body.extend_from_slice(&w.to_bits().to_le_bytes());
+    }
+    for (x, y, w) in &arrays.cells {
+        body.extend_from_slice(&x.to_le_bytes());
+        body.extend_from_slice(&y.to_le_bytes());
+        body.extend_from_slice(&w.to_bits().to_le_bytes());
+    }
+    for (symbol, w) in &arrays.vcells {
+        body.extend_from_slice(&symbol.to_le_bytes());
+        body.extend_from_slice(&0u16.to_le_bytes());
+        body.extend_from_slice(&w.to_bits().to_le_bytes());
+    }
+    Ok(body)
+}
+
+/// Encode a `STAG` section, after checking that the model's shape is one
+/// the stages describe: call arcs only on declared call pairs, only from the
+/// top level and back into it; the top level's arcs among its own states;
+/// every other state in exactly one stored stage, whose arcs stay in it.
 fn encode_stages(model: &SourceModel, spec: &StagesSpec) -> Result<Vec<u8>, WriteError> {
     let n_symbols = model.symbols.len() as u32;
+    let n_states = model.states.len() as u32;
+    let bad = |msg: String| Err(WriteError::Unsupported(msg));
     if spec.n_alphabet == 0 || spec.n_alphabet > n_symbols {
-        return Err(WriteError::Unsupported(
-            "stage alphabet size is out of range".into(),
-        ));
+        return bad("stage alphabet size is out of range".into());
     }
-    let words = (spec.n_alphabet as usize).div_ceil(64);
-    let in_alphabet = |s: u16| (s as u32) < spec.n_alphabet && s != 0;
+    if spec.n_top == 0 || spec.n_top > n_states {
+        return bad("stage top-level size is out of range".into());
+    }
+    // Which stored stage owns each state past the top level.
+    let mut owner: Vec<Option<usize>> = vec![None; n_states as usize];
+    for (k, stage) in spec.stages.iter().enumerate() {
+        for s in [stage.call_input, stage.call_output] {
+            if (s as u32) < spec.n_alphabet || s as u32 >= n_symbols {
+                return bad(format!(
+                    "stage {k}: call symbol {s} is not past the alphabet"
+                ));
+            }
+        }
+        if spec.stages[..k]
+            .iter()
+            .any(|o| (o.call_input, o.call_output) == (stage.call_input, stage.call_output))
+        {
+            return bad(format!("stage {k}: its call pair is another stage's"));
+        }
+        if let StageKind::Stored {
+            start,
+            first,
+            count,
+        } = stage.kind
+        {
+            let in_range = first >= spec.n_top
+                && count > 0
+                && first.checked_add(count).is_some_and(|e| e <= n_states)
+                && start >= first
+                && start - first < count;
+            if !in_range {
+                return bad(format!("stored stage {k} is out of range"));
+            }
+            for q in first..first + count {
+                if owner[q as usize].replace(k).is_some() {
+                    return bad(format!("state {q} is in two stored stages"));
+                }
+            }
+        }
+    }
+    let calls: HashSet<(u16, u16)> = spec
+        .stages
+        .iter()
+        .map(|s| (s.call_input, s.call_output))
+        .collect();
+    for (q, state) in model.states.iter().enumerate() {
+        let top = (q as u32) < spec.n_top;
+        let range = match owner[q] {
+            None if top => None,
+            None => return bad(format!("state {q} is in neither the top level nor a stage")),
+            Some(k) => match spec.stages[k].kind {
+                StageKind::Stored { first, count, .. } => Some(first..first + count),
+                StageKind::Table(_) => None,
+            },
+        };
+        for arc in &state.arcs {
+            let call = arc.input as u32 >= spec.n_alphabet || arc.output as u32 >= spec.n_alphabet;
+            if call && !(top && calls.contains(&(arc.input, arc.output))) {
+                return bad(format!("state {q}: a call symbol off a top-level call arc"));
+            }
+            let stays = match &range {
+                None => arc.target < spec.n_top,
+                Some(r) => r.contains(&arc.target),
+            };
+            if !stays {
+                return bad(format!("state {q}: an arc leaves its part of the model"));
+            }
+        }
+    }
 
     let mut bodies: Vec<Vec<u8>> = Vec::new();
     for (k, stage) in spec.stages.iter().enumerate() {
-        let st = &stage.table;
-        for s in [stage.call_input, stage.call_output] {
-            if (s as u32) < spec.n_alphabet || s as u32 >= n_symbols {
-                return Err(WriteError::Unsupported(format!(
-                    "stage {k}: call symbol {s} is not past the alphabet"
-                )));
-            }
-        }
-        if st.contexts.is_empty() || st.start as usize >= st.contexts.len() {
-            return Err(WriteError::Unsupported(format!(
-                "stage {k}: no valid start context"
-            )));
-        }
-        let mut pool = SetPool {
-            words,
-            sets: Vec::new(),
-        };
-        let mut arrays = StageArrays::default();
-        let mut idents: Vec<(u32, u32)> = Vec::new();
-        let mut contexts: Vec<(f32, u32, u32, u32)> = Vec::new();
-        for (c, ctx) in st.contexts.iter().enumerate() {
-            let first = idents.len() as u32;
-            for (symbols, target) in &ctx.ident {
-                if symbols.iter().any(|s| !in_alphabet(*s)) || *target as usize >= st.contexts.len()
-                {
-                    return Err(WriteError::Unsupported(format!(
-                        "stage {k} context {c}: identity transition out of range"
-                    )));
-                }
-                idents.push((pool.intern(symbols.iter().copied()), *target));
-            }
-            let final_weight = ctx.final_weight.unwrap_or(f32::INFINITY);
-            check_weight(final_weight, "a context")?;
-            let table = match ctx.table {
-                Some(t) if (t as usize) < st.tables.len() => t,
-                Some(_) => {
-                    return Err(WriteError::Unsupported(format!(
-                        "stage {k} context {c}: table out of range"
-                    )));
-                }
-                None => NONE,
-            };
-            contexts.push((final_weight, first, idents.len() as u32 - first, table));
-        }
-        let mut tables: Vec<[u32; 6]> = Vec::new();
-        for (t, table) in st.tables.iter().enumerate() {
-            let symbols_ok = table
-                .sub
+        let body = match &stage.kind {
+            StageKind::Table(st) => encode_edit_stage(k, st, spec.n_alphabet)?,
+            StageKind::Stored {
+                start,
+                first,
+                count,
+            } => [*start, *first, *count, 0]
                 .iter()
-                .all(|c| in_alphabet(c.0) && in_alphabet(c.1))
-                && table
-                    .swap
-                    .iter()
-                    .all(|c| in_alphabet(c.0) && in_alphabet(c.1))
-                && table.del.iter().all(|c| in_alphabet(c.0))
-                && table.ins.iter().all(|c| in_alphabet(c.0))
-                && table.swap_entry.iter().all(|c| in_alphabet(c.0));
-            if !symbols_ok || table.target as usize >= st.contexts.len() {
-                return Err(WriteError::Unsupported(format!(
-                    "stage {k} table {t}: a symbol or target is out of range"
-                )));
-            }
-            let sub = if table.sub.is_empty() {
-                NONE
-            } else {
-                encode_matrix(&table.sub, &mut pool, &mut arrays)?
-            };
-            let del = if table.del.is_empty() {
-                NONE
-            } else {
-                encode_vector(&table.del, &mut pool, &mut arrays)?
-            };
-            let ins = if table.ins.is_empty() {
-                NONE
-            } else {
-                encode_vector(&table.ins, &mut pool, &mut arrays)?
-            };
-            let swap = if table.swap.is_empty() {
-                NONE
-            } else {
-                encode_matrix(&table.swap, &mut pool, &mut arrays)?
-            };
-            let swap_entry = if table.swap_entry.is_empty() {
-                NONE
-            } else {
-                // A symbol not listed starts its transposition for nothing.
-                let mut entry = table.swap_entry.clone();
-                for &(x, _, _) in &table.swap {
-                    if !entry.iter().any(|e| e.0 == x) {
-                        entry.push((x, 0.0));
-                    }
-                }
-                encode_vector(&entry, &mut pool, &mut arrays)?
-            };
-            tables.push([table.target, sub, del, ins, swap, swap_entry]);
-        }
-
-        let mut body: Vec<u8> = Vec::new();
-        for v in [
-            pool.sets.len() as u32,
-            contexts.len() as u32,
-            st.start,
-            idents.len() as u32,
-            tables.len() as u32,
-            arrays.matrices.len() as u32,
-            arrays.vectors.len() as u32,
-            arrays.colw.len() as u32,
-            arrays.cells.len() as u32,
-            arrays.vcells.len() as u32,
-            0,
-            0,
-        ] {
-            body.extend_from_slice(&v.to_le_bytes());
-        }
-        debug_assert_eq!(body.len(), EDIT_TABLE_HEADER_LEN);
-        for set in &pool.sets {
-            for w in set {
-                body.extend_from_slice(&w.to_le_bytes());
-            }
-        }
-        for (f, first, n, table) in &contexts {
-            body.extend_from_slice(&f.to_bits().to_le_bytes());
-            body.extend_from_slice(&first.to_le_bytes());
-            body.extend_from_slice(&n.to_le_bytes());
-            body.extend_from_slice(&table.to_le_bytes());
-        }
-        for (set, target) in &idents {
-            body.extend_from_slice(&set.to_le_bytes());
-            body.extend_from_slice(&target.to_le_bytes());
-        }
-        for record in tables
-            .iter()
-            .map(|t| &t[..])
-            .chain(arrays.matrices.iter().map(|m| &m[..]))
-            .chain(arrays.vectors.iter().map(|v| &v[..]))
-        {
-            for v in record {
-                body.extend_from_slice(&v.to_le_bytes());
-            }
-        }
-        for (symbol, w) in &arrays.colw {
-            body.extend_from_slice(&symbol.to_le_bytes());
-            body.extend_from_slice(&0u16.to_le_bytes());
-            body.extend_from_slice(&w.to_bits().to_le_bytes());
-        }
-        for (x, y, w) in &arrays.cells {
-            body.extend_from_slice(&x.to_le_bytes());
-            body.extend_from_slice(&y.to_le_bytes());
-            body.extend_from_slice(&w.to_bits().to_le_bytes());
-        }
-        for (symbol, w) in &arrays.vcells {
-            body.extend_from_slice(&symbol.to_le_bytes());
-            body.extend_from_slice(&0u16.to_le_bytes());
-            body.extend_from_slice(&w.to_bits().to_le_bytes());
-        }
+                .flat_map(|v| v.to_le_bytes())
+                .collect(),
+        };
         bodies.push(body);
     }
 
     let mut out: Vec<u8> = Vec::new();
     out.extend_from_slice(&spec.n_alphabet.to_le_bytes());
     out.extend_from_slice(&(spec.stages.len() as u32).to_le_bytes());
-    let mut offset = 8 + STAGE_HEADER_LEN * spec.stages.len();
+    out.extend_from_slice(&spec.n_top.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    let mut offset = STAGES_HEADER_LEN + STAGE_HEADER_LEN * spec.stages.len();
     for (stage, body) in spec.stages.iter().zip(&bodies) {
+        let (kind, per_call) = match &stage.kind {
+            StageKind::Table(st) => (STAGE_EDIT_TABLE, stage_substates(st, spec.n_alphabet)),
+            StageKind::Stored { count, .. } => (STAGE_STORED, *count),
+        };
         out.extend_from_slice(&stage.call_input.to_le_bytes());
         out.extend_from_slice(&stage.call_output.to_le_bytes());
-        out.extend_from_slice(&STAGE_EDIT_TABLE.to_le_bytes());
+        out.extend_from_slice(&kind.to_le_bytes());
         out.extend_from_slice(&(offset as u64).to_le_bytes());
         out.extend_from_slice(&(body.len() as u64).to_le_bytes());
-        out.extend_from_slice(&stage_substates(&stage.table, spec.n_alphabet).to_le_bytes());
+        out.extend_from_slice(&per_call.to_le_bytes());
         out.extend_from_slice(&0u32.to_le_bytes());
         offset = (offset + body.len()).div_ceil(8) * 8;
     }
@@ -1698,19 +1807,139 @@ fn encode_stages(model: &SourceModel, spec: &StagesSpec) -> Result<Vec<u8>, Writ
     Ok(out)
 }
 
-/// Check every table cell, and every context and transposition substate of
-/// every stage walked through the reader, against the spec. Answers the
-/// number of `(stage state, input)` queries compared.
-fn verify_stages(spec: &StagesSpec, reader: &DhfstTransducer) -> Result<u64, WriteError> {
+/// The arcs `reader` walks from `state` on `input`, sorted, as
+/// `(output, target, weight bits)`.
+fn walked(reader: &DhfstTransducer, state: u32, input: u16) -> Vec<(u16, u32, u32)> {
+    let mut got: Vec<(u16, u32, u32)> = Vec::new();
+    reader.for_each_arc_group(
+        TransitionTableIndex(state),
+        SymbolNumber(input),
+        |g| match g {
+            ArcGroup::One {
+                output,
+                target,
+                weight,
+            } => got.push((output.0, target.0, weight.0.to_bits())),
+            ArcGroup::Each {
+                outputs,
+                target,
+                weight,
+            } => {
+                for o in outputs.iter() {
+                    got.push((o.0, target.0, weight.0.to_bits()));
+                }
+            }
+        },
+    );
+    got.sort_unstable();
+    got
+}
+
+/// Check the stages through the reader's walk: every top-level state's
+/// epsilon moves with its calls, every state of every stored stage in a call
+/// returning to the last top-level state, and every table cell and every
+/// context and transposition substate of every edit table. Answers the number
+/// of `(state, input)` queries compared.
+fn verify_stages(
+    model: &SourceModel,
+    spec: &StagesSpec,
+    reader: &DhfstTransducer,
+) -> Result<u64, WriteError> {
+    let fail = |msg: String| WriteError::Verification(msg);
+    if reader.top_level_len() != spec.n_top {
+        return Err(fail(
+            "the reader's top level differs from the spec's".into(),
+        ));
+    }
+    let mut queries = 0u64;
+    let entry = |k: usize, ret: u32| {
+        reader
+            .stage_entry(k, ret)
+            .map(|t| t.0)
+            .ok_or_else(|| fail(format!("the reader has no stage {k}")))
+    };
+    for q in 0..spec.n_top {
+        let mut want: Vec<(u16, u32, u32)> = Vec::new();
+        for arc in &model.states[q as usize].arcs {
+            if arc.input == 0 && arc.output == 0 {
+                want.push((0, arc.target, arc.weight.to_bits()));
+            } else if arc.input == 0 {
+                want.push((arc.output, arc.target, arc.weight.to_bits()));
+            } else if let Some(k) = spec
+                .stages
+                .iter()
+                .position(|s| (s.call_input, s.call_output) == (arc.input, arc.output))
+            {
+                want.push((0, entry(k, arc.target)?, arc.weight.to_bits()));
+            }
+        }
+        want.sort_unstable();
+        queries += 1;
+        if walked(reader, q, 0) != want {
+            return Err(fail(format!(
+                "top-level state {q}: its epsilon moves differ"
+            )));
+        }
+    }
+    let ret = spec.n_top - 1;
+    for (k, stage) in spec.stages.iter().enumerate() {
+        let StageKind::Stored { first, count, .. } = stage.kind else {
+            continue;
+        };
+        let virt = |sub: u32| {
+            reader
+                .stage_state(k, ret, sub)
+                .map(|t| t.0)
+                .ok_or_else(|| fail(format!("the reader has no stage {k}")))
+        };
+        for sub in 0..count {
+            let state = &model.states[(first + sub) as usize];
+            if reader
+                .final_weight(TransitionTableIndex(virt(sub)?))
+                .is_some()
+            {
+                return Err(fail(format!("stage {k} state {sub} is final")));
+            }
+            let mut at = 0usize;
+            for x in 0..spec.n_alphabet as u16 {
+                let from = at;
+                while at < state.arcs.len() && state.arcs[at].input == x {
+                    at += 1;
+                }
+                let mut want: Vec<(u16, u32, u32)> = Vec::new();
+                for arc in &state.arcs[from..at] {
+                    want.push((arc.output, virt(arc.target - first)?, arc.weight.to_bits()));
+                }
+                if x == 0
+                    && let Some(f) = state.final_weight
+                {
+                    want.push((0, ret, f.to_bits()));
+                }
+                want.sort_unstable();
+                queries += 1;
+                if walked(reader, virt(sub)?, x) != want {
+                    return Err(fail(format!(
+                        "stage {k} state {sub} input {x}: the walk differs from the model"
+                    )));
+                }
+            }
+        }
+    }
+    queries += verify_edit_stages(spec, reader)?;
+    Ok(queries)
+}
+
+/// [`verify_stages`] for the edit tables.
+fn verify_edit_stages(spec: &StagesSpec, reader: &DhfstTransducer) -> Result<u64, WriteError> {
     let n = spec.n_alphabet as u16;
     let fail = |msg: String| WriteError::Verification(msg);
     let mut queries = 0u64;
-    let mut base = reader.state_count() as u64;
-    let ret = 0u32;
+    let ret = spec.n_top - 1;
     for (k, stage) in spec.stages.iter().enumerate() {
-        let st = &stage.table;
-        let substates = stage_substates(st, spec.n_alphabet) as u64;
-        let virt = |sub: u32| (base + ret as u64 * substates + sub as u64) as u32;
+        let StageKind::Table(st) = &stage.kind else {
+            continue;
+        };
+        let virt = |sub: u32| reader.stage_state(k, ret, sub).map_or(NONE, |t| t.0);
         // The cells.
         for (t, table) in st.tables.iter().enumerate() {
             let mut sub: HashMap<(u16, u16), f32> = HashMap::new();
@@ -1761,30 +1990,7 @@ fn verify_stages(spec: &StagesSpec, reader: &DhfstTransducer) -> Result<u64, Wri
                 swap_base += 2 * spec.n_alphabet;
             }
         }
-        let collect =
-            |state: u32, input: u16| {
-                let mut got: Vec<(u16, u32, u32)> = Vec::new();
-                reader.for_each_arc_group(TransitionTableIndex(state), SymbolNumber(input), |g| {
-                    match g {
-                        ArcGroup::One {
-                            output,
-                            target,
-                            weight,
-                        } => got.push((output.0, target.0, weight.0.to_bits())),
-                        ArcGroup::Each {
-                            outputs,
-                            target,
-                            weight,
-                        } => {
-                            for o in outputs.iter() {
-                                got.push((o.0, target.0, weight.0.to_bits()));
-                            }
-                        }
-                    }
-                });
-                got.sort_unstable();
-                got
-            };
+        let collect = |state: u32, input: u16| walked(reader, state, input);
         for (c, ctx) in st.contexts.iter().enumerate() {
             for x in 0..n {
                 let mut want: Vec<(u16, u32, u32)> = Vec::new();
@@ -1871,7 +2077,6 @@ fn verify_stages(spec: &StagesSpec, reader: &DhfstTransducer) -> Result<u64, Wri
                 }
             }
         }
-        base += reader.state_count() as u64 * substates;
     }
     Ok(queries)
 }

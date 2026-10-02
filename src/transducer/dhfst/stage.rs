@@ -1,18 +1,26 @@
-//! Stages: parts of an error model that the stored automaton calls into,
-//! held in the same DHFST file.
+//! Stages: parts of an error model that its top level calls into, held in
+//! the same DHFST file.
 //!
 //! An error model is assembled from components by union, concatenation and
 //! repetition — the giella recipes build `words | (strings | edits)^{1..N}
-//! final_strings?` — so a component that is computed rather than stored
-//! cannot be one link of a linear chain: it sits inside the union, under the
-//! repetition, possibly several times. It is instead *called*. The stored
-//! automaton carries, where the component would be, an arc on a reserved pair
-//! of call symbols (declared here, hidden from the alphabet) whose target is
-//! the state to return to. The search sees that arc as an `ε:ε` move into the
-//! stage; the stage runs, and from any of its final contexts an `ε:ε` move
-//! returns to the stored state the call named. A search state inside a stage
-//! is a *virtual* state packing the stage, the return state and the stage's
-//! own substate, so the search state tuple does not change.
+//! final_strings?` — so a component cannot be one link of a linear chain: it
+//! sits inside the union, under the repetition, possibly several times. It
+//! is instead *called*. The top level — the stored states `0..n_top` — carries,
+//! where a component would be, an arc on a reserved pair of call symbols
+//! (declared here, hidden from the alphabet) whose target is the state to
+//! return to. The search sees that arc as an `ε:ε` move into the stage; the
+//! stage runs, and from any of its final states an `ε:ε` move, at that final
+//! weight, returns to the top-level state the call named. A bounded
+//! repetition is a chain of top-level states, one call per step, so each
+//! component is stored once however often the recipe repeats it. A search
+//! state inside a stage is a *virtual* state packing the stage, the return
+//! state and the stage's own state, so the search state tuple does not
+//! change.
+//!
+//! A stage is either an edit table, computed at search time, or a stored
+//! component: a range `first..first + count` of the file's own stored states,
+//! entered at `start`. A stored component's arcs stay inside its range, and
+//! its final weights are what returning costs.
 //!
 //! # The edit-table stage
 //!
@@ -55,10 +63,15 @@
 //! u32 n_alphabet   symbols 0..n_alphabet are the alphabet; the rest are
 //!                  call symbols, used only on call arcs
 //! u32 n_stages
-//! { u16 call_input; u16 call_output; u32 kind (1 = edit table);
-//!   u64 offset (from the section start); u64 length; u32 substates;
-//!   u32 reserved }[n_stages]
+//! u32 n_top        stored states 0..n_top are the top level, the only states
+//!                  that may call
+//! u32 0
+//! { u16 call_input; u16 call_output; u32 kind (1 = edit table, 2 = stored
+//!   component); u64 offset (from the section start); u64 length;
+//!   u32 states per call; u32 0 }[n_stages]
 //! ```
+//!
+//! A stored-component stage body is `u32 start; u32 first; u32 count; u32 0`.
 //!
 //! An edit-table stage body:
 //!
@@ -92,6 +105,10 @@ use super::{NONE, u16_at, u32_at, u64_at};
 
 /// The stage kind of an edit table.
 pub const STAGE_EDIT_TABLE: u32 = 1;
+/// The stage kind of a stored component.
+pub const STAGE_STORED: u32 = 2;
+/// Bytes of the `STAG` section's own header.
+pub const STAGES_HEADER_LEN: usize = 16;
 /// Bytes per stage header.
 pub const STAGE_HEADER_LEN: usize = 32;
 /// Bytes of an edit-table stage's counts.
@@ -180,17 +197,75 @@ pub(crate) struct EditStage {
     vectors: Vec<Vector>,
 }
 
+/// A stored component: a range of the file's stored states.
+#[derive(Clone, Debug)]
+pub(crate) struct StoredStage {
+    pub(crate) call_input: u16,
+    pub(crate) call_output: u16,
+    pub(crate) base: u64,
+    pub(crate) start: u32,
+    pub(crate) first: u32,
+    pub(crate) count: u32,
+}
+
+impl StoredStage {
+    /// The virtual state for local state `sub` of a call that returns to
+    /// `ret`.
+    #[inline(always)]
+    pub(crate) fn virtual_state(&self, ret: u32, sub: u32) -> TransitionTableIndex {
+        TransitionTableIndex((self.base + ret as u64 * self.count as u64 + sub as u64) as u32)
+    }
+}
+
+/// A stage.
+#[derive(Clone, Debug)]
+pub(crate) enum Stage {
+    Edit(EditStage),
+    Stored(StoredStage),
+}
+
+impl Stage {
+    pub(crate) fn call_pair(&self) -> (u16, u16) {
+        match self {
+            Stage::Edit(s) => (s.call_input, s.call_output),
+            Stage::Stored(s) => (s.call_input, s.call_output),
+        }
+    }
+
+    fn base(&self) -> u64 {
+        match self {
+            Stage::Edit(s) => s.base,
+            Stage::Stored(s) => s.base,
+        }
+    }
+
+    fn per_call(&self) -> u32 {
+        match self {
+            Stage::Edit(s) => s.substates,
+            Stage::Stored(s) => s.count,
+        }
+    }
+
+    /// The virtual state the call into this stage enters.
+    pub(crate) fn entry(&self, ret: u32) -> TransitionTableIndex {
+        match self {
+            Stage::Edit(s) => s.virtual_state(ret, s.start),
+            Stage::Stored(s) => s.virtual_state(ret, s.start - s.first),
+        }
+    }
+}
+
 /// The stages a file declares.
 #[derive(Clone, Debug)]
 pub(crate) struct Stages {
     pub(crate) n_alphabet: u32,
-    pub(crate) stages: Vec<EditStage>,
+    pub(crate) n_top: u32,
+    pub(crate) stages: Vec<Stage>,
 }
 
 impl Stages {
-    /// Parse and validate a `STAG` section. `n_states` is the stored
-    /// automaton's state count, which every return target must be under and
-    /// which sizes the virtual state space.
+    /// Parse and validate a `STAG` section. `n_states` is the stored state
+    /// count: top-level states and stored components' ranges must fit it.
     pub(crate) fn parse(
         b: &[u8],
         start: usize,
@@ -199,35 +274,33 @@ impl Stages {
         n_states: u32,
         path: &Path,
     ) -> Result<Stages, TransducerError> {
-        if end - start < 8 {
+        if end - start < STAGES_HEADER_LEN {
             return Err(corrupt(path, "STAG is truncated"));
         }
         let n_alphabet = u32_at(b, start);
         let n_stages = u32_at(b, start + 4) as usize;
+        let n_top = u32_at(b, start + 8);
         if n_alphabet == 0 || n_alphabet > n_symbols {
             return Err(corrupt(path, "STAG alphabet size is out of range"));
         }
+        if n_top == 0 || n_top > n_states {
+            return Err(corrupt(path, "STAG top-level size is out of range"));
+        }
         let headers_end = n_stages
             .checked_mul(STAGE_HEADER_LEN)
-            .and_then(|n| n.checked_add(start + 8))
+            .and_then(|n| n.checked_add(start + STAGES_HEADER_LEN))
             .filter(|e| *e <= end)
             .ok_or_else(|| corrupt(path, "STAG stage headers run past the section"))?;
-        let mut stages = Vec::with_capacity(n_stages);
+        let mut stages: Vec<Stage> = Vec::with_capacity(n_stages);
         let mut base = n_states as u64;
         for s in 0..n_stages {
-            let at = start + 8 + STAGE_HEADER_LEN * s;
+            let at = start + STAGES_HEADER_LEN + STAGE_HEADER_LEN * s;
             let call_input = u16_at(b, at);
             let call_output = u16_at(b, at + 2);
             let kind = u32_at(b, at + 4);
             let offset = u64_at(b, at + 8);
             let length = u64_at(b, at + 16);
-            let substates = u32_at(b, at + 24);
-            if kind != STAGE_EDIT_TABLE {
-                return Err(corrupt(
-                    path,
-                    format!("stage {s} is of unknown kind {kind}"),
-                ));
-            }
+            let per_call = u32_at(b, at + 24);
             for symbol in [call_input, call_output] {
                 if (symbol as u32) < n_alphabet || symbol as u32 >= n_symbols {
                     return Err(corrupt(
@@ -248,45 +321,87 @@ impl Stages {
                 .checked_add(length)
                 .filter(|e| *e <= end)
                 .ok_or_else(|| corrupt(path, format!("stage {s} runs past the section")))?;
-            let stage = EditStage::parse(
-                b,
-                body_start,
-                body_end,
-                n_alphabet,
-                call_input,
-                call_output,
-                base,
-                substates,
-                path,
-            )?;
+            let stage = match kind {
+                STAGE_EDIT_TABLE => Stage::Edit(EditStage::parse(
+                    b,
+                    body_start,
+                    body_end,
+                    n_alphabet,
+                    call_input,
+                    call_output,
+                    base,
+                    per_call,
+                    path,
+                )?),
+                STAGE_STORED => {
+                    if body_end - body_start < 16 {
+                        return Err(corrupt(path, format!("stage {s} is truncated")));
+                    }
+                    let entry = u32_at(b, body_start);
+                    let first = u32_at(b, body_start + 4);
+                    let count = u32_at(b, body_start + 8);
+                    let in_range = first >= n_top
+                        && count > 0
+                        && first.checked_add(count).is_some_and(|e| e <= n_states)
+                        && entry >= first
+                        && entry - first < count
+                        && per_call == count;
+                    if !in_range {
+                        return Err(corrupt(path, format!("stored stage {s} is out of range")));
+                    }
+                    Stage::Stored(StoredStage {
+                        call_input,
+                        call_output,
+                        base,
+                        start: entry,
+                        first,
+                        count,
+                    })
+                }
+                _ => {
+                    return Err(corrupt(
+                        path,
+                        format!("stage {s} is of unknown kind {kind}"),
+                    ));
+                }
+            };
             base = base
-                .checked_add(n_states as u64 * substates as u64)
+                .checked_add(n_top as u64 * per_call as u64)
                 .filter(|b| *b < NONE as u64)
                 .ok_or_else(|| corrupt(path, "the stages' virtual states do not fit 32 bits"))?;
             stages.push(stage);
         }
         for (i, a) in stages.iter().enumerate() {
             for b2 in stages.iter().skip(i + 1) {
-                if (a.call_input, a.call_output) == (b2.call_input, b2.call_output) {
+                if a.call_pair() == b2.call_pair() {
                     return Err(corrupt(path, "two stages share a call pair"));
+                }
+                if let (Stage::Stored(x), Stage::Stored(y)) = (a, b2)
+                    && x.first < y.first + y.count
+                    && y.first < x.first + x.count
+                {
+                    return Err(corrupt(path, "two stored stages overlap"));
                 }
             }
         }
-        Ok(Stages { n_alphabet, stages })
+        Ok(Stages {
+            n_alphabet,
+            n_top,
+            stages,
+        })
     }
 
     /// The stage a virtual state belongs to, with its return state and
-    /// substate.
+    /// local state.
     #[inline(always)]
-    pub(crate) fn decode(&self, state: u32, n_states: u32) -> Option<(&EditStage, u32, u32)> {
+    pub(crate) fn decode(&self, state: u32) -> Option<(&Stage, u32, u32)> {
         let state = state as u64;
         for stage in &self.stages {
-            let span = n_states as u64 * stage.substates as u64;
-            if state >= stage.base && state < stage.base + span {
-                let local = state - stage.base;
-                let ret = (local / stage.substates as u64) as u32;
-                let sub = (local % stage.substates as u64) as u32;
-                return Some((stage, ret, sub));
+            let per_call = stage.per_call() as u64;
+            let span = self.n_top as u64 * per_call;
+            if state >= stage.base() && state < stage.base() + span {
+                let local = state - stage.base();
+                return Some((stage, (local / per_call) as u32, (local % per_call) as u32));
             }
         }
         None

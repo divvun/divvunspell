@@ -144,7 +144,7 @@ pub mod tag {
     pub const ENTR: [u8; 4] = *b"ENTR";
     /// rule tries (reserved)
     pub const RULE: [u8; 4] = *b"RULE";
-    /// stages the stored automaton calls
+    /// stages the top level calls
     pub const STAG: [u8; 4] = *b"STAG";
     /// writer metadata
     pub const META: [u8; 4] = *b"meta";
@@ -393,24 +393,54 @@ impl DhfstTransducer {
 
     /// Stages the file declares, as `(call input, call output, contexts,
     /// tables, substates)`.
-    pub fn stage_summary(&self) -> Vec<(u16, u16, usize, usize, u32)> {
+    pub fn stage_summary(&self) -> Vec<StageSummary> {
         self.stages
             .as_ref()
             .map(|s| {
                 s.stages
                     .iter()
-                    .map(|st| {
-                        (
-                            st.call_input,
-                            st.call_output,
-                            st.contexts.len(),
-                            st.tables.len(),
-                            st.substates,
-                        )
+                    .map(|st| match st {
+                        stage::Stage::Edit(e) => StageSummary::EditTable {
+                            call: (e.call_input, e.call_output),
+                            contexts: e.contexts.len(),
+                            tables: e.tables.len(),
+                        },
+                        stage::Stage::Stored(c) => StageSummary::Stored {
+                            call: (c.call_input, c.call_output),
+                            start: c.start,
+                            first: c.first,
+                            count: c.count,
+                        },
                     })
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// How many stored states form the top level, the states that may call
+    /// stages; all of them in a file without stages.
+    pub fn top_level_len(&self) -> u32 {
+        self.stages
+            .as_ref()
+            .map_or(self.layout.n_states, |s| s.n_top)
+    }
+
+    /// The virtual state the call into stage `stage` returning to `ret`
+    /// enters, for tools that check a written file.
+    pub fn stage_entry(&self, stage: usize, ret: u32) -> Option<TransitionTableIndex> {
+        self.stages
+            .as_ref()
+            .and_then(|s| s.stages.get(stage))
+            .map(|st| st.entry(ret))
+    }
+
+    /// The virtual state for local state `sub` of stage `stage` in a call
+    /// returning to `ret`, for tools that check a written file.
+    pub fn stage_state(&self, stage: usize, ret: u32, sub: u32) -> Option<TransitionTableIndex> {
+        match self.stages.as_ref().and_then(|s| s.stages.get(stage))? {
+            stage::Stage::Edit(e) => Some(e.virtual_state(ret, sub)),
+            stage::Stage::Stored(c) => Some(c.virtual_state(ret, sub)),
+        }
     }
 
     /// The weight of an edit of table `table` in stage `stage`: substitution
@@ -419,7 +449,8 @@ impl DhfstTransducer {
     /// `+inf` for none. For tools that check
     /// a written table against its source.
     pub fn stage_edit_weight(&self, stage: usize, table: usize, kind: u8, x: u16, y: u16) -> f32 {
-        let Some(st) = self.stages.as_ref().and_then(|s| s.stages.get(stage)) else {
+        let Some(stage::Stage::Edit(st)) = self.stages.as_ref().and_then(|s| s.stages.get(stage))
+        else {
             return f32::INFINITY;
         };
         let Some(t) = st.tables.get(table) else {
@@ -590,32 +621,102 @@ impl DhfstTransducer {
             self.walk_stored(state, input, visit);
             return;
         };
-        if state >= self.layout.n_states {
-            if let Some((stage, ret, sub)) = stages.decode(state, self.layout.n_states) {
-                stage.walk(ret, sub, input, visit);
-            }
-            return;
-        }
         if input as u32 >= stages.n_alphabet {
             return;
         }
+        if state >= self.layout.n_states {
+            match stages.decode(state) {
+                Some((stage::Stage::Edit(stage), ret, sub)) => stage.walk(ret, sub, input, visit),
+                Some((stage::Stage::Stored(stage), ret, sub)) => {
+                    self.walk_component(stage, ret, sub, input, visit)
+                }
+                None => {}
+            }
+            return;
+        }
         self.walk_stored(state, input, visit);
-        if input == 0 {
+        if input == 0 && state < stages.n_top {
             for stage in &stages.stages {
-                self.walk_stored(state, stage.call_input, &mut |group: ArcGroup<'_>| {
+                let (call_input, call_output) = stage.call_pair();
+                self.walk_stored(state, call_input, &mut |group: ArcGroup<'_>| {
                     if let ArcGroup::One {
                         output,
                         target,
                         weight,
                     } = group
-                        && output.0 == stage.call_output
+                        && output.0 == call_output
+                        && target.0 < stages.n_top
                     {
                         visit(ArcGroup::One {
                             output: SymbolNumber::ZERO,
-                            target: stage.virtual_state(target.0, stage.start),
+                            target: stage.entry(target.0),
                             weight,
                         });
                     }
+                });
+            }
+        }
+    }
+
+    /// The arcs of local state `sub` of a stored component in a call that
+    /// returns to `ret`: the component's own arcs, kept inside its virtual
+    /// range, and on an epsilon input the return, at the state's final
+    /// weight.
+    #[inline]
+    fn walk_component<V>(
+        &self,
+        stage: &stage::StoredStage,
+        ret: u32,
+        sub: u32,
+        input: u16,
+        visit: &mut V,
+    ) where
+        V: FnMut(ArcGroup<'_>),
+    {
+        let (first, count) = (stage.first, stage.count);
+        let local = |target: TransitionTableIndex| {
+            target
+                .0
+                .checked_sub(first)
+                .filter(|t| *t < count)
+                .map(|t| stage.virtual_state(ret, t))
+        };
+        let raw = first + sub;
+        self.walk_stored(raw, input, &mut |group: ArcGroup<'_>| match group {
+            ArcGroup::One {
+                output,
+                target,
+                weight,
+            } => {
+                if let Some(target) = local(target) {
+                    visit(ArcGroup::One {
+                        output,
+                        target,
+                        weight,
+                    });
+                }
+            }
+            ArcGroup::Each {
+                outputs,
+                target,
+                weight,
+            } => {
+                if let Some(target) = local(target) {
+                    visit(ArcGroup::Each {
+                        outputs,
+                        target,
+                        weight,
+                    });
+                }
+            }
+        });
+        if input == 0 {
+            let (_, _, _, final_weight) = self.state_record(raw);
+            if final_weight.is_finite() {
+                visit(ArcGroup::One {
+                    output: SymbolNumber::ZERO,
+                    target: TransitionTableIndex(ret),
+                    weight: Weight(final_weight),
                 });
             }
         }
@@ -832,6 +933,31 @@ impl DhfstTransducer {
         }
         lo
     }
+}
+
+/// A stage, as the tools see it.
+#[derive(Clone, Copy, Debug)]
+pub enum StageSummary {
+    /// an edit table
+    EditTable {
+        /// call input and output symbols
+        call: (u16, u16),
+        /// contexts
+        contexts: usize,
+        /// edit tables
+        tables: usize,
+    },
+    /// a stored component
+    Stored {
+        /// call input and output symbols
+        call: (u16, u16),
+        /// entry state
+        start: u32,
+        /// first state of its range
+        first: u32,
+        /// states in its range
+        count: u32,
+    },
 }
 
 /// A stored state, as the stats tools see it.
@@ -1309,6 +1435,19 @@ impl Parsed {
             )?),
             None => None,
         };
+        // Stored components name their states as stored; the start state
+        // must be state 0 for those names to be the ones callers see.
+        if stages.as_ref().is_some_and(|s| {
+            s.stages
+                .iter()
+                .any(|st| matches!(st, stage::Stage::Stored(_)))
+        }) && start != 0
+        {
+            return Err(corrupt(
+                path,
+                "a file with stored stages must start at state 0",
+            ));
+        }
 
         Ok(Parsed {
             layout,
