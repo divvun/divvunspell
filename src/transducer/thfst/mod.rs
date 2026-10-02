@@ -302,11 +302,12 @@ where
                 path: alphabet_path.clone(),
                 source,
             })?;
-        let alphabet: TransducerAlphabet =
+        let mut alphabet: TransducerAlphabet =
             serde_json::from_slice(&alphabet_bytes).map_err(|e| TransducerError::AlphabetJson {
                 path: alphabet_path,
                 source: crate::util::JsonParseError::new(e, &alphabet_bytes),
             })?;
+        alphabet.index_flags();
 
         let index_table = I::from_path(fs, path.join("index"))?;
         let transition_table = T::from_path(fs, path.join("transition"))?;

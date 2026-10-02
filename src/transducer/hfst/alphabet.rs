@@ -198,7 +198,7 @@ impl TransducerAlphabetParser {
         let mut p = TransducerAlphabetParser::new();
         p.parse_inner(buf, symbols, path)?;
 
-        Ok(TransducerAlphabet {
+        let mut alphabet = TransducerAlphabet {
             key_table: p.key_table,
             initial_symbol_count: symbols,
             length: p.length,
@@ -207,7 +207,9 @@ impl TransducerAlphabetParser {
             operations: p.operations,
             identity_symbol: p.identity_symbol,
             unknown_symbol: p.unknown_symbol,
-            flag_bits: Default::default(),
-        })
+            flag_bits: Vec::new(),
+        };
+        alphabet.index_flags();
+        Ok(alphabet)
     }
 }

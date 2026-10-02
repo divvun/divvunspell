@@ -291,11 +291,12 @@ impl<F: vfs::File> TransducerLoader<F> for ThfstChunkedTransducer {
                 path: alphabet_path.clone(),
                 source,
             })?;
-        let alphabet: TransducerAlphabet =
+        let mut alphabet: TransducerAlphabet =
             serde_json::from_slice(&alphabet_bytes).map_err(|e| TransducerError::AlphabetJson {
                 path: alphabet_path,
                 source: crate::util::JsonParseError::new(e, &alphabet_bytes),
             })?;
+        alphabet.index_flags();
 
         let mut index_chunk_count = 1;
         let index_tables;

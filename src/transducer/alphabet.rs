@@ -15,10 +15,10 @@ pub struct TransducerAlphabet {
     pub(crate) operations: OperationsMap,
     pub(crate) identity_symbol: Option<SymbolNumber>,
     pub(crate) unknown_symbol: Option<SymbolNumber>,
-    /// `operations`' symbols as a bitset, built on first use: the lexicon
+    /// `operations`' symbols as a bitset, built by the loaders: the lexicon
     /// walk asks whether a symbol is a flag at every state it leaves.
     #[serde(skip)]
-    pub(crate) flag_bits: std::sync::OnceLock<Vec<u64>>,
+    pub(crate) flag_bits: Vec<u64>,
 }
 
 impl TransducerAlphabet {
@@ -51,21 +51,28 @@ impl TransducerAlphabet {
 
     #[inline(always)]
     pub fn is_flag(&self, symbol: SymbolNumber) -> bool {
-        let bits = self.flag_bits.get_or_init(|| {
-            let len = self
-                .operations
-                .keys()
-                .map(|s| s.0 as usize + 1)
-                .max()
-                .unwrap_or(0);
-            let mut bits = vec![0u64; len.div_ceil(64)];
-            for s in self.operations.keys() {
-                bits[s.0 as usize / 64] |= 1 << (s.0 % 64);
-            }
-            bits
-        });
-        bits.get(symbol.0 as usize / 64)
-            .is_some_and(|word| word & (1 << (symbol.0 % 64)) != 0)
+        match self.flag_bits.get(symbol.0 as usize / 64) {
+            Some(word) => word & (1 << (symbol.0 % 64)) != 0,
+            // An alphabet no loader indexed answers from the map.
+            None if self.flag_bits.is_empty() => self.operations.contains_key(&symbol),
+            None => false,
+        }
+    }
+
+    /// Build the flag bitset [`is_flag`](Self::is_flag) reads from the flag
+    /// operations; the loaders call this once the alphabet is complete.
+    pub(crate) fn index_flags(&mut self) {
+        let len = self
+            .operations
+            .keys()
+            .map(|s| s.0 as usize + 1)
+            .max()
+            .unwrap_or(0);
+        let mut bits = vec![0u64; len.div_ceil(64)];
+        for s in self.operations.keys() {
+            bits[s.0 as usize / 64] |= 1 << (s.0 % 64);
+        }
+        self.flag_bits = bits;
     }
 
     #[inline(always)]
