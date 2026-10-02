@@ -21,8 +21,7 @@ fn speller_start_node(pool: &Pool<TreeNode>, size: usize) -> Vec<Recycled<'_, Tr
     nodes
 }
 
-/// Min-order wrapper so `BinaryHeap` (a max-heap) pops the most promising node
-/// first.
+/// A node with its place in the search order.
 ///
 /// The order is A*'s `f = g + h`: `g` is the weight accumulated so far and `h`
 /// is [`Transducer::distance_to_final`] summed over the two transducers — a
@@ -36,18 +35,32 @@ struct OrderedNode<'a> {
     node: Recycled<'a, TreeNode>,
 }
 
-impl PartialEq for OrderedNode<'_> {
+/// What the queue holds for one node: its order keys and where the node
+/// itself is parked.
+///
+/// A search node is some eighty bytes and the heap moves its elements on
+/// every push and pop, so the heap holds only these twelve bytes and the
+/// nodes stay put in a [`Parked`] slab. The order is the same as on the nodes
+/// themselves, so the heap pops them in exactly the same sequence.
+#[derive(Clone, Copy)]
+struct QueueEntry {
+    estimate: Weight,
+    weight: Weight,
+    slot: u32,
+}
+
+impl PartialEq for QueueEntry {
     fn eq(&self, other: &Self) -> bool {
-        self.estimate == other.estimate && self.node.weight() == other.node.weight()
+        self.estimate == other.estimate && self.weight == other.weight
     }
 }
-impl Eq for OrderedNode<'_> {}
-impl PartialOrd for OrderedNode<'_> {
+impl Eq for QueueEntry {}
+impl PartialOrd for QueueEntry {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
-impl Ord for OrderedNode<'_> {
+impl Ord for QueueEntry {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Reversed: cheapest estimate first out of the max-heap. Ties go to the
         // node that has already travelled further, which reaches a complete
@@ -55,7 +68,51 @@ impl Ord for OrderedNode<'_> {
         other
             .estimate
             .cmp(&self.estimate)
-            .then_with(|| self.node.weight().cmp(&other.node.weight()))
+            .then_with(|| self.weight.cmp(&other.weight))
+    }
+}
+
+/// The queued nodes, by slot, with the free slots kept for reuse.
+struct Parked<'a> {
+    slots: Vec<Option<Recycled<'a, TreeNode>>>,
+    free: Vec<u32>,
+}
+
+impl<'a> Parked<'a> {
+    fn new() -> Self {
+        Parked {
+            slots: Vec::with_capacity(256),
+            free: Vec::new(),
+        }
+    }
+
+    /// Park a node and answer its queue entry.
+    #[inline(always)]
+    fn park(&mut self, ordered: OrderedNode<'a>) -> QueueEntry {
+        let weight = ordered.node.weight();
+        let slot = match self.free.pop() {
+            Some(slot) => {
+                self.slots[slot as usize] = Some(ordered.node);
+                slot
+            }
+            None => {
+                self.slots.push(Some(ordered.node));
+                (self.slots.len() - 1) as u32
+            }
+        };
+        QueueEntry {
+            estimate: ordered.estimate,
+            weight,
+            slot,
+        }
+    }
+
+    /// Take a node back out of its slot.
+    #[inline(always)]
+    fn take(&mut self, slot: u32) -> Option<Recycled<'a, TreeNode>> {
+        let node = self.slots.get_mut(slot as usize)?.take();
+        self.free.push(slot);
+        node
     }
 }
 
@@ -1351,11 +1408,12 @@ where
         // path, the n-best heap fills with good candidates early (tightening
         // the cutoff), and the whole search can stop when the cheapest open
         // estimate exceeds the cutoff.
-        let mut queue: BinaryHeap<OrderedNode> = BinaryHeap::with_capacity(256);
+        let mut queue: BinaryHeap<QueueEntry> = BinaryHeap::with_capacity(256);
+        let mut parked = Parked::new();
         queue.extend(
             speller_start_node(&pool, self.state_size() as usize)
                 .into_iter()
-                .map(|node| self.ordered(subsets.as_deref(), node)),
+                .map(|node| parked.park(self.ordered(subsets.as_deref(), node))),
         );
         let mut scratch: Vec<Recycled<TreeNode>> = Vec::with_capacity(256);
         // Key on symbol sequences to avoid string_from_symbols in the hot loop.
@@ -1386,11 +1444,10 @@ where
         let budget = self.config.search_budget.unwrap_or(u64::MAX);
         let mut stop: Option<SearchStop> = None;
 
-        while let Some(OrderedNode {
-            estimate,
-            node: next_node,
-        }) = queue.pop()
-        {
+        while let Some(QueueEntry { estimate, slot, .. }) = queue.pop() {
+            let Some(next_node) = parked.take(slot) else {
+                continue;
+            };
             iteration_count += 1;
             if let Some(s) = stats.as_mut() {
                 s.record_pop(&next_node);
@@ -1478,7 +1535,8 @@ where
                         closed
                             .as_mut()
                             .is_none_or(|closed| closed.admit(&queued.node))
-                    }),
+                    })
+                    .map(|queued| parked.park(queued)),
             );
             if let Some(s) = stats.as_mut() {
                 s.pushes_kept += (queue.len() - queue_before) as u64;
