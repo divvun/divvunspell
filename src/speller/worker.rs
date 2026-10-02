@@ -35,23 +35,50 @@ struct OrderedNode<'a> {
     node: Recycled<'a, TreeNode>,
 }
 
-/// What the queue holds for one node: its order keys and where the node
-/// itself is parked.
+/// What the queue holds for one node: its place in the order and where the
+/// node itself is parked.
 ///
 /// A search node is some eighty bytes and the heap moves its elements on
-/// every push and pop, so the heap holds only these twelve bytes and the
-/// nodes stay put in a [`Parked`] slab. The order is the same as on the nodes
-/// themselves, so the heap pops them in exactly the same sequence.
+/// every push and pop, so the heap holds only these sixteen bytes and the
+/// nodes stay put in a [`Parked`] slab.
 #[derive(Clone, Copy)]
 struct QueueEntry {
+    /// The order as one integer: the cheapest estimate first out of the
+    /// max-heap, and among equal estimates the node that has already
+    /// travelled further, which reaches a complete correction sooner and so
+    /// tightens the cutoff sooner. It ranks exactly as comparing the estimate
+    /// and then the weight with [`Weight`]'s own total order does, so the heap
+    /// pops the nodes in exactly the same sequence.
+    key: u64,
     estimate: Weight,
-    weight: Weight,
     slot: u32,
+}
+
+/// `f32::total_cmp`'s order as an unsigned integer.
+#[inline(always)]
+fn total_order_key(w: Weight) -> u32 {
+    let bits = w.0.to_bits();
+    if bits & 0x8000_0000 != 0 {
+        !bits
+    } else {
+        bits | 0x8000_0000
+    }
+}
+
+impl QueueEntry {
+    #[inline(always)]
+    fn new(estimate: Weight, weight: Weight, slot: u32) -> Self {
+        QueueEntry {
+            key: ((!total_order_key(estimate) as u64) << 32) | total_order_key(weight) as u64,
+            estimate,
+            slot,
+        }
+    }
 }
 
 impl PartialEq for QueueEntry {
     fn eq(&self, other: &Self) -> bool {
-        self.estimate == other.estimate && self.weight == other.weight
+        self.key == other.key
     }
 }
 impl Eq for QueueEntry {}
@@ -61,14 +88,9 @@ impl PartialOrd for QueueEntry {
     }
 }
 impl Ord for QueueEntry {
+    #[inline(always)]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // Reversed: cheapest estimate first out of the max-heap. Ties go to the
-        // node that has already travelled further, which reaches a complete
-        // correction sooner and so tightens the cutoff sooner.
-        other
-            .estimate
-            .cmp(&self.estimate)
-            .then_with(|| self.weight.cmp(&other.weight))
+        self.key.cmp(&other.key)
     }
 }
 
@@ -100,11 +122,7 @@ impl<'a> Parked<'a> {
                 (self.slots.len() - 1) as u32
             }
         };
-        QueueEntry {
-            estimate: ordered.estimate,
-            weight,
-            slot,
-        }
+        QueueEntry::new(ordered.estimate, weight, slot)
     }
 
     /// Take a node back out of its slot.
@@ -1788,5 +1806,47 @@ where
         // cutting on them drops candidates the reweight step would promote
         // into the n best. `suggest_case` truncates after reweighting.
         c
+    }
+}
+
+#[cfg(test)]
+mod queue_order_tests {
+    use super::*;
+
+    /// The integer key ranks every pair of entries as comparing the estimate
+    /// (reversed) and then the weight with `Weight`'s total order does.
+    #[test]
+    fn the_queue_key_ranks_as_the_weights_do() {
+        let values = [
+            f32::NEG_INFINITY,
+            -3.5,
+            -1.0,
+            -f32::MIN_POSITIVE,
+            -0.0,
+            0.0,
+            f32::MIN_POSITIVE,
+            1e-7,
+            0.5,
+            1.0,
+            1.0000001,
+            12.0,
+            1e30,
+            f32::MAX,
+            f32::INFINITY,
+        ];
+        for &e1 in &values {
+            for &w1 in &values {
+                for &e2 in &values {
+                    for &w2 in &values {
+                        let a = QueueEntry::new(Weight(e1), Weight(w1), 0);
+                        let b = QueueEntry::new(Weight(e2), Weight(w2), 1);
+                        let want = Weight(e2)
+                            .cmp(&Weight(e1))
+                            .then_with(|| Weight(w1).cmp(&Weight(w2)));
+                        assert_eq!(a.cmp(&b), want, "({e1}, {w1}) against ({e2}, {w2})");
+                    }
+                }
+            }
+        }
     }
 }
