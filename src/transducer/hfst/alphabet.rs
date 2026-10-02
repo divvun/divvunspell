@@ -207,6 +207,7 @@ impl TransducerAlphabetParser {
             operations: p.operations,
             identity_symbol: p.identity_symbol,
             unknown_symbol: p.unknown_symbol,
+            flag_bits: Default::default(),
         })
     }
 }
