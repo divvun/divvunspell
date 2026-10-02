@@ -18,7 +18,7 @@ use serde::Serialize;
 
 use divvun_fst::{
     archive::{
-        OpenOptions, SpellerArchive, boxf::BoxSpellerArchive, boxf::ThfstBoxSpellerArchive,
+        SpellerArchive, boxf::BoxSpellerArchive, boxf::ThfstBoxSpellerArchive,
         error::SpellerArchiveError, zip::ZipSpellerArchive,
     },
     speller::{Speller, SpellerConfig, suggestion::Suggestion},
@@ -334,16 +334,6 @@ struct SuggestArgs {
     #[arg(long)]
     lexicon_path: Option<PathBuf>,
 
-    /// Read a BHFST archive's error model from this file instead (HFST
-    /// optimized lookup or DHFST; the file's header says which). BHFST only
-    #[arg(long = "errmodel")]
-    errmodel_path: Option<PathBuf>,
-
-    /// Read a BHFST archive's THFST error model even when its meta.json
-    /// declares a DHFST one. BHFST only
-    #[arg(long)]
-    primary_errmodel: bool,
-
     /// Always show suggestions even if word is correct
     #[arg(short = 'S', long = "always-suggest")]
     always_suggest: bool,
@@ -423,22 +413,13 @@ fn tokenize(args: TokenizeArgs) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn load_archive(
-    path: &Path,
-    options: &OpenOptions,
-) -> Result<Box<dyn SpellerArchive>, SpellerArchiveError> {
+fn load_archive(path: &Path) -> Result<Box<dyn SpellerArchive>, SpellerArchiveError> {
     match path.extension() {
         Some(ext) if ext == "bhfst" => {
-            let archive: ThfstBoxSpellerArchive = BoxSpellerArchive::open_with(path, options)?;
+            let archive: ThfstBoxSpellerArchive = BoxSpellerArchive::open(path)?;
             Ok(Box::new(archive))
         }
-        Some(ext) if ext == "zhfst" => match options.first_set() {
-            Some(option) => Err(SpellerArchiveError::ErrmodelOptionUnsupported {
-                path: path.to_path_buf(),
-                option,
-            }),
-            None => Ok(Box::new(ZipSpellerArchive::open(path)?)),
-        },
+        Some(ext) if ext == "zhfst" => Ok(Box::new(ZipSpellerArchive::open(path)?)),
         ext => Err(SpellerArchiveError::UnsupportedExt {
             path: path.to_path_buf(),
             ext: ext.map(|x| x.to_owned()).unwrap_or_default(),
@@ -451,11 +432,7 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
     let mut suggest_cfg = SpellerConfig::default();
 
     let speller = if let Some(archive_path) = args.archive_path {
-        let options = OpenOptions {
-            errmodel_path: args.errmodel_path.clone(),
-            primary_errmodel_only: args.primary_errmodel,
-        };
-        let archive = load_archive(&archive_path, &options)
+        let archive = load_archive(&archive_path)
             .with_context(|| format!("failed to load archive '{}'", archive_path.display()))?;
         if let Some(source) = archive.errmodel_source() {
             eprintln!("Error model: {source}");

@@ -1,10 +1,6 @@
 //! Handling of archives of spell-checking models.
 use memmap2::Mmap;
-use std::{
-    ffi::OsString,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{ffi::OsString, path::Path, sync::Arc};
 
 pub mod boxf;
 pub mod error;
@@ -68,82 +64,29 @@ pub(crate) fn warn_malformed_config(archive: &Path, source: &dyn std::fmt::Displ
     );
 }
 
-/// The error-model format a BHFST `meta.json` names for the compact DHFST
-/// format. DHFST is a BHFST-only format: a ZHFST archive's error model is
-/// always HFST optimized lookup.
-pub const DHFST_FORMAT: &str = "dhfst";
-
-/// How to open an archive.
-///
-/// Both options choose the error model of a BHFST archive. A ZHFST archive
-/// takes neither and refuses to open with them, so that it always runs with
-/// the optimized-lookup error model it carries.
-#[derive(Clone, Debug, Default)]
-pub struct OpenOptions {
-    /// Read the error model from this file instead of from the archive. The
-    /// file may be HFST optimized lookup or DHFST; its header says which.
-    pub errmodel_path: Option<PathBuf>,
-    /// Read the archive's THFST error model even when its `meta.json`
-    /// declares a DHFST one.
-    pub primary_errmodel_only: bool,
-}
-
-impl OpenOptions {
-    /// The first option that is set, by its command-line name, if any is.
-    pub fn first_set(&self) -> Option<&'static str> {
-        if self.errmodel_path.is_some() {
-            Some("--errmodel")
-        } else if self.primary_errmodel_only {
-            Some("--primary-errmodel")
-        } else {
-            None
-        }
-    }
-}
-
-/// Where an archive's speller got its error model from, and in what format.
+/// Which archive member a speller's error model was read from, and in what
+/// format.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ErrmodelSource {
-    /// the archive member, or the file given in [`OpenOptions::errmodel_path`]
+    /// the archive member
     pub location: String,
-    /// whether `location` is a file outside the archive
-    pub external: bool,
-    /// the format its header declared
+    /// the format it was read in
     pub format: String,
 }
 
 impl std::fmt::Display for ErrmodelSource {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.external {
-            write!(f, "file {} ({})", self.location, self.format)
-        } else {
-            write!(f, "member {} ({})", self.location, self.format)
-        }
+        write!(f, "member {} ({})", self.location, self.format)
     }
 }
 
 impl ErrmodelSource {
-    pub(crate) fn new(
-        location: impl Into<String>,
-        external: bool,
-        format: TransducerFormat,
-    ) -> Self {
+    pub(crate) fn new(location: impl Into<String>, format: TransducerFormat) -> Self {
         ErrmodelSource {
             location: location.into(),
-            external,
             format: format.to_string(),
         }
     }
-}
-
-/// Whether a declared DHFST version is one this reader reads.
-pub(crate) fn readable_dhfst_version(version: &str) -> bool {
-    version
-        .trim()
-        .split('.')
-        .next()
-        .and_then(|major| major.parse::<u8>().ok())
-        == Some(crate::transducer::dhfst::VERSION)
 }
 
 pub(crate) struct TempMmap {
@@ -203,32 +146,12 @@ pub fn open<P>(path: P) -> Result<Arc<dyn SpellerArchive + Send + Sync>, Speller
 where
     P: AsRef<Path>,
 {
-    open_with(path, &OpenOptions::default())
-}
-
-/// Reads a speller archive, with the error model chosen by `options`.
-///
-/// The options apply to BHFST archives only; a ZHFST archive given any of
-/// them is refused with [`SpellerArchiveError::ErrmodelOptionUnsupported`].
-pub fn open_with<P>(
-    path: P,
-    options: &OpenOptions,
-) -> Result<Arc<dyn SpellerArchive + Send + Sync>, SpellerArchiveError>
-where
-    P: AsRef<Path>,
-{
     let path = path.as_ref();
     match path.extension() {
         Some(x) if x == "bhfst" => {
-            ThfstChunkedBoxSpellerArchive::open_with(path, options).map(|x| Arc::new(x) as _)
+            ThfstChunkedBoxSpellerArchive::open(path).map(|x| Arc::new(x) as _)
         }
-        Some(x) if x == "zhfst" => match options.first_set() {
-            Some(option) => Err(SpellerArchiveError::ErrmodelOptionUnsupported {
-                path: path.to_path_buf(),
-                option,
-            }),
-            None => ZipSpellerArchive::open(path).map(|x| Arc::new(x) as _),
-        },
+        Some(x) if x == "zhfst" => ZipSpellerArchive::open(path).map(|x| Arc::new(x) as _),
         unknown => Err(SpellerArchiveError::UnsupportedExt {
             path: path.to_path_buf(),
             ext: unknown.map(|x| x.to_owned()).unwrap_or_else(OsString::new),

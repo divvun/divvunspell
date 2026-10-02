@@ -472,25 +472,11 @@ pub struct AccuracyArgs {
     /// Enable verbose mode to include weight details in output
     #[arg(short = 'v', long)]
     verbose: bool,
-
-    /// Read a BHFST archive's error model from this file instead (HFST
-    /// optimized lookup or DHFST; the file's header says which). BHFST only
-    #[arg(long = "errmodel")]
-    errmodel_path: Option<PathBuf>,
-
-    /// Read a BHFST archive's THFST error model even when its meta.json
-    /// declares a DHFST one. BHFST only
-    #[arg(long)]
-    primary_errmodel: bool,
 }
 
 pub fn run(args: AccuracyArgs) -> anyhow::Result<()> {
-    let options = archive::OpenOptions {
-        errmodel_path: args.errmodel_path.clone(),
-        primary_errmodel_only: args.primary_errmodel,
-    };
     let archive = match args.archive {
-        Some(path) => archive::open_with(Path::new(&path), &options)?,
+        Some(path) => archive::open(Path::new(&path))?,
         None => {
             anyhow::bail!("No archive path provided; aborting.");
         }

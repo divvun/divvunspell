@@ -7,8 +7,8 @@ use std::time::Instant;
 use anyhow::{Context as _, bail};
 use box_format::{BoxPath, Compression, CompressionConfig, HashMap as BoxHashMap, sync::BoxWriter};
 use clap::Parser;
+use divvun_fst::archive::boxf::DHFST_ERRMODEL_MEMBER;
 use divvun_fst::archive::meta::SpellerMetadata;
-use divvun_fst::archive::{DHFST_FORMAT, boxf::DHFST_ERRMODEL_MEMBER};
 use divvun_fst::transducer::Transducer;
 use divvun_fst::transducer::dhfst::{
     self, DefaultKind, DhfstTransducer,
@@ -364,9 +364,8 @@ fn cmd_info(path: &Path) -> anyhow::Result<()> {
 fn cmd_bhfst(archive_path: &Path, dhfst_path: &Path, output: &Path) -> anyhow::Result<()> {
     let bytes = std::fs::read(dhfst_path)
         .with_context(|| format!("failed to read '{}'", dhfst_path.display()))?;
-    let version = DhfstTransducer::from_bytes(&bytes, dhfst_path)
-        .with_context(|| format!("'{}' is not a DHFST error model", dhfst_path.display()))?
-        .version();
+    DhfstTransducer::from_bytes(&bytes, dhfst_path)
+        .with_context(|| format!("'{}' is not a DHFST error model", dhfst_path.display()))?;
 
     let mut archive = ZipArchive::new(std::fs::File::open(archive_path)?)
         .with_context(|| format!("failed to read '{}'", archive_path.display()))?;
@@ -406,9 +405,7 @@ fn cmd_bhfst(archive_path: &Path, dhfst_path: &Path, output: &Path) -> anyhow::R
         .acceptor_mut()
         .set_id("acceptor.default.thfst".into());
     metadata.errmodel_mut().set_id(DHFST_ERRMODEL_MEMBER.into());
-    metadata
-        .errmodel_mut()
-        .set_format(Some(DHFST_FORMAT.into()), Some(version.to_string()));
+
     let mut meta = serde_json::to_value(&metadata)?;
     if let (Some(config), Some(object)) = (config, meta.as_object_mut()) {
         object.insert(divvun_fst::archive::BUNDLED_CONFIG_KEY.into(), config);
@@ -441,12 +438,11 @@ fn cmd_bhfst(archive_path: &Path, dhfst_path: &Path, output: &Path) -> anyhow::R
     )?;
     boxfile.finish()?;
     println!(
-        "wrote {}: {} bytes; acceptor as THFST, error model {} ({} bytes), meta.json errmodel format \"{}\"",
+        "wrote {}: {} bytes; acceptor as THFST, error model {} ({} bytes)",
         output.display(),
         std::fs::metadata(output)?.len(),
         DHFST_ERRMODEL_MEMBER,
-        bytes.len(),
-        DHFST_FORMAT
+        bytes.len()
     );
     Ok(())
 }

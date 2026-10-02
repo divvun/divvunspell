@@ -162,47 +162,12 @@ pub struct SpellerMetadataErrmodel {
     title: Vec<SpellerTitle>,
     /// human readable description of the error model
     description: String,
-    /// The format of the member `id` names, when it is not the archive's
-    /// usual one. A BHFST `meta.json` says `"format": "dhfst"` for an error
-    /// model in the compact format; without the key the member is THFST.
-    /// ZHFST archives carry optimized lookup only and never read this.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    format: Option<String>,
-    /// The version of `format`.
-    #[serde(
-        default,
-        rename = "formatVersion",
-        alias = "format-version",
-        skip_serializing_if = "Option::is_none"
-    )]
-    format_version: Option<String>,
 }
 
 impl SpellerMetadataErrmodel {
     /// Get the error model ID
     pub fn id(&self) -> &str {
         &self.id
-    }
-
-    /// The format of the member [`id`](Self::id) names, if declared.
-    pub fn format(&self) -> Option<&str> {
-        self.format.as_deref()
-    }
-
-    /// The version of [`format`](Self::format), if declared.
-    pub fn format_version(&self) -> Option<&str> {
-        self.format_version.as_deref()
-    }
-
-    /// Declare the format of the member [`id`](Self::id) names.
-    ///
-    /// # Warning
-    /// This method is only for internal tooling use and should not be used in normal applications.
-    /// It may be removed in a future version.
-    #[doc(hidden)]
-    pub fn set_format(&mut self, format: Option<String>, version: Option<String>) {
-        self.format = format;
-        self.format_version = version;
     }
 
     /// Get the localized titles
@@ -292,32 +257,4 @@ fn test_xml_parse() {
 
     let s = SpellerMetadata::from_str(&xml_data).unwrap();
     println!("{:#?}", s);
-}
-
-#[test]
-fn metadata_without_a_format_serialises_as_before() {
-    use std::str::FromStr;
-
-    let xml_data = r##"<hfstspeller>
-        <info><locale>se</locale><title>t</title><description>d</description><producer>p</producer></info>
-        <acceptor type="general" id="acceptor.default.hfst"><title>a</title><description>a</description></acceptor>
-        <errmodel id="errmodel.default.hfst"><title>e</title><description>e</description></errmodel>
-        </hfstspeller>"##;
-    let metadata = SpellerMetadata::from_str(xml_data).expect("the XML is well formed");
-    let json = serde_json::to_value(&metadata).expect("metadata serialises");
-    let errmodel = json.get("errmodel").expect("errmodel key");
-    assert!(errmodel.get("format").is_none());
-    assert!(errmodel.get("formatVersion").is_none());
-}
-
-#[test]
-fn bhfst_meta_json_declares_the_errmodel_format() {
-    let json = br#"{
-        "info": {"locale": "se", "title": [], "description": "", "producer": ""},
-        "acceptor": {"type": "general", "id": "acceptor.default.thfst", "title": [], "description": "", "continuation": null},
-        "errmodel": {"id": "errmodel.default.dhfst", "title": [], "description": "", "format": "dhfst", "formatVersion": "1"}
-    }"#;
-    let metadata: SpellerMetadata = serde_json::from_slice(json).expect("meta.json parses");
-    assert_eq!(metadata.errmodel().format(), Some("dhfst"));
-    assert_eq!(metadata.errmodel().format_version(), Some("1"));
 }

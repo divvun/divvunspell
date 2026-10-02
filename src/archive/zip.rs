@@ -186,7 +186,7 @@ impl SpellerArchive for ZipSpellerArchive {
             })?;
 
         let speller = HfstSpeller::new_with_bundled_config(errmodel, acceptor, bundled_config);
-        let errmodel_source = ErrmodelSource::new(errmodel_id, false, TransducerFormat::Hfst);
+        let errmodel_source = ErrmodelSource::new(errmodel_id, TransducerFormat::Hfst);
 
         Ok(ZipSpellerArchive {
             metadata,
@@ -276,11 +276,9 @@ mod tests {
     }
 
     /// A ZHFST archive runs with optimized lookup only: an error model in the
-    /// compact DHFST format is refused, and so are the options that choose a
-    /// BHFST archive's error model.
+    /// compact DHFST format is refused.
     mod dhfst_is_not_zhfst {
         use super::*;
-        use crate::archive::OpenOptions;
         use crate::archive::error::SpellerArchiveError;
         use crate::transducer::TransducerError;
         use crate::transducer::dhfst::writer::{SourceModel, WriteOptions, write};
@@ -378,37 +376,6 @@ mod tests {
                     "a DHFST member named {name} loaded"
                 );
             }
-        }
-
-        #[test]
-        fn error_model_options_are_refused() {
-            let dir = tempfile::tempdir().expect("tempdir");
-            let path = zhfst(
-                dir.path(),
-                "errmodel.default.hfst",
-                &[
-                    ("acceptor.default.hfst", test_support::lexicon()),
-                    ("errmodel.default.hfst", test_support::errmodel()),
-                ],
-            );
-            let external = dir.path().join("external.dhfst");
-            std::fs::write(&external, dhfst_errmodel()).expect("write");
-            for options in [
-                OpenOptions {
-                    errmodel_path: Some(external),
-                    ..OpenOptions::default()
-                },
-                OpenOptions {
-                    primary_errmodel_only: true,
-                    ..OpenOptions::default()
-                },
-            ] {
-                assert!(matches!(
-                    crate::archive::open_with(&path, &options),
-                    Err(SpellerArchiveError::ErrmodelOptionUnsupported { .. })
-                ));
-            }
-            assert!(crate::archive::open_with(&path, &OpenOptions::default()).is_ok());
         }
     }
 }
