@@ -1,6 +1,6 @@
 use std::collections::BinaryHeap;
 
-use hashbrown::{HashMap, HashSet};
+use hashbrown::{HashMap, HashSet, HashTable};
 use smol_str::SmolStr;
 use std::sync::Arc;
 
@@ -326,41 +326,81 @@ struct Closed {
     /// flag state and the output so far. Flag states and outputs are numbered
     /// by the search's [`NodeTables`], which give equal ones equal numbers, so
     /// the key is five words however long the word grows.
-    table: HashMap<[u32; 5], Weight>,
+    table: HashTable<ClosedEntry>,
+    hasher: hashbrown::DefaultHashBuilder,
+}
+
+/// One search state and the best weight it has been reached at, in three
+/// aligned words: `(input, mutator)`, `(lexicon, flags)` and the output with
+/// the weight beside it.
+#[derive(Clone, Copy)]
+struct ClosedEntry {
+    states: u64,
+    lexicon_and_flags: u64,
+    string: u32,
+    weight: Weight,
+}
+
+impl ClosedEntry {
+    #[inline(always)]
+    fn of(node: &TreeNode) -> ClosedEntry {
+        ClosedEntry {
+            states: ((node.input_state.0 as u64) << 32) | node.mutator_state.0 as u64,
+            lexicon_and_flags: ((node.lexicon_state.0 as u64) << 32) | node.flags as u64,
+            string: node.string,
+            weight: node.weight(),
+        }
+    }
+
+    #[inline(always)]
+    fn same_state(&self, other: &ClosedEntry) -> bool {
+        self.states == other.states
+            && self.lexicon_and_flags == other.lexicon_and_flags
+            && self.string == other.string
+    }
+
+    /// The state's hash: three integer writes, which the hasher folds a word
+    /// at a time.
+    #[inline(always)]
+    fn hash(&self, hasher: &hashbrown::DefaultHashBuilder) -> u64 {
+        use std::hash::{BuildHasher, Hasher};
+        let mut state = hasher.build_hasher();
+        state.write_u64(self.states);
+        state.write_u64(self.lexicon_and_flags);
+        state.write_u32(self.string);
+        state.finish()
+    }
 }
 
 impl Closed {
     fn new() -> Closed {
         Closed {
-            table: HashMap::new(),
+            table: HashTable::new(),
+            hasher: hashbrown::DefaultHashBuilder::default(),
         }
-    }
-
-    #[inline(always)]
-    fn key(node: &TreeNode) -> [u32; 5] {
-        [
-            node.input_state.0,
-            node.mutator_state.0,
-            node.lexicon_state.0,
-            node.flags,
-            node.string,
-        ]
     }
 
     /// Whether this node is worth queueing: true unless some path already
     /// reached the same state at no greater weight.
     #[inline(always)]
     fn admit(&mut self, node: &TreeNode) -> bool {
-        match self.table.entry(Self::key(node)) {
-            hashbrown::hash_map::Entry::Occupied(mut entry) => {
-                if *entry.get() <= node.weight() {
+        let entry = ClosedEntry::of(node);
+        let hash = entry.hash(&self.hasher);
+        let Closed { table, hasher } = self;
+        match table.entry(
+            hash,
+            |seen| seen.same_state(&entry),
+            |seen| seen.hash(hasher),
+        ) {
+            hashbrown::hash_table::Entry::Occupied(mut seen) => {
+                if seen.get().weight <= node.weight() {
                     return false;
                 }
-                entry.insert(node.weight());
+                seen.get_mut().weight = node.weight();
                 true
             }
-            hashbrown::hash_map::Entry::Vacant(entry) => {
-                entry.insert(node.weight());
+            hashbrown::hash_table::Entry::Vacant(slot) => {
+                slot.insert(entry);
                 true
             }
         }
@@ -370,9 +410,11 @@ impl Closed {
     /// has been superseded by a cheaper path queued after it.
     #[inline(always)]
     fn is_current(&mut self, node: &TreeNode) -> bool {
+        let entry = ClosedEntry::of(node);
+        let hash = entry.hash(&self.hasher);
         self.table
-            .get(&Self::key(node))
-            .is_none_or(|weight| *weight >= node.weight())
+            .find(hash, |seen| seen.same_state(&entry))
+            .is_none_or(|seen| seen.weight >= node.weight())
     }
 }
 
