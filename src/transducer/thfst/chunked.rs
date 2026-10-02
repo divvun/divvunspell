@@ -178,9 +178,7 @@ impl Transducer for ThfstChunkedTransducer {
                 None => false,
             }
         } else {
-            tracing::trace!("has_transitions: i:{} s:{:?}", i, s);
             let (page, index) = index_rel_index!(self, i + TransitionTableIndex(sym.0 as u32));
-            tracing::trace!("has_transitions: page:{} index:{:?}", page, index);
             if page >= self.index_tables.len() {
                 return false;
             }
