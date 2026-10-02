@@ -224,7 +224,46 @@ pub(crate) struct MutatorSubsets {
     /// Closure members whose weight has dropped and whose arcs therefore need
     /// re-reading.
     pending: Vec<u32>,
+    /// Each model state's `ε:ε` arcs, read from the model once.
+    epsilons: EpsilonArcs,
     stats: SubsetStats,
+}
+
+/// The `ε:ε` arcs of the model states a closure has visited, kept as the
+/// model answered them, in the same order, so a closure relaxes exactly the
+/// arcs in exactly the order it would by asking the model each time.
+#[derive(Default)]
+struct EpsilonArcs {
+    /// `(start, len)` into `arcs`, per state read so far.
+    spans: HashMap<u32, (u32, u32), BuildHasherDefault<IntHasher>>,
+    arcs: Vec<(u32, f32)>,
+}
+
+impl EpsilonArcs {
+    /// The `ε:ε` arcs of `state`, as `(target, weight)`.
+    #[inline]
+    fn of<T: Transducer>(&mut self, mutator: &T, state: u32) -> (u32, u32) {
+        if let Some(span) = self.spans.get(&state) {
+            return *span;
+        }
+        let start = self.arcs.len() as u32;
+        let arcs = &mut self.arcs;
+        // Only `ε:ε` arcs close a subset. An insertion default of a compact
+        // model writes a symbol, so it is left alone here.
+        mutator.for_each_arc_group(TransitionTableIndex(state), SymbolNumber::ZERO, |group| {
+            if let ArcGroup::One {
+                output: SymbolNumber::ZERO,
+                target,
+                weight,
+            } = group
+            {
+                arcs.push((target.0, weight.0));
+            }
+        });
+        let span = (start, self.arcs.len() as u32 - start);
+        self.spans.insert(state, span);
+        span
+    }
 }
 
 impl MutatorSubsets {
@@ -261,6 +300,7 @@ impl MutatorSubsets {
             normalised: Vec::new(),
             closure: Vec::new(),
             pending: Vec::new(),
+            epsilons: EpsilonArcs::default(),
             stats: SubsetStats::default(),
         };
 
@@ -478,7 +518,7 @@ impl MutatorSubsets {
     /// rounding residue, so this settles quickly; the step cap is what bounds
     /// it on a transducer where they are not.
     fn close<T: Transducer>(
-        &self,
+        &mut self,
         mutator: &T,
         seeds: &[(u32, f32)],
         closure: &mut Vec<(u32, f32)>,
@@ -508,19 +548,12 @@ impl MutatorSubsets {
                 continue;
             };
 
-            // Only `ε:ε` arcs close a subset. An insertion default of a
-            // compact model writes a symbol, so it is left alone here.
-            mutator.for_each_arc_group(TransitionTableIndex(state), SymbolNumber::ZERO, |group| {
-                if let ArcGroup::One {
-                    output: SymbolNumber::ZERO,
-                    target,
-                    weight: arc,
-                } = group
-                    && relax(closure, target.0, weight + arc.0)
-                {
-                    pending.push(target.0);
+            let (start, len) = self.epsilons.of(mutator, state);
+            for &(target, arc) in &self.epsilons.arcs[start as usize..][..len as usize] {
+                if relax(closure, target, weight + arc) {
+                    pending.push(target);
                 }
-            });
+            }
         }
 
         true
