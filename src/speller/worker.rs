@@ -524,7 +524,7 @@ where
         output_mode: OutputMode,
     ) -> SpellerWorker<'c, T, U> {
         debug_assert_eq!(input.len(), lexicon_input.len());
-        let lexicon_least = speller.lexicon().least_arc_weight();
+        let lexicon_least = speller.lexicon_least_arc_weight();
         SpellerWorker {
             lexicon_least,
             speller,
@@ -554,7 +554,7 @@ where
         config: &'c SpellerConfig,
         output_mode: OutputMode,
     ) -> SpellerWorker<'c, T, U> {
-        let lexicon_least = speller.lexicon().least_arc_weight();
+        let lexicon_least = speller.lexicon_least_arc_weight();
         SpellerWorker {
             lexicon_least,
             speller,

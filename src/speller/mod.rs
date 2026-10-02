@@ -1459,6 +1459,9 @@ where
     subset_pool: parking_lot::Mutex<Vec<subset::MutatorSubsets>>,
     /// Search tables kept between searches, so they keep their capacity.
     scratch_pool: parking_lot::Mutex<Vec<worker::SearchScratch>>,
+    /// Whether a search has started, after which the lexicon's least arc
+    /// weight is worth finding. See [`Self::lexicon_least_arc_weight`].
+    searched: std::sync::atomic::AtomicBool,
 }
 
 impl<T, U> HfstSpeller<T, U>
@@ -1504,6 +1507,7 @@ where
             bundled_config,
             subset_pool: parking_lot::Mutex::new(Vec::new()),
             scratch_pool: parking_lot::Mutex::new(Vec::new()),
+            searched: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -1534,6 +1538,24 @@ where
         match taken {
             Some(subsets) => Some(subsets),
             None => subset::MutatorSubsets::new(&self.mutator, track_distance),
+        }
+    }
+
+    /// The lexicon's least arc weight, which lets the search skip lexicon
+    /// probes no arc could pass, from the speller's second search on.
+    ///
+    /// Finding it reads the lexicon's whole transition table, a few
+    /// milliseconds for a large lexicon, which a speller loaded to check one
+    /// word would pay for nothing; over many words it pays for itself many
+    /// times. The search gives the same results with or without it.
+    pub(crate) fn lexicon_least_arc_weight(&self) -> Option<Weight> {
+        if self
+            .searched
+            .swap(true, std::sync::atomic::Ordering::Relaxed)
+        {
+            self.lexicon.least_arc_weight()
+        } else {
+            None
         }
     }
 
