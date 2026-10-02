@@ -483,7 +483,6 @@ where
         output_nodes: &mut Vec<TreeNode>,
     ) {
         let lexicon = self.speller.lexicon();
-        let operations = lexicon.alphabet().operations();
 
         if !lexicon.has_epsilons_or_flags(next_node.lexicon_state.incr()) {
             return;
@@ -509,7 +508,7 @@ where
                         output_nodes.push(new_node);
                     }
                 } else {
-                    let operation = operations.get(&sym);
+                    let operation = self.speller.flag_operation(sym);
 
                     if let Some(op) = operation {
                         if !self.is_under_weight_limit(max_weight, transition_weight) {

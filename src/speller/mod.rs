@@ -25,7 +25,7 @@ use crate::tokenizer::case_handling::{
     word_variants,
 };
 use crate::transducer::Transducer;
-use crate::types::{SymbolNumber, Weight};
+use crate::types::{FlagDiacriticOperation, SymbolNumber, Weight};
 
 pub mod error;
 pub mod suggestion;
@@ -1434,6 +1434,9 @@ where
     lexicon: U,
     alphabet_translator: Vec<SymbolNumber>,
     unknown_output_domain: Vec<SymbolNumber>,
+    /// The lexicon's flag diacritic operations by symbol, for a lookup by
+    /// index on every flag arc the search crosses.
+    flag_operations: Vec<Option<FlagDiacriticOperation>>,
     /// The configuration the archive this speller came out of shipped with, if
     /// any. Every call that supplies no config of its own runs with it instead
     /// of the built-in defaults — the tuned numbers a language's maintainers
@@ -1472,12 +1475,25 @@ where
     ) -> Arc<HfstSpeller<T, U>> {
         let alphabet_translator = lexicon.alphabet_mut().create_translator_from(&mutator);
         let unknown_output_domain = build_unknown_output_domain(&lexicon, &alphabet_translator);
+        let operations = lexicon.alphabet().operations();
+        let mut flag_operations = vec![
+            None;
+            operations
+                .keys()
+                .map(|s| s.0 as usize + 1)
+                .max()
+                .unwrap_or(0)
+        ];
+        for (symbol, op) in operations {
+            flag_operations[symbol.0 as usize] = Some(*op);
+        }
 
         Arc::new(HfstSpeller {
             mutator,
             lexicon,
             alphabet_translator,
             unknown_output_domain,
+            flag_operations,
             bundled_config,
             subset_pool: parking_lot::Mutex::new(Vec::new()),
         })
@@ -1840,6 +1856,12 @@ where
 
     fn alphabet_translator(&self) -> &Vec<SymbolNumber> {
         &self.alphabet_translator
+    }
+
+    /// The flag diacritic operation of lexicon symbol `symbol`, if it is one.
+    #[inline(always)]
+    fn flag_operation(&self, symbol: SymbolNumber) -> Option<&FlagDiacriticOperation> {
+        self.flag_operations.get(symbol.0 as usize)?.as_ref()
     }
 
     /// The symbols an `@_UNKNOWN_@` on the mutator's output tape stands for.

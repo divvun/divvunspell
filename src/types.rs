@@ -28,7 +28,7 @@ impl std::error::Error for ParseFlagDiacriticError {}
 ///
 /// Flag diacritics are used in finite-state morphology to enforce complex
 /// constraints during analysis and generation.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum FlagDiacriticOperator {
     /// Positive set - sets a feature to a value
     PositiveSet,
@@ -90,7 +90,7 @@ pub enum HeaderFlag {
 /// A flag diacritic operation in a finite-state transducer.
 ///
 /// Combines an operation, feature, and value to enforce morphological constraints.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct FlagDiacriticOperation {
     /// The operation to perform
     pub operation: FlagDiacriticOperator,

@@ -43,6 +43,9 @@ struct Flags {
     hasher: hashbrown::DefaultHashBuilder,
     /// The state being built, so a lookup never allocates.
     scratch: Vec<ValueNumber>,
+    /// `(state << 32) | (feature << 16) | value` to the state it makes, so a
+    /// change made before costs one integer lookup.
+    changes: HashMap<u64, u32>,
 }
 
 /// The tables one search's nodes number their strings and flag states in.
@@ -61,6 +64,7 @@ impl NodeTables {
             index: HashTable::new(),
             hasher: hashbrown::DefaultHashBuilder::default(),
             scratch: Vec::with_capacity(width),
+            changes: HashMap::new(),
         };
         let hash = flags.hasher.hash_one(&flags.values[..]);
         flags.index.insert_unique(hash, ROOT, |_| hash);
@@ -112,13 +116,31 @@ impl NodeTables {
     /// The number of flag state `flags` with `feature` set to `value`.
     fn with_flag(&self, flags: u32, feature: SymbolNumber, value: ValueNumber) -> u32 {
         let mut table = self.flags.borrow_mut();
+        let change = ((flags as u64) << 32) | ((feature.0 as u64) << 16) | value.0 as u16 as u64;
+        if let Some(&id) = table.changes.get(&change) {
+            return id;
+        }
+        let id = Self::find_or_add(&mut table, flags, feature, value);
+        table.changes.insert(change, id);
+        id
+    }
+
+    /// The number of flag state `flags` with `feature` set to `value`, looked
+    /// up whole.
+    fn find_or_add(
+        table: &mut Flags,
+        flags: u32,
+        feature: SymbolNumber,
+        value: ValueNumber,
+    ) -> u32 {
         let Flags {
             width,
             values,
             index,
             hasher,
             scratch,
-        } = &mut *table;
+            ..
+        } = table;
         let width = *width;
         scratch.clear();
         scratch.extend_from_slice(&values[flags as usize * width..][..width]);
