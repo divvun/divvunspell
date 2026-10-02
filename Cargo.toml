@@ -28,7 +28,6 @@ unic-ucd-category = "0.9.0"
 unic-emoji-char = "0.9.0"
 parking_lot = "0.12.5"
 hashbrown = { version = "0.16", features = ["serde"] }
-lifeguard = "0.6.1"
 smol_str = { version = "0.3.2", features = ["serde"] }
 box-format = { git = "https://github.com/bbqsrc/box", features = ["reader", "xz", "zstd"], default-features = false }
 itertools = "0.14.0"
@@ -61,7 +60,6 @@ unic-ucd-category.workspace = true
 unic-emoji-char.workspace = true
 parking_lot.workspace = true
 hashbrown.workspace = true
-lifeguard.workspace = true
 smol_str.workspace = true
 box-format.workspace = true
 itertools.workspace = true

@@ -122,7 +122,7 @@ impl SymbolNumber {
 /// Value number for flag diacritics.
 ///
 /// Represents the value assigned to a feature in flag diacritic operations.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 #[serde(transparent)]
 pub struct ValueNumber(pub i16);

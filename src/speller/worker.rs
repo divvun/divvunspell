@@ -4,20 +4,17 @@ use hashbrown::{HashMap, HashSet};
 use smol_str::SmolStr;
 use std::sync::Arc;
 
-use lifeguard::{Pool, Recycled};
-
 use super::subset::{MutatorSubsets, SubsetStats};
 use super::{HfstSpeller, OutputMode, SpellerConfig};
 use crate::speller::suggestion::{Suggestion, WeightDetails};
-use crate::transducer::tree_node::TreeNode;
+use crate::transducer::tree_node::{NodeTables, TreeNode};
 use crate::transducer::{ArcGroup, SymbolSet, Transducer};
-use crate::types::{SymbolNumber, TransitionTableIndex, ValueNumber, Weight};
+use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 
 #[inline(always)]
-fn speller_start_node(pool: &Pool<TreeNode>, size: usize) -> Vec<Recycled<'_, TreeNode>> {
-    let start_node = TreeNode::empty(pool, vec![ValueNumber::ZERO; size]);
+fn speller_start_node() -> Vec<TreeNode> {
     let mut nodes = Vec::with_capacity(256);
-    nodes.push(start_node);
+    nodes.push(TreeNode::empty());
     nodes
 }
 
@@ -28,19 +25,18 @@ fn speller_start_node(pool: &Pool<TreeNode>, size: usize) -> Vec<Recycled<'_, Tr
 /// lower bound on what finishing must still cost. Plain best-first (`h = 0`)
 /// has no lookahead and drowns in shallow, cheap, hopeless paths before any
 /// final state tightens the cutoff; `h` prices the rest of the word in.
-struct OrderedNode<'a> {
+struct OrderedNode {
     /// `g + h`. Never overestimates the weight of any completion of this node,
     /// which is what makes it safe to both prune and stop on.
     estimate: Weight,
-    node: Recycled<'a, TreeNode>,
+    node: TreeNode,
 }
 
 /// What the queue holds for one node: its place in the order and where the
 /// node itself is parked.
 ///
-/// A search node is some eighty bytes and the heap moves its elements on
-/// every push and pop, so the heap holds only these sixteen bytes and the
-/// nodes stay put in a [`Parked`] slab.
+/// The heap moves its elements on every push and pop, so it holds only these
+/// sixteen bytes and the nodes stay put in a [`Parked`] slab.
 #[derive(Clone, Copy)]
 struct QueueEntry {
     /// The order as one integer: the cheapest estimate first out of the
@@ -95,12 +91,12 @@ impl Ord for QueueEntry {
 }
 
 /// The queued nodes, by slot, with the free slots kept for reuse.
-struct Parked<'a> {
-    slots: Vec<Option<Recycled<'a, TreeNode>>>,
+struct Parked {
+    slots: Vec<TreeNode>,
     free: Vec<u32>,
 }
 
-impl<'a> Parked<'a> {
+impl Parked {
     fn new() -> Self {
         Parked {
             slots: Vec::with_capacity(256),
@@ -110,15 +106,15 @@ impl<'a> Parked<'a> {
 
     /// Park a node and answer its queue entry.
     #[inline(always)]
-    fn park(&mut self, ordered: OrderedNode<'a>) -> QueueEntry {
+    fn park(&mut self, ordered: OrderedNode) -> QueueEntry {
         let weight = ordered.node.weight();
         let slot = match self.free.pop() {
             Some(slot) => {
-                self.slots[slot as usize] = Some(ordered.node);
+                self.slots[slot as usize] = ordered.node;
                 slot
             }
             None => {
-                self.slots.push(Some(ordered.node));
+                self.slots.push(ordered.node);
                 (self.slots.len() - 1) as u32
             }
         };
@@ -127,10 +123,10 @@ impl<'a> Parked<'a> {
 
     /// Take a node back out of its slot.
     #[inline(always)]
-    fn take(&mut self, slot: u32) -> Option<Recycled<'a, TreeNode>> {
-        let node = self.slots.get_mut(slot as usize)?.take();
+    fn take(&mut self, slot: u32) -> Option<TreeNode> {
+        let node = *self.slots.get(slot as usize)?;
         self.free.push(slot);
-        node
+        Some(node)
     }
 }
 
@@ -217,8 +213,6 @@ struct SearchStats {
 
 impl SearchStats {
     fn record_pop(&mut self, node: &TreeNode) {
-        use std::hash::{BuildHasher, Hash, Hasher};
-
         self.pops += 1;
         let key = (
             node.input_state.0,
@@ -239,12 +233,7 @@ impl SearchStats {
             }
         }
 
-        let mut hasher = self.signatures.hasher().build_hasher();
-        node.string.hash(&mut hasher);
-        for value in &node.flag_state {
-            value.0.hash(&mut hasher);
-        }
-        let output = hasher.finish();
+        let output = ((node.string as u64) << 32) | node.flags as u64;
         self.signatures.insert((key.0, key.1, key.2, output));
         self.signatures_no_mutator.insert((key.0, key.2, output));
 
@@ -333,119 +322,57 @@ impl SearchStats {
 /// components, which is 19x smaller on disk — offers combinatorially many
 /// paths to the same state, and a path-walk drowns in them.
 struct Closed {
-    /// Keys live in `arena`; a table entry only points at one. Interning them
-    /// this way keeps the whole structure to a handful of growing allocations
-    /// instead of one per state reached, which on an easy word is most of what
-    /// tracking states would otherwise cost.
-    table: hashbrown::HashTable<ClosedEntry>,
-    /// Concatenated keys, each `[input, mutator, lexicon, flags.., output..]`.
-    /// Flag state has a fixed width for the whole search, so the layout needs
-    /// no separator.
-    arena: Vec<u16>,
-    /// The key being looked up, rebuilt per query so lookups never allocate.
-    scratch: Vec<u16>,
-    hasher: hashbrown::DefaultHashBuilder,
-}
-
-struct ClosedEntry {
-    start: u32,
-    len: u32,
-    hash: u64,
-    weight: Weight,
+    /// Best weight seen per search state: the three transducer positions, the
+    /// flag state and the output so far. Flag states and outputs are numbered
+    /// by the search's [`NodeTables`], which give equal ones equal numbers, so
+    /// the key is five words however long the word grows.
+    table: HashMap<[u32; 5], Weight>,
 }
 
 impl Closed {
     fn new() -> Closed {
         Closed {
-            table: hashbrown::HashTable::new(),
-            arena: Vec::new(),
-            scratch: Vec::with_capacity(64),
-            hasher: hashbrown::DefaultHashBuilder::default(),
+            table: HashMap::new(),
         }
     }
 
-    /// Flatten a node's search state into `scratch` and hash it.
-    ///
-    /// State indices are `u32` and everything else is 16 bits wide, so the key
-    /// is built out of `u16` halves — half the bytes to copy and to hash
-    /// compared with widening everything to `u32`.
     #[inline(always)]
-    fn build_key(&mut self, node: &TreeNode) -> u64 {
-        use std::hash::BuildHasher;
-
-        self.scratch.clear();
-        for index in [
+    fn key(node: &TreeNode) -> [u32; 5] {
+        [
             node.input_state.0,
             node.mutator_state.0,
             node.lexicon_state.0,
-        ] {
-            self.scratch.push(index as u16);
-            self.scratch.push((index >> 16) as u16);
-        }
-        self.scratch
-            .extend(node.flag_state.iter().map(|value| value.0 as u16));
-        self.scratch.extend(node.string.iter().map(|sym| sym.0));
-
-        self.hasher.hash_one(self.scratch.as_slice())
+            node.flags,
+            node.string,
+        ]
     }
 
     /// Whether this node is worth queueing: true unless some path already
     /// reached the same state at no greater weight.
     #[inline(always)]
     fn admit(&mut self, node: &TreeNode) -> bool {
-        let hash = self.build_key(node);
-        // Split the borrow so the equality test can read the arena while the
-        // table is held mutably, keeping this to a single lookup.
-        let Closed {
-            table,
-            arena,
-            scratch,
-            ..
-        } = self;
-
-        if let Some(entry) = table.find_mut(hash, |entry| {
-            entry.hash == hash && arena[entry.start as usize..][..entry.len as usize] == scratch[..]
-        }) {
-            if entry.weight <= node.weight() {
-                return false;
+        match self.table.entry(Self::key(node)) {
+            hashbrown::hash_map::Entry::Occupied(mut entry) => {
+                if *entry.get() <= node.weight() {
+                    return false;
+                }
+                entry.insert(node.weight());
+                true
             }
-            entry.weight = node.weight();
-            return true;
+            hashbrown::hash_map::Entry::Vacant(entry) => {
+                entry.insert(node.weight());
+                true
+            }
         }
-
-        let start = arena.len() as u32;
-        arena.extend_from_slice(scratch);
-        table.insert_unique(
-            hash,
-            ClosedEntry {
-                start,
-                len: scratch.len() as u32,
-                hash,
-                weight: node.weight(),
-            },
-            |entry| entry.hash,
-        );
-        true
     }
 
     /// Whether this node still carries the best known weight for its state, or
     /// has been superseded by a cheaper path queued after it.
     #[inline(always)]
     fn is_current(&mut self, node: &TreeNode) -> bool {
-        let hash = self.build_key(node);
-        let Closed {
-            table,
-            arena,
-            scratch,
-            ..
-        } = self;
-
-        table
-            .find(hash, |entry| {
-                entry.hash == hash
-                    && arena[entry.start as usize..][..entry.len as usize] == scratch[..]
-            })
-            .is_none_or(|entry| entry.weight >= node.weight())
+        self.table
+            .get(&Self::key(node))
+            .is_none_or(|weight| *weight >= node.weight())
     }
 }
 
@@ -548,12 +475,12 @@ where
     }
 
     #[inline(always)]
-    fn lexicon_epsilons<'a>(
+    fn lexicon_epsilons(
         &self,
-        pool: &'a Pool<TreeNode>,
+        tables: &NodeTables,
         max_weight: Weight,
         next_node: &TreeNode,
-        output_nodes: &mut Vec<Recycled<'a, TreeNode>>,
+        output_nodes: &mut Vec<TreeNode>,
     ) {
         let lexicon = self.speller.lexicon();
         let operations = lexicon.alphabet().operations();
@@ -576,8 +503,8 @@ where
                     {
                         let new_node = match self.output_mode {
                             OutputMode::WithoutTags => next_node
-                                .update_lexicon(pool, transition.clone_with_epsilon_symbol()),
-                            OutputMode::WithTags => next_node.update_lexicon(pool, transition),
+                                .update_lexicon(tables, transition.clone_with_epsilon_symbol()),
+                            OutputMode::WithTags => next_node.update_lexicon(tables, transition),
                         };
                         output_nodes.push(new_node);
                     }
@@ -590,7 +517,8 @@ where
                             continue;
                         }
 
-                        if let Some(applied_node) = next_node.apply_operation(pool, op, &transition)
+                        if let Some(applied_node) =
+                            next_node.apply_operation(tables, op, &transition)
                         {
                             output_nodes.push(applied_node);
                         }
@@ -658,9 +586,9 @@ where
     /// arc's output gets. The search therefore reaches exactly the nodes it
     /// would reach over the arcs the default stands for.
     #[inline]
-    fn queue_mutator_output_set<'a>(
+    fn queue_mutator_output_set(
         &self,
-        pool: &'a Pool<TreeNode>,
+        tables: &NodeTables,
         max_weight: Weight,
         next_node: &TreeNode,
         outputs: SymbolSet<'_>,
@@ -668,14 +596,14 @@ where
         weight: Weight,
         input_increment: i16,
         input_lexicon_sym: Option<SymbolNumber>,
-        output_nodes: &mut Vec<Recycled<'a, TreeNode>>,
+        output_nodes: &mut Vec<TreeNode>,
     ) {
         if self.no_lexicon_step_fits(max_weight, next_node, weight) {
             return;
         }
         for sym in outputs.iter() {
             self.queue_mutator_output(
-                pool,
+                tables,
                 max_weight,
                 next_node,
                 sym,
@@ -716,9 +644,9 @@ where
     }
 
     #[inline(always)]
-    fn queue_mutator_output<'a>(
+    fn queue_mutator_output(
         &self,
-        pool: &'a Pool<TreeNode>,
+        tables: &NodeTables,
         max_weight: Weight,
         next_node: &TreeNode,
         sym: SymbolNumber,
@@ -726,7 +654,7 @@ where
         weight: Weight,
         input_increment: i16,
         input_lexicon_sym: Option<SymbolNumber>,
-        output_nodes: &mut Vec<Recycled<'a, TreeNode>>,
+        output_nodes: &mut Vec<TreeNode>,
     ) {
         let mutator = self.speller.mutator();
         let lexicon = self.speller.lexicon();
@@ -745,7 +673,7 @@ where
         // says which ones are available here.
         if mut_alpha.unknown() == Some(sym) {
             self.queue_unknown_output_arcs(
-                pool,
+                tables,
                 max_weight,
                 next_node,
                 target,
@@ -778,7 +706,7 @@ where
                     && lexicon.has_transitions(lookup, Some(unknown))
                 {
                     self.queue_lexicon_arcs(
-                        pool,
+                        tables,
                         max_weight,
                         next_node,
                         unknown,
@@ -793,7 +721,7 @@ where
                     && lexicon.has_transitions(lookup, Some(identity))
                 {
                     self.queue_lexicon_arcs(
-                        pool,
+                        tables,
                         max_weight,
                         next_node,
                         identity,
@@ -809,7 +737,7 @@ where
         }
 
         self.queue_lexicon_arcs(
-            pool,
+            tables,
             max_weight,
             next_node,
             trans_sym,
@@ -821,13 +749,13 @@ where
     }
 
     #[inline(always)]
-    fn mutator_epsilons<'a>(
+    fn mutator_epsilons(
         &self,
-        pool: &'a Pool<TreeNode>,
+        tables: &NodeTables,
         max_weight: Weight,
         next_node: &TreeNode,
         subsets: Option<&mut MutatorSubsets>,
-        output_nodes: &mut Vec<Recycled<'a, TreeNode>>,
+        output_nodes: &mut Vec<TreeNode>,
     ) -> bool {
         self.for_each_mutator_arc(
             subsets,
@@ -841,7 +769,7 @@ where
                 } => {
                     if sym == SymbolNumber::ZERO {
                         if self.is_under_weight_limit(max_weight, next_node.weight() + weight) {
-                            output_nodes.push(next_node.update_mutator(pool, target, weight));
+                            output_nodes.push(next_node.update_mutator(target, weight));
                         }
                         return;
                     }
@@ -851,7 +779,7 @@ where
                     // particular, and none to exclude either, since no input
                     // character is being consumed here.
                     self.queue_mutator_output(
-                        pool,
+                        tables,
                         max_weight,
                         next_node,
                         sym,
@@ -868,7 +796,7 @@ where
                     target,
                     weight,
                 } => self.queue_mutator_output_set(
-                    pool,
+                    tables,
                     max_weight,
                     next_node,
                     outputs,
@@ -883,16 +811,16 @@ where
     }
 
     #[inline(always)]
-    fn queue_lexicon_arcs<'a>(
+    fn queue_lexicon_arcs(
         &self,
-        pool: &'a Pool<TreeNode>,
+        tables: &NodeTables,
         max_weight: Weight,
         next_node: &TreeNode,
         input_sym: SymbolNumber,
         mutator_state: TransitionTableIndex,
         mutator_weight: Weight,
         input_increment: i16,
-        output_nodes: &mut Vec<Recycled<'a, TreeNode>>,
+        output_nodes: &mut Vec<TreeNode>,
     ) {
         let lexicon = self.speller.lexicon();
         let identity = lexicon.alphabet().identity();
@@ -917,7 +845,7 @@ where
                 if is_under_weight_limit {
                     let new_node = match self.output_mode {
                         OutputMode::WithoutTags => next_node.update(
-                            pool,
+                            tables,
                             input_sym,
                             Some(next_node.input_state.incr(input_increment as u32)),
                             mutator_state,
@@ -926,7 +854,7 @@ where
                             mutator_weight,
                         ),
                         OutputMode::WithTags => next_node.update(
-                            pool,
+                            tables,
                             sym,
                             Some(next_node.input_state.incr(input_increment as u32)),
                             mutator_state,
@@ -961,16 +889,16 @@ where
     /// For an `x:@_UNKNOWN_@` arc the exclusion costs nothing — an `x` the
     /// mutator can name is outside the domain already.
     #[inline]
-    fn queue_unknown_output_arcs<'a>(
+    fn queue_unknown_output_arcs(
         &self,
-        pool: &'a Pool<TreeNode>,
+        tables: &NodeTables,
         max_weight: Weight,
         next_node: &TreeNode,
         mutator_state: TransitionTableIndex,
         mutator_weight: Weight,
         input_increment: i16,
         exclude: Option<SymbolNumber>,
-        output_nodes: &mut Vec<Recycled<'a, TreeNode>>,
+        output_nodes: &mut Vec<TreeNode>,
     ) {
         // Every candidate is charged this arc plus a lexicon arc, and lexicon
         // weights are non-negative, so an arc already over the cutoff cannot
@@ -993,7 +921,7 @@ where
             }
 
             self.queue_lexicon_arcs(
-                pool,
+                tables,
                 max_weight,
                 next_node,
                 candidate,
@@ -1006,14 +934,14 @@ where
     }
 
     #[inline(always)]
-    fn queue_mutator_arcs<'a>(
+    fn queue_mutator_arcs(
         &self,
-        pool: &'a Pool<TreeNode>,
+        tables: &NodeTables,
         max_weight: Weight,
         next_node: &TreeNode,
         subsets: Option<&mut MutatorSubsets>,
         input_sym: SymbolNumber,
-        output_nodes: &mut Vec<Recycled<'a, TreeNode>>,
+        output_nodes: &mut Vec<TreeNode>,
     ) -> bool {
         let input_lexicon_sym = self
             .lexicon_input
@@ -1033,7 +961,7 @@ where
                     if sym == SymbolNumber::ZERO {
                         if self.is_under_weight_limit(max_weight, next_node.weight() + weight) {
                             output_nodes.push(next_node.update(
-                                pool,
+                                tables,
                                 SymbolNumber::ZERO,
                                 Some(next_node.input_state.incr(1)),
                                 target,
@@ -1046,7 +974,7 @@ where
                     }
 
                     self.queue_mutator_output(
-                        pool,
+                        tables,
                         max_weight,
                         next_node,
                         sym,
@@ -1063,7 +991,7 @@ where
                     target,
                     weight,
                 } => self.queue_mutator_output_set(
-                    pool,
+                    tables,
                     max_weight,
                     next_node,
                     outputs,
@@ -1078,13 +1006,13 @@ where
     }
 
     #[inline(always)]
-    fn consume_input<'a>(
+    fn consume_input(
         &self,
-        pool: &'a Pool<TreeNode>,
+        tables: &NodeTables,
         max_weight: Weight,
         next_node: &TreeNode,
         mut subsets: Option<&mut MutatorSubsets>,
-        output_nodes: &mut Vec<Recycled<'a, TreeNode>>,
+        output_nodes: &mut Vec<TreeNode>,
     ) -> bool {
         let mutator = self.speller.mutator();
         let input_state = next_node.input_state.0 as usize;
@@ -1123,7 +1051,7 @@ where
         if input_is_out_of_alphabet
             && let Some(identity) = alphabet.identity()
             && !self.queue_mutator_arcs(
-                pool,
+                tables,
                 max_weight,
                 next_node,
                 subsets.as_deref_mut(),
@@ -1135,7 +1063,7 @@ where
         }
 
         self.queue_mutator_arcs(
-            pool,
+            tables,
             max_weight,
             next_node,
             subsets,
@@ -1145,12 +1073,12 @@ where
     }
 
     #[inline(always)]
-    fn lexicon_consume<'a>(
+    fn lexicon_consume(
         &self,
-        pool: &'a Pool<TreeNode>,
+        tables: &NodeTables,
         max_weight: Weight,
         next_node: &TreeNode,
-        output_nodes: &mut Vec<Recycled<'a, TreeNode>>,
+        output_nodes: &mut Vec<TreeNode>,
     ) {
         let mutator = self.speller.mutator();
         let lexicon = self.speller.lexicon();
@@ -1182,7 +1110,7 @@ where
                 let identity = mutator.alphabet().identity();
                 if lexicon.has_transitions(next_lexicon_state, identity) {
                     self.queue_lexicon_arcs(
-                        pool,
+                        tables,
                         max_weight,
                         &next_node,
                         identity.unwrap(),
@@ -1196,7 +1124,7 @@ where
                 let unknown = mutator.alphabet().unknown();
                 if lexicon.has_transitions(next_lexicon_state, unknown) {
                     self.queue_lexicon_arcs(
-                        pool,
+                        tables,
                         max_weight,
                         &next_node,
                         unknown.unwrap(),
@@ -1212,7 +1140,7 @@ where
         }
 
         self.queue_lexicon_arcs(
-            pool,
+            tables,
             max_weight,
             &next_node,
             input_sym,
@@ -1264,8 +1192,8 @@ where
     pub(crate) fn is_correct(&self) -> bool {
         tracing::trace!("is_correct");
         // let max_weight = speller_max_weight(&self.config);
-        let pool = Pool::with_size_and_max(0, 0);
-        let mut nodes = speller_start_node(&pool, self.state_size() as usize);
+        let tables = NodeTables::new(self.state_size());
+        let mut nodes = speller_start_node();
         tracing::trace!("beginning is_correct {:?}?", self.input);
         while let Some(next_node) = nodes.pop() {
             if next_node.input_state.0 as usize == self.input.len()
@@ -1274,8 +1202,8 @@ where
                 return true;
             }
 
-            self.lexicon_epsilons(&pool, Weight::INFINITE, &next_node, &mut nodes);
-            self.lexicon_consume(&pool, Weight::INFINITE, &next_node, &mut nodes);
+            self.lexicon_epsilons(&tables, Weight::INFINITE, &next_node, &mut nodes);
+            self.lexicon_consume(&tables, Weight::INFINITE, &next_node, &mut nodes);
         }
 
         false
@@ -1288,8 +1216,8 @@ where
     /// `is_correct`, since either way the walk has to be exhausted to know.
     pub(crate) fn accepting_weight(&self) -> Option<Weight> {
         tracing::trace!("accepting_weight");
-        let pool = Pool::with_size_and_max(0, 0);
-        let mut nodes = speller_start_node(&pool, self.state_size());
+        let tables = NodeTables::new(self.state_size());
+        let mut nodes = speller_start_node();
         let mut best: Option<Weight> = None;
 
         while let Some(next_node) = nodes.pop() {
@@ -1309,8 +1237,8 @@ where
                 };
             }
 
-            self.lexicon_epsilons(&pool, Weight::INFINITE, &next_node, &mut nodes);
-            self.lexicon_consume(&pool, Weight::INFINITE, &next_node, &mut nodes);
+            self.lexicon_epsilons(&tables, Weight::INFINITE, &next_node, &mut nodes);
+            self.lexicon_consume(&tables, Weight::INFINITE, &next_node, &mut nodes);
         }
 
         best
@@ -1318,8 +1246,8 @@ where
 
     pub(crate) fn analyze(&self) -> Vec<Suggestion> {
         tracing::trace!("Beginning analyze");
-        let pool = Pool::with_size_and_max(0, 0);
-        let mut nodes = speller_start_node(&pool, self.state_size() as usize);
+        let tables = NodeTables::new(self.state_size());
+        let mut nodes = speller_start_node();
         tracing::trace!("beginning analyze {:?}", self.input);
         let mut lookups = HashMap::new();
         while let Some(next_node) = nodes.pop() {
@@ -1330,7 +1258,7 @@ where
                     .speller
                     .lexicon()
                     .alphabet()
-                    .string_from_symbols(&next_node.string);
+                    .string_from_symbols(&tables.symbols(next_node.string));
                 let weight = next_node.weight()
                     + self
                         .speller
@@ -1342,8 +1270,8 @@ where
                     *entry = weight;
                 }
             }
-            self.lexicon_epsilons(&pool, Weight::INFINITE, &next_node, &mut nodes);
-            self.lexicon_consume(&pool, Weight::INFINITE, &next_node, &mut nodes);
+            self.lexicon_epsilons(&tables, Weight::INFINITE, &next_node, &mut nodes);
+            self.lexicon_consume(&tables, Weight::INFINITE, &next_node, &mut nodes);
         }
         self.generate_sorted_suggestions_basic(&lookups)
     }
@@ -1408,11 +1336,7 @@ where
     }
 
     #[inline(always)]
-    fn ordered<'a>(
-        &self,
-        subsets: Option<&MutatorSubsets>,
-        node: Recycled<'a, TreeNode>,
-    ) -> OrderedNode<'a> {
+    fn ordered(&self, subsets: Option<&MutatorSubsets>, node: TreeNode) -> OrderedNode {
         let estimate = node.weight() + self.heuristic(subsets, &node);
         OrderedNode { estimate, node }
     }
@@ -1455,7 +1379,7 @@ where
     fn search(&self, mut subsets: Option<&mut MutatorSubsets>) -> Option<Vec<Suggestion>> {
         tracing::trace!("Beginning suggest");
 
-        let pool = Pool::with_size_and_max(self.config.node_pool_size, self.config.node_pool_size);
+        let tables = NodeTables::new(self.state_size());
         // A*: always expand the node with the cheapest `weight + heuristic`.
         // Arc weights are non-negative and the heuristic is admissible, so the
         // first time a final configuration is reached it is via a least-weight
@@ -1465,15 +1389,15 @@ where
         let mut queue: BinaryHeap<QueueEntry> = BinaryHeap::with_capacity(256);
         let mut parked = Parked::new();
         queue.extend(
-            speller_start_node(&pool, self.state_size() as usize)
+            speller_start_node()
                 .into_iter()
                 .map(|node| parked.park(self.ordered(subsets.as_deref(), node))),
         );
-        let mut scratch: Vec<Recycled<TreeNode>> = Vec::with_capacity(256);
+        let mut scratch: Vec<TreeNode> = Vec::with_capacity(256);
         // Key on symbol sequences to avoid string_from_symbols in the hot loop.
         // Converted to SmolStr once after the loop.
         // Total weight and the error model's share of it, keyed by output form.
-        let mut corrections: HashMap<Vec<SymbolNumber>, (Weight, Weight)> = HashMap::new();
+        let mut corrections: HashMap<u32, (Weight, Weight)> = HashMap::new();
         let mut best_weight = Weight::MAX;
         let key_table = self.speller.mutator().alphabet().key_table();
         let alphabet = self.speller.lexicon().alphabet();
@@ -1542,10 +1466,10 @@ where
 
             // `scratch` is drained at the end of every iteration, so these marks
             // attribute each child to the expansion that produced it.
-            self.lexicon_epsilons(&pool, max_weight, &next_node, &mut scratch);
+            self.lexicon_epsilons(&tables, max_weight, &next_node, &mut scratch);
             let lexicon_eps_mark = scratch.len();
             if !self.mutator_epsilons(
-                &pool,
+                &tables,
                 max_weight,
                 &next_node,
                 subsets.as_deref_mut(),
@@ -1562,7 +1486,7 @@ where
             let at_input_end = next_node.input_state.0 as usize == self.input.len();
             if !at_input_end
                 && !self.consume_input(
-                    &pool,
+                    &tables,
                     max_weight,
                     &next_node,
                     subsets.as_deref_mut(),
@@ -1640,7 +1564,7 @@ where
 
             // Dedup by symbol sequence — avoid string conversion in the hot loop.
             // On hit: just compare/update weight. On miss: clone the symbol vec.
-            if let Some(entry) = corrections.get_mut(next_node.string.as_slice()) {
+            if let Some(entry) = corrections.get_mut(&next_node.string) {
                 if entry.0 > weight {
                     *entry = (weight, mutator_weight);
                 }
@@ -1652,12 +1576,12 @@ where
             } else {
                 let final_weight = match &self.reweight_ctx {
                     Some(ctx) => {
-                        let value = alphabet.string_from_symbols(&next_node.string);
+                        let value = alphabet.string_from_symbols(&tables.symbols(next_node.string));
                         weight + ctx.additional_weight_for(&value, mutator_weight, &mut dl_buf)
                     }
                     None => weight,
                 };
-                corrections.insert(next_node.string.clone(), (weight, mutator_weight));
+                corrections.insert(next_node.string, (weight, mutator_weight));
                 if let Some(s) = stats.as_mut() {
                     s.corrections += 1;
                     s.first_correction_pop.get_or_insert(s.pops);
@@ -1724,7 +1648,7 @@ where
         // Convert symbol sequences to strings and build final suggestions
         let string_corrections: HashMap<SmolStr, (Weight, Weight)> = corrections
             .into_iter()
-            .map(|(syms, w)| (alphabet.string_from_symbols(&syms), w))
+            .map(|(string, w)| (alphabet.string_from_symbols(&tables.symbols(string)), w))
             .collect();
 
         Some(self.generate_sorted_suggestions(&string_corrections))
@@ -1751,9 +1675,9 @@ where
         }
 
         // Manually traverse lexicon-only (like analyze() does)
-        let pool = Pool::with_size_and_max(0, 0);
+        let tables = NodeTables::new(self.state_size());
         let lexicon = self.speller.lexicon();
-        let mut nodes = speller_start_node(&pool, self.state_size() as usize);
+        let mut nodes = speller_start_node();
         let mut best_weight = Weight::MAX;
 
         // Create a temporary config without verbose mode to avoid infinite recursion
@@ -1779,8 +1703,8 @@ where
                     best_weight = weight;
                 }
             }
-            temp_worker.lexicon_epsilons(&pool, Weight::INFINITE, &next_node, &mut nodes);
-            temp_worker.lexicon_consume(&pool, Weight::INFINITE, &next_node, &mut nodes);
+            temp_worker.lexicon_epsilons(&tables, Weight::INFINITE, &next_node, &mut nodes);
+            temp_worker.lexicon_consume(&tables, Weight::INFINITE, &next_node, &mut nodes);
         }
 
         if best_weight == Weight::MAX {
