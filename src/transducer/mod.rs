@@ -410,6 +410,19 @@ pub trait Transducer: Sized {
         Weight::ZERO
     }
 
+    /// A lower bound on the weight of any one arc of this transducer, or
+    /// `None` when there is none to give (a NaN weight, or a backend that does
+    /// not scan its arcs).
+    ///
+    /// The search uses it to leave unasked the lexicon steps that cannot come
+    /// in under the weight cutoff: no step from a node can cost less than this.
+    /// A weight-pushed lexicon carries tiny negative weights, so the bound is
+    /// the least weight, not zero. The default answers `None`, which keeps
+    /// every step asked.
+    fn least_arc_weight(&self) -> Option<Weight> {
+        None
+    }
+
     /// Hand `visit` every arc leaving `state` on `input`, as `(output, target,
     /// weight)`.
     ///

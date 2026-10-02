@@ -76,6 +76,8 @@ where
     /// Backward shortest distances, computed on first use by the suggestion
     /// search and kept for the transducer's lifetime.
     distances: OnceLock<BackwardDistance>,
+    /// The least transition weight, found on first use.
+    least_weight: OnceLock<Option<Weight>>,
 }
 
 impl<I, T> crate::transducer::heuristic::BackwardTables for ThfstTransducer<I, T>
@@ -140,6 +142,12 @@ where
         self.distances
             .get_or_init(|| BackwardDistance::compute(self))
             .get(i)
+    }
+
+    fn least_arc_weight(&self) -> Option<Weight> {
+        *self
+            .least_weight
+            .get_or_init(|| crate::transducer::heuristic::least_arc_weight(self))
     }
 
     #[inline(always)]
@@ -308,6 +316,7 @@ where
             transition_table,
             alphabet,
             distances: OnceLock::new(),
+            least_weight: OnceLock::new(),
         })
     }
 }

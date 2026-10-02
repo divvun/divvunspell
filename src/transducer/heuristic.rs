@@ -81,6 +81,22 @@ pub(crate) trait BackwardTables {
     fn is_flag_symbol(&self, symbol: SymbolNumber) -> bool;
 }
 
+/// The least weight of any transition record, by a scan of the whole
+/// transition table; `None` if a weight is NaN. Final records count too,
+/// which can only lower the bound.
+pub(crate) fn least_arc_weight<T: BackwardTables>(tables: &T) -> Option<Weight> {
+    let mut least = f32::INFINITY;
+    for i in 0..tables.trans_len() {
+        if let Some(w) = tables.trans_weight(i) {
+            if w.0.is_nan() {
+                return None;
+            }
+            least = least.min(w.0);
+        }
+    }
+    Some(Weight(least))
+}
+
 /// Which records belong to the run of arcs being scanned.
 #[derive(Clone, Copy)]
 enum RunMode {

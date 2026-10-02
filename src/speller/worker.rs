@@ -473,6 +473,9 @@ pub struct SpellerWorker<'c, T: Transducer, U: Transducer> {
     /// n-best cutoff prunes in final (post-reweight) order. `None` on the
     /// lexicon-only paths (`is_correct`/`analyze`), which never reweight.
     reweight_ctx: Option<super::ReweightContext>,
+    /// No lexicon arc weighs less than this, so no step into the lexicon costs
+    /// less. See [`Transducer::least_arc_weight`].
+    lexicon_least: Option<Weight>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -501,7 +504,9 @@ where
         output_mode: OutputMode,
     ) -> SpellerWorker<'c, T, U> {
         debug_assert_eq!(input.len(), lexicon_input.len());
+        let lexicon_least = speller.lexicon().least_arc_weight();
         SpellerWorker {
+            lexicon_least,
             speller,
             input,
             lexicon_input,
@@ -529,7 +534,9 @@ where
         config: &'c SpellerConfig,
         output_mode: OutputMode,
     ) -> SpellerWorker<'c, T, U> {
+        let lexicon_least = speller.lexicon().least_arc_weight();
         SpellerWorker {
+            lexicon_least,
             speller,
             lexicon_input: input.clone(),
             input,
@@ -663,6 +670,9 @@ where
         input_lexicon_sym: Option<SymbolNumber>,
         output_nodes: &mut Vec<Recycled<'a, TreeNode>>,
     ) {
+        if self.no_lexicon_step_fits(max_weight, next_node, weight) {
+            return;
+        }
         for sym in outputs.iter() {
             self.queue_mutator_output(
                 pool,
@@ -686,6 +696,25 @@ where
     /// `input_lexicon_sym` is the input character's lexicon symbol when there
     /// is an input character being consumed. It names what `@_IDENTITY_@`
     /// writes and what `@_UNKNOWN_@` may not.
+    /// Whether no single lexicon arc taken from `node` with an error-model
+    /// step of `mutator_weight` could pass the weight test
+    /// [`queue_lexicon_arcs`](Self::queue_lexicon_arcs) puts every such arc
+    /// to. That test sums `node + lexicon + mutator` in that order, and float
+    /// addition never decreases when an operand grows, so the sum with the
+    /// lexicon's least arc weight bounds every arc's from below: when it fails
+    /// the test, so does every arc, and asking the lexicon changes nothing.
+    #[inline(always)]
+    fn no_lexicon_step_fits(
+        &self,
+        max_weight: Weight,
+        node: &TreeNode,
+        mutator_weight: Weight,
+    ) -> bool {
+        self.lexicon_least.is_some_and(|least| {
+            !self.is_under_weight_limit(max_weight, node.weight() + least + mutator_weight)
+        })
+    }
+
     #[inline(always)]
     fn queue_mutator_output<'a>(
         &self,
@@ -701,6 +730,13 @@ where
     ) {
         let mutator = self.speller.mutator();
         let lexicon = self.speller.lexicon();
+
+        // No lexicon step from here can come in under the cutoff, so there is
+        // nothing to ask the lexicon.
+        if self.no_lexicon_step_fits(max_weight, next_node, weight) {
+            return;
+        }
+
         let alphabet_translator = self.speller.alphabet_translator();
         let mut_alpha = mutator.alphabet();
 
