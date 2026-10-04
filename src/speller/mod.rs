@@ -734,10 +734,6 @@ pub struct SpellerConfig {
     /// extra penalties for different edit distance type errors
     #[serde(default = "default_reweight")]
     pub reweight: Option<ReweightingConfig>,
-    /// some parallel stuff?
-    #[serde(default = "default_node_pool_size")]
-    #[serde(alias = "node_pool_size")]
-    pub node_pool_size: usize,
     /// whether we try to recase mispelt word before other suggestions
     #[serde(default = "default_recase")]
     pub recase: bool,
@@ -839,7 +835,6 @@ impl SpellerConfig {
     /// * max_weight = 10000
     /// * beam = None
     /// * reweight = default (c.f. ReweightingConfig::default())
-    /// * node_pool_size = 128
     /// * recase = true
     /// * astar_lookahead = false
     /// * search_budget = None
@@ -852,7 +847,6 @@ impl SpellerConfig {
             max_weight: default_max_weight(),
             beam: default_beam(),
             reweight: default_reweight(),
-            node_pool_size: default_node_pool_size(),
             recase: default_recase(),
             completion_marker: None,
             astar_lookahead: default_astar_lookahead(),
@@ -880,10 +874,6 @@ const fn default_beam() -> Option<Weight> {
 
 const fn default_reweight() -> Option<ReweightingConfig> {
     Some(ReweightingConfig::default_const())
-}
-
-const fn default_node_pool_size() -> usize {
-    128
 }
 
 const fn default_recase() -> bool {
@@ -2715,6 +2705,20 @@ mod word_split_tests {
         let parsed: SpellerConfig = serde_json::from_str(r#"{"word-split-weight": 35.0}"#)
             .expect("the field parses as a plain number");
         assert_eq!(parsed.word_split_weight, Some(Weight(35.0)));
+    }
+
+    // node-pool-size is gone with the node pool, but every config.json shipped
+    // so far carries it, so a config naming it must still load.
+    #[test]
+    fn configs_with_the_retired_node_pool_size_still_load() {
+        for json in [
+            r#"{"n-best": 7, "node-pool-size": 128}"#,
+            r#"{"n_best": 7, "node_pool_size": 128}"#,
+        ] {
+            let parsed: SpellerConfig =
+                serde_json::from_str(json).expect("an old config still loads");
+            assert_eq!(parsed.n_best, Some(7));
+        }
     }
 }
 

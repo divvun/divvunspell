@@ -161,7 +161,6 @@ pub struct FfiSpellerConfig {
     pub max_weight: Weight,
     pub beam: Weight,
     pub reweight: FfiReweightingConfig,
-    pub node_pool_size: usize,
     /// When non-zero, populate per-suggestion weight breakdowns
     /// (see `DFST_VecSuggestion_get*Weight`/`Reweight*`).
     pub verbose: u8,
@@ -201,7 +200,6 @@ impl ToForeign<SpellerConfig, *const std::ffi::c_void> for SpellerConfigMarshale
             max_weight: config.max_weight.unwrap_or(Weight::ZERO),
             beam: config.beam.unwrap_or(Weight::ZERO),
             reweight,
-            node_pool_size: config.node_pool_size,
             verbose: config.verbose as u8,
         };
 
@@ -279,7 +277,6 @@ impl FromForeign<*const std::ffi::c_void, SpellerConfig> for SpellerConfigMarsha
                 None
             },
             reweight,
-            node_pool_size: config.node_pool_size,
             recase: true,
             completion_marker: None,
             // Deliberately not exposed across the boundary: the heuristic

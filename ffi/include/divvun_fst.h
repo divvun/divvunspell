@@ -67,7 +67,6 @@ typedef struct DFST_SpellerConfig_s {
     float max_weight;
     float beam;
     DFST_ReweightingConfig reweight;
-    rust_usize_t node_pool_size;
     uint8_t verbose;
 } DFST_SpellerConfig;
 

@@ -77,7 +77,6 @@ static CFG: SpellerConfig = SpellerConfig {
     max_weight: Some(Weight(10000.0)),
     beam: None,
     reweight: Some(ReweightingConfig::default_const()),
-    node_pool_size: 128,
     recase: true,
     completion_marker: None,
     astar_lookahead: false,

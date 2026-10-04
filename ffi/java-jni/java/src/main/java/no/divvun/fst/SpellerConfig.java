@@ -5,7 +5,6 @@ public class SpellerConfig {
     private final Float maxWeight;
     private final Float beam;
     private final ReweightingConfig reweight;
-    private final int nodePoolSize;
     private final boolean recase;
     private final String completionMarker;
 
@@ -14,7 +13,6 @@ public class SpellerConfig {
         this.maxWeight = builder.maxWeight;
         this.beam = builder.beam;
         this.reweight = builder.reweight;
-        this.nodePoolSize = builder.nodePoolSize;
         this.recase = builder.recase;
         this.completionMarker = builder.completionMarker;
     }
@@ -35,10 +33,6 @@ public class SpellerConfig {
         return reweight;
     }
 
-    public int getNodePoolSize() {
-        return nodePoolSize;
-    }
-
     public boolean isRecase() {
         return recase;
     }
@@ -56,7 +50,6 @@ public class SpellerConfig {
         private Float maxWeight = 10000.0f;
         private Float beam = null;
         private ReweightingConfig reweight = null;
-        private int nodePoolSize = 128;
         private boolean recase = true;
         private String completionMarker = null;
 
@@ -77,11 +70,6 @@ public class SpellerConfig {
 
         public Builder reweight(ReweightingConfig reweight) {
             this.reweight = reweight;
-            return this;
-        }
-
-        public Builder nodePoolSize(int nodePoolSize) {
-            this.nodePoolSize = nodePoolSize;
             return this;
         }
 
@@ -106,7 +94,6 @@ public class SpellerConfig {
                ", maxWeight=" + maxWeight +
                ", beam=" + beam +
                ", reweight=" + reweight +
-               ", nodePoolSize=" + nodePoolSize +
                ", recase=" + recase +
                ", completionMarker='" + completionMarker + "'" +
                "}";
