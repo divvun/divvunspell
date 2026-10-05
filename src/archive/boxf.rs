@@ -397,7 +397,7 @@ mod tests {
                 ThfstBoxSpellerArchive::open(&bhfst(dir.path(), false, true)).expect("opens");
             let source = dhfst.errmodel_source().expect("a source");
             assert_eq!(source.location, DHFST_ERRMODEL_MEMBER);
-            assert_eq!(source.format, "DHFST version 1");
+            assert_eq!(source.format, "DHFST error model version 1");
             assert!(dhfst.hfst_speller().is_none());
 
             let thfst =

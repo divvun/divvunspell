@@ -307,8 +307,10 @@ fn cmd_info(path: &Path) -> anyhow::Result<()> {
         human(b.len() as u64)
     );
     println!(
-        "header: DHFST version {}, flags {:#x}, max fallback depth {}",
-        dhfst::VERSION,
+        "header: DHFST type {} ({}), version {}, flags {:#x}, max fallback depth {}",
+        reader.kind().byte(),
+        reader.kind(),
+        reader.version(),
         reader.flags(),
         reader.max_fallback_depth()
     );

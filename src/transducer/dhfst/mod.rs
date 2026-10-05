@@ -34,7 +34,24 @@
 //! suggestion search intersects it with what the lexicon can continue with,
 //! the same way it treats an `@_UNKNOWN_SYMBOL_@` output.
 //!
-//! # Layout (version 1)
+//! # Header
+//!
+//! Every DHFST file starts with the same eight bytes, whatever it holds:
+//!
+//! ```text
+//! offset  size  field
+//! 0       5     "DHFST"
+//! 5       1     type: 1 error model, 2 acceptor; every other value is reserved
+//! 6       1     format version of that type: 1 for both
+//! 7       1     reserved, zero
+//! ```
+//!
+//! A reader refuses a type it does not know, naming the number, a version it
+//! does not read, and a reserved byte that is not zero. This module reads and
+//! writes type 1. The layout of an acceptor from byte 8 on is not defined
+//! here.
+//!
+//! # Error model layout (type 1, version 1)
 //!
 //! Every multi-byte field is little-endian. The reader reads through byte
 //! slices, so a mapping at any alignment is read correctly.
@@ -42,8 +59,9 @@
 //! ```text
 //! offset  size  field
 //! 0       5     "DHFST"
-//! 5       1     version = 1
-//! 6       2     reserved, zero
+//! 5       1     type = 1
+//! 6       1     version = 1
+//! 7       1     reserved, zero
 //! 8       4     flags: bit 0 tropical f32 weights (required), bit 1 fallback
 //!               rows used, bit 2 default records used, bit 3 RULE section
 //! 12      4     number of sections
@@ -101,9 +119,10 @@ pub mod writer;
 
 /// The first five bytes of a DHFST file.
 pub const MAGIC: &[u8; 5] = b"DHFST";
-/// The format version this reader reads and the writer writes.
-pub const VERSION: u8 = 1;
-/// Bytes before the section table.
+/// Bytes of the header every DHFST file starts with: the magic, the type, the
+/// version and a reserved byte.
+pub const PREFIX_LEN: usize = 8;
+/// Bytes before the section table of an error model.
 pub const HEADER_LEN: usize = 24;
 /// Bytes per section table entry.
 pub const SECTION_ENTRY_LEN: usize = 24;
@@ -148,6 +167,68 @@ pub mod tag {
     pub const STAG: [u8; 4] = *b"STAG";
     /// writer metadata
     pub const META: [u8; 4] = *b"meta";
+}
+
+/// What a DHFST file holds, as byte 5 of its header says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum DhfstType {
+    /// An error model, type 1.
+    ErrorModel,
+    /// An acceptor, type 2.
+    Acceptor,
+}
+
+impl DhfstType {
+    /// The type a header's type byte names, or `None` for a reserved value.
+    pub fn from_byte(byte: u8) -> Option<DhfstType> {
+        match byte {
+            1 => Some(DhfstType::ErrorModel),
+            2 => Some(DhfstType::Acceptor),
+            _ => None,
+        }
+    }
+
+    /// The header's type byte for this type.
+    pub fn byte(self) -> u8 {
+        match self {
+            DhfstType::ErrorModel => 1,
+            DhfstType::Acceptor => 2,
+        }
+    }
+
+    /// The format version of this type that this library reads and writes.
+    pub fn version(self) -> u8 {
+        match self {
+            DhfstType::ErrorModel => 1,
+            DhfstType::Acceptor => 1,
+        }
+    }
+
+    /// The type's name with its article, as in "an error model".
+    pub fn with_article(self) -> &'static str {
+        match self {
+            DhfstType::ErrorModel => "an error model",
+            DhfstType::Acceptor => "an acceptor",
+        }
+    }
+
+    /// The eight header bytes every file of this type starts with.
+    pub fn prefix(self) -> [u8; PREFIX_LEN] {
+        let mut prefix = [0u8; PREFIX_LEN];
+        prefix[..MAGIC.len()].copy_from_slice(MAGIC);
+        prefix[5] = self.byte();
+        prefix[6] = self.version();
+        prefix
+    }
+}
+
+impl std::fmt::Display for DhfstType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            DhfstType::ErrorModel => "error model",
+            DhfstType::Acceptor => "acceptor",
+        })
+    }
 }
 
 /// The kind of a default record, and of a pair.
@@ -262,6 +343,7 @@ struct Layout {
     n_entries: u32,
     max_fallback_depth: u32,
     flags: u32,
+    kind: DhfstType,
     version: u8,
 }
 
@@ -376,6 +458,12 @@ impl DhfstTransducer {
     /// The header flags.
     pub fn flags(&self) -> u32 {
         self.layout.flags
+    }
+
+    /// What the file's header says it holds: always an error model, as no
+    /// other type loads.
+    pub fn kind(&self) -> DhfstType {
+        self.layout.kind
     }
 
     /// The format version the file declares.
@@ -993,15 +1081,25 @@ fn corrupt(path: &Path, detail: impl Into<Cow<'static, str>>) -> TransducerError
 
 impl Parsed {
     fn parse(b: &[u8], path: &Path) -> Result<Parsed, TransducerError> {
-        match TransducerFormat::detect(b, path)? {
-            TransducerFormat::Dhfst { .. } => {}
+        let (kind, version) = match TransducerFormat::detect(b, path)? {
+            TransducerFormat::Dhfst {
+                kind: kind @ DhfstType::ErrorModel,
+                version,
+            } => (kind, version),
+            TransducerFormat::Dhfst { kind, .. } => {
+                return Err(TransducerError::WrongDhfstType {
+                    path: path.to_path_buf(),
+                    found: kind,
+                    wanted: DhfstType::ErrorModel,
+                });
+            }
             TransducerFormat::Hfst => {
                 return Err(TransducerError::UnrecognisedFormat {
                     path: path.to_path_buf(),
                     detail: Cow::Borrowed("the file is HFST optimized lookup, not DHFST"),
                 });
             }
-        }
+        };
         if b.len() < HEADER_LEN {
             return Err(TransducerError::CorruptHeader {
                 path: path.to_path_buf(),
@@ -1012,10 +1110,10 @@ impl Parsed {
         let flags = u32_at(b, 8);
         let n_sections = u32_at(b, 12) as usize;
         let max_fallback_depth = u32_at(b, 16);
-        if u16_at(b, 6) != 0 || u32_at(b, 20) != 0 {
+        if u32_at(b, 20) != 0 {
             return Err(TransducerError::CorruptHeader {
                 path: path.to_path_buf(),
-                offset: 6,
+                offset: 20,
             });
         }
         if flags & !KNOWN_FLAGS != 0 {
@@ -1143,7 +1241,6 @@ impl Parsed {
         }
         // Stages: the symbols past the alphabet are call symbols, never
         // regular and never part of the alphabet.
-        let version = b[MAGIC.len()];
         let stag = find(tag::STAG);
         if stag.is_some() != (flags & FLAG_STAGES != 0) {
             return Err(corrupt(path, "STAG section and stages flag disagree"));
@@ -1268,6 +1365,7 @@ impl Parsed {
             n_entries,
             max_fallback_depth,
             flags,
+            kind,
             version,
         };
 

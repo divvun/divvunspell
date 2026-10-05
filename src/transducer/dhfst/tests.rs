@@ -26,6 +26,7 @@ struct Raw {
     flags: Option<u32>,
     extra: Vec<([u8; 4], Vec<u8>)>,
     drop: Vec<[u8; 4]>,
+    type_byte: u8,
     version: u8,
 }
 
@@ -64,7 +65,8 @@ impl Raw {
             flags: None,
             extra: Vec::new(),
             drop: Vec::new(),
-            version: VERSION,
+            type_byte: DhfstType::ErrorModel.byte(),
+            version: DhfstType::ErrorModel.version(),
         }
     }
 
@@ -146,8 +148,9 @@ impl Raw {
 
         let mut out = Vec::new();
         out.extend_from_slice(MAGIC);
+        out.push(self.type_byte);
         out.push(self.version);
-        out.extend_from_slice(&[0, 0]);
+        out.push(0);
         out.extend_from_slice(&flags.to_le_bytes());
         out.extend_from_slice(&(sections.len() as u32).to_le_bytes());
         out.extend_from_slice(&self.max_depth.to_le_bytes());
@@ -316,11 +319,30 @@ fn the_header_says_which_format_a_file_is() {
         Some(TransducerFormat::Hfst)
     );
     assert_eq!(
-        TransducerFormat::detect(b"DHFST\x01\0\0", path).ok(),
-        Some(TransducerFormat::Dhfst { version: 1 })
+        TransducerFormat::detect(b"DHFST\x01\x01\0", path).ok(),
+        Some(TransducerFormat::Dhfst {
+            kind: DhfstType::ErrorModel,
+            version: 1
+        })
     );
+    assert_eq!(
+        TransducerFormat::detect(b"DHFST\x02\x01\0", path).ok(),
+        Some(TransducerFormat::Dhfst {
+            kind: DhfstType::Acceptor,
+            version: 1
+        })
+    );
+    assert_eq!(&DhfstType::ErrorModel.prefix(), b"DHFST\x01\x01\0");
+    assert_eq!(&DhfstType::Acceptor.prefix(), b"DHFST\x02\x01\0");
     for bad in [
-        &b"DHFST\x02\0\0"[..],
+        &b"DHFST\x01\0\0"[..],
+        b"DHFST\x01\x02\0",
+        b"DHFST\x02\x00\0",
+        b"DHFST\x00\x01\0",
+        b"DHFST\x03\x01\0",
+        b"DHFST\x09\x01\0",
+        b"DHFST\x01\x01\x01",
+        b"DHFST\x01\x01",
         b"DHFST\x00",
         b"DHFST",
         b"HFSX\0\0\0\0",
@@ -334,6 +356,46 @@ fn the_header_says_which_format_a_file_is() {
             "{bad:?} was recognised"
         );
     }
+}
+
+#[test]
+fn a_dhfst_file_of_another_type_is_refused_by_name() {
+    let mut acceptor = sampler();
+    acceptor.type_byte = DhfstType::Acceptor.byte();
+    let err = acceptor
+        .load()
+        .expect_err("an acceptor is not an error model");
+    assert!(matches!(
+        err,
+        TransducerError::WrongDhfstType {
+            found: DhfstType::Acceptor,
+            wanted: DhfstType::ErrorModel,
+            ..
+        }
+    ));
+    assert_eq!(
+        err.to_string(),
+        "DHFST file 'test.dhfst' is an acceptor (type 2); an error model is type 1"
+    );
+
+    let mut unknown = sampler();
+    unknown.type_byte = 9;
+    let err = unknown.load().expect_err("type 9 is reserved");
+    assert!(
+        err.to_string()
+            .contains("DHFST type 9 is not a type this reader knows"),
+        "{err}"
+    );
+
+    // The header as it was before it carried a type: version 1 in byte 5.
+    let mut untyped = sampler();
+    untyped.version = 0;
+    let err = untyped.load().expect_err("version 0 is not version 1");
+    assert!(
+        err.to_string()
+            .contains("DHFST error model version 0; this reader reads version 1"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -379,6 +441,15 @@ fn corrupt_files_are_refused() {
     let mut r = good.clone();
     r.version = 2;
     cases.push(("unknown version", r));
+    let mut r = good.clone();
+    r.version = 0;
+    cases.push(("version 0", r));
+    let mut r = good.clone();
+    r.type_byte = 9;
+    cases.push(("unknown type", r));
+    let mut r = good.clone();
+    r.type_byte = DhfstType::Acceptor.byte();
+    cases.push(("an acceptor", r));
     let mut r = good.clone();
     r.flags = Some(FLAG_TROPICAL | FLAG_FALLBACK | FLAG_DEFAULTS | FLAG_STAGES);
     cases.push(("stages flag without a STAG section", r));
@@ -477,12 +548,14 @@ fn corrupt_files_are_refused() {
         DhfstTransducer::from_bytes(&bytes, "x").is_err(),
         "bad magic loaded"
     );
-    let mut bytes = good.bytes();
-    bytes[6] = 1;
-    assert!(
-        DhfstTransducer::from_bytes(&bytes, "x").is_err(),
-        "a reserved header byte was ignored"
-    );
+    for reserved in [7, 20, 23] {
+        let mut bytes = good.bytes();
+        bytes[reserved] = 1;
+        assert!(
+            DhfstTransducer::from_bytes(&bytes, "x").is_err(),
+            "reserved header byte {reserved} was ignored"
+        );
+    }
 
     let mut ancillary = good.clone();
     ancillary.extra.push((*b"xtra", vec![1, 2, 3]));
@@ -1210,7 +1283,7 @@ fn an_edit_table_stage_suggests_what_the_stored_edits_suggest() {
     .expect("staged model writes and checks");
     assert!(staged.report.stage_queries_checked > 0);
     let staged_t = DhfstTransducer::from_bytes(&staged.bytes, "staged").expect("loads");
-    assert_eq!(staged_t.version(), VERSION);
+    assert_eq!(staged_t.version(), DhfstType::ErrorModel.version());
     assert_eq!(staged_t.alphabet_len(), 6);
     assert_eq!(
         staged_t.alphabet().key_table().len(),

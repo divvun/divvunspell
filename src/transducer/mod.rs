@@ -105,13 +105,31 @@ pub enum TransducerError {
     },
 
     /// The file does not start with the header of any transducer format this
-    /// reader knows, or names a version of one that it does not.
+    /// reader knows, or names a type or version of one that it does not.
     #[error("'{}' is not a transducer this reader can load ({detail})", path.display())]
     UnrecognisedFormat {
         /// file whose header was not recognised
         path: PathBuf,
         /// what the header held, and what was expected
         detail: Cow<'static, str>,
+    },
+
+    /// The file is a DHFST file of another type than the one asked for.
+    #[error(
+        "DHFST file '{}' is {} (type {}); {} is type {}",
+        path.display(),
+        found.with_article(),
+        found.byte(),
+        wanted.with_article(),
+        wanted.byte()
+    )]
+    WrongDhfstType {
+        /// the file
+        path: PathBuf,
+        /// the type its header declares
+        found: dhfst::DhfstType,
+        /// the type that was asked for
+        wanted: dhfst::DhfstType,
     },
 }
 
@@ -120,9 +138,11 @@ pub enum TransducerError {
 pub enum TransducerFormat {
     /// HFST optimized-lookup, starting `HFST\0`.
     Hfst,
-    /// The compact error-model format, starting `DHFST` and a version byte.
+    /// The DHFST format, starting `DHFST`, a type byte and a version byte.
     Dhfst {
-        /// the format version the file declares
+        /// what the file holds
+        kind: dhfst::DhfstType,
+        /// the format version of that type the file declares
         version: u8,
     },
 }
@@ -130,31 +150,47 @@ pub enum TransducerFormat {
 impl TransducerFormat {
     /// Tell the format from a file's first bytes.
     ///
-    /// Anything that is neither `HFST\0` nor `DHFST` followed by a version this
-    /// reader supports is refused with a [`TransducerError::UnrecognisedFormat`]
-    /// naming what was found, so that no file is ever read in the wrong layout.
+    /// Anything that is neither `HFST\0` nor a DHFST header of a type and
+    /// version this reader knows is refused with a
+    /// [`TransducerError::UnrecognisedFormat`] naming what was found, so that no
+    /// file is ever read in the wrong layout.
     pub fn detect(bytes: &[u8], path: &Path) -> Result<TransducerFormat, TransducerError> {
         if bytes.starts_with(hfst::header::MAGIC) {
             return Ok(TransducerFormat::Hfst);
         }
 
         if bytes.starts_with(dhfst::MAGIC) {
-            let version = bytes.get(dhfst::MAGIC.len()).copied().ok_or_else(|| {
-                TransducerError::UnrecognisedFormat {
-                    path: path.to_path_buf(),
-                    detail: Cow::Borrowed("DHFST header is truncated before its version byte"),
-                }
+            let unrecognised = |detail: String| TransducerError::UnrecognisedFormat {
+                path: path.to_path_buf(),
+                detail: Cow::Owned(detail),
+            };
+            let Some(&[type_byte, version, reserved]) =
+                bytes.get(dhfst::MAGIC.len()..dhfst::PREFIX_LEN)
+            else {
+                return Err(unrecognised(format!(
+                    "DHFST header is {} bytes; it needs {}",
+                    bytes.len(),
+                    dhfst::PREFIX_LEN
+                )));
+            };
+            let kind = dhfst::DhfstType::from_byte(type_byte).ok_or_else(|| {
+                unrecognised(format!(
+                    "DHFST type {type_byte} is not a type this reader knows; \
+                     type 1 is an error model and type 2 an acceptor"
+                ))
             })?;
-            if version != dhfst::VERSION {
-                return Err(TransducerError::UnrecognisedFormat {
-                    path: path.to_path_buf(),
-                    detail: Cow::Owned(format!(
-                        "DHFST version {version}; this reader supports version {}",
-                        dhfst::VERSION
-                    )),
-                });
+            if version != kind.version() {
+                return Err(unrecognised(format!(
+                    "DHFST {kind} version {version}; this reader reads version {}",
+                    kind.version()
+                )));
             }
-            return Ok(TransducerFormat::Dhfst { version });
+            if reserved != 0 {
+                return Err(unrecognised(format!(
+                    "DHFST header byte 7 is {reserved}; it is reserved and must be 0"
+                )));
+            }
+            return Ok(TransducerFormat::Dhfst { kind, version });
         }
 
         let shown: String = bytes
@@ -254,6 +290,7 @@ impl ErrorModel {
         match self {
             ErrorModel::Hfst(_) => TransducerFormat::Hfst,
             ErrorModel::Dhfst(t) => TransducerFormat::Dhfst {
+                kind: t.kind(),
                 version: t.version(),
             },
         }
@@ -264,7 +301,9 @@ impl std::fmt::Display for TransducerFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TransducerFormat::Hfst => write!(f, "HFST optimized lookup"),
-            TransducerFormat::Dhfst { version } => write!(f, "DHFST version {version}"),
+            TransducerFormat::Dhfst { kind, version } => {
+                write!(f, "DHFST {kind} version {version}")
+            }
         }
     }
 }
