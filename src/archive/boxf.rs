@@ -8,6 +8,7 @@ use super::{ErrmodelSource, SpellerArchive, meta::SpellerMetadata};
 use crate::speller::{HfstSpeller, Speller, SpellerConfig};
 use crate::transducer::{
     ErrorModel, Transducer,
+    dhfst::acceptor::DhfstAcceptor,
     thfst::{MmapThfstTransducer, chunked::MmapThfstChunkedTransducer},
 };
 use crate::vfs::Filesystem;
@@ -36,6 +37,20 @@ pub const THFST_ERRMODEL_MEMBER: &str = "errmodel.default.thfst";
 /// its error model there, read by the file's header, instead of in
 /// [`THFST_ERRMODEL_MEMBER`].
 pub const DHFST_ERRMODEL_MEMBER: &str = "errmodel.default.dhfst";
+
+/// The THFST acceptor member every BHFST archive has carried.
+pub const THFST_ACCEPTOR_MEMBER: &str = "acceptor.default.thfst";
+
+/// The single-file acceptor member: a BHFST archive that carries it has its
+/// acceptor there, as a DHFST acceptor, instead of in
+/// [`THFST_ACCEPTOR_MEMBER`].
+pub const DHFST_ACCEPTOR_MEMBER: &str = "acceptor.default.dhfst";
+
+/// An acceptor in either of the forms a BHFST archive can hold it in.
+enum Acceptor<U> {
+    Thfst(U),
+    Dhfst(DhfstAcceptor),
+}
 
 /// The one key this loader reads from `meta.json` beyond [`SpellerMetadata`]:
 /// the archive's bundled [`SpellerConfig`], under
@@ -81,7 +96,10 @@ fn read_bundled_config(meta_json: &[u8], path: &std::path::Path) -> Option<Spell
 /// An archive carries exactly one error model: the single-file member
 /// [`DHFST_ERRMODEL_MEMBER`], read in place by its header (DHFST or HFST
 /// optimized lookup), or else the THFST directory [`THFST_ERRMODEL_MEMBER`]
-/// every BHFST archive has carried. An archive with both is refused.
+/// every BHFST archive has carried. An archive with both is refused. It
+/// carries exactly one acceptor the same way: the DHFST acceptor
+/// [`DHFST_ACCEPTOR_MEMBER`], or else the THFST directory
+/// [`THFST_ACCEPTOR_MEMBER`].
 pub struct BoxSpellerArchive<T, U>
 where
     T: Transducer,
@@ -99,8 +117,9 @@ where
     T: Transducer + Send + Sync + 'static,
     U: Transducer + Send + Sync + 'static,
 {
-    /// get the spell-checking component, when its error model is THFST;
-    /// `None` when the archive carries it in a single-file member
+    /// get the spell-checking component, when its error model and its
+    /// acceptor are THFST; `None` when the archive carries either in a
+    /// single-file member
     pub fn hfst_speller(&self) -> Option<Arc<HfstSpeller<T, U>>> {
         self.typed.clone()
     }
@@ -161,71 +180,110 @@ where
             }
             None => (None, None),
         };
-        let acceptor = U::from_path(&fs, "acceptor.default.thfst").map_err(|source| {
-            SpellerArchiveError::Transducer {
-                archive: file_path.to_path_buf(),
-                member: "acceptor.default.thfst".into(),
-                source,
+        let acceptor = if fs.open_file(DHFST_ACCEPTOR_MEMBER).is_ok() {
+            if fs
+                .open_file(format!("{THFST_ACCEPTOR_MEMBER}/alphabet"))
+                .is_ok()
+            {
+                return Err(SpellerArchiveError::Io {
+                    archive: file_path.to_path_buf(),
+                    member: DHFST_ACCEPTOR_MEMBER.into(),
+                    source: std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!(
+                            "the archive also carries {THFST_ACCEPTOR_MEMBER}; it must carry one acceptor"
+                        ),
+                    ),
+                });
             }
-        })?;
+            let acceptor = <DhfstAcceptor as crate::transducer::TransducerLoader<_>>::from_path(
+                &fs,
+                DHFST_ACCEPTOR_MEMBER,
+            )
+            .map_err(|source| SpellerArchiveError::Transducer {
+                archive: file_path.to_path_buf(),
+                member: DHFST_ACCEPTOR_MEMBER.into(),
+                source,
+            })?;
+            Acceptor::Dhfst(acceptor)
+        } else {
+            let acceptor = U::from_path(&fs, THFST_ACCEPTOR_MEMBER).map_err(|source| {
+                SpellerArchiveError::Transducer {
+                    archive: file_path.to_path_buf(),
+                    member: THFST_ACCEPTOR_MEMBER.into(),
+                    source,
+                }
+            })?;
+            Acceptor::Thfst(acceptor)
+        };
 
         let single_file = fs.open_file(DHFST_ERRMODEL_MEMBER).is_ok();
         let thfst = fs
             .open_file(format!("{THFST_ERRMODEL_MEMBER}/alphabet"))
             .is_ok();
 
-        let (speller, typed, errmodel_source): (Arc<dyn Speller + Send + Sync>, _, _) =
-            if single_file {
-                if thfst {
-                    return Err(SpellerArchiveError::TwoErrorModels {
-                        path: file_path.to_path_buf(),
-                    });
-                }
-                let errmodel =
-                    ErrorModel::from_path(&fs, DHFST_ERRMODEL_MEMBER).map_err(|source| {
-                        SpellerArchiveError::Transducer {
-                            archive: file_path.to_path_buf(),
-                            member: DHFST_ERRMODEL_MEMBER.into(),
-                            source,
-                        }
-                    })?;
-                let source = ErrmodelSource::new(DHFST_ERRMODEL_MEMBER, errmodel.format());
-                let speller: Arc<dyn Speller + Send + Sync> = match errmodel {
-                    ErrorModel::Dhfst(errmodel) => HfstSpeller::new_with_bundled_config(
-                        errmodel,
-                        acceptor,
-                        bundled_config.clone(),
-                    ),
-                    ErrorModel::Hfst(errmodel) => HfstSpeller::new_with_bundled_config(
-                        errmodel,
-                        acceptor,
-                        bundled_config.clone(),
-                    ),
-                };
-                (speller, None, source)
-            } else {
-                let errmodel = T::from_path(&fs, THFST_ERRMODEL_MEMBER).map_err(|source| {
-                    SpellerArchiveError::Transducer {
-                        archive: file_path.to_path_buf(),
-                        member: THFST_ERRMODEL_MEMBER.into(),
-                        source,
-                    }
-                })?;
-                let speller = HfstSpeller::new_with_bundled_config(
-                    errmodel,
-                    acceptor,
-                    bundled_config.clone(),
-                );
-                let source = ErrmodelSource {
-                    location: THFST_ERRMODEL_MEMBER.into(),
-                    format: "THFST".into(),
-                };
-                (
-                    speller.clone() as Arc<dyn Speller + Send + Sync>,
-                    Some(speller),
+        type Shared = Arc<dyn Speller + Send + Sync>;
+        let (speller, typed, errmodel_source): (Shared, _, _) = if single_file {
+            if thfst {
+                return Err(SpellerArchiveError::TwoErrorModels {
+                    path: file_path.to_path_buf(),
+                });
+            }
+            let errmodel = ErrorModel::from_path(&fs, DHFST_ERRMODEL_MEMBER).map_err(|source| {
+                SpellerArchiveError::Transducer {
+                    archive: file_path.to_path_buf(),
+                    member: DHFST_ERRMODEL_MEMBER.into(),
                     source,
-                )
+                }
+            })?;
+            let source = ErrmodelSource::new(DHFST_ERRMODEL_MEMBER, errmodel.format());
+            let config = bundled_config.clone();
+            let speller: Shared = match (errmodel, acceptor) {
+                (ErrorModel::Dhfst(e), Acceptor::Thfst(a)) => {
+                    HfstSpeller::new_with_bundled_config(e, a, config)
+                }
+                (ErrorModel::Dhfst(e), Acceptor::Dhfst(a)) => {
+                    HfstSpeller::new_with_bundled_config(e, a, config)
+                }
+                (ErrorModel::Hfst(e), Acceptor::Thfst(a)) => {
+                    HfstSpeller::new_with_bundled_config(e, a, config)
+                }
+                (ErrorModel::Hfst(e), Acceptor::Dhfst(a)) => {
+                    HfstSpeller::new_with_bundled_config(e, a, config)
+                }
             };
+            (speller, None, source)
+        } else {
+            let errmodel = T::from_path(&fs, THFST_ERRMODEL_MEMBER).map_err(|source| {
+                SpellerArchiveError::Transducer {
+                    archive: file_path.to_path_buf(),
+                    member: THFST_ERRMODEL_MEMBER.into(),
+                    source,
+                }
+            })?;
+            let source = ErrmodelSource {
+                location: THFST_ERRMODEL_MEMBER.into(),
+                format: "THFST".into(),
+            };
+            match acceptor {
+                Acceptor::Thfst(acceptor) => {
+                    let speller = HfstSpeller::new_with_bundled_config(
+                        errmodel,
+                        acceptor,
+                        bundled_config.clone(),
+                    );
+                    (speller.clone() as Shared, Some(speller), source)
+                }
+                Acceptor::Dhfst(acceptor) => {
+                    let speller: Shared = HfstSpeller::new_with_bundled_config(
+                        errmodel,
+                        acceptor,
+                        bundled_config.clone(),
+                    );
+                    (speller, None, source)
+                }
+            }
+        };
 
         Ok(BoxSpellerArchive {
             metadata,
@@ -411,6 +469,137 @@ mod tests {
             let from_dhfst = suggestions(&dhfst);
             assert!(from_dhfst.iter().any(|s| !s.is_empty()));
             assert_eq!(from_dhfst, suggestions(&thfst));
+        }
+
+        fn dhfst_lexicon() -> Vec<u8> {
+            use crate::transducer::dhfst::acceptor_writer::{AcceptorOptions, write_acceptor};
+            let thfst = MmapThfstTransducer::from_path(&crate::vfs::Fs, fixture("lexicon.thfst"))
+                .expect("fixture loads");
+            let mut names: Vec<String> = thfst
+                .alphabet()
+                .key_table()
+                .iter()
+                .map(|k| k.to_string())
+                .collect();
+            names[0] = "@_EPSILON_SYMBOL_@".to_string();
+            write_acceptor(
+                &thfst,
+                &names,
+                &AcceptorOptions {
+                    threads: 1,
+                    ..AcceptorOptions::default()
+                },
+            )
+            .expect("fixture writes")
+            .bytes
+        }
+
+        /// A BHFST with the fixture lexicon as THFST, as DHFST, or both, and
+        /// the fixture error model as THFST or as DHFST.
+        fn with_acceptor(dir: &Path, thfst: bool, dhfst: bool, thfst_errmodel: bool) -> PathBuf {
+            let path = dir.join(format!("acceptor-{thfst}-{dhfst}-{thfst_errmodel}.bhfst"));
+            let mut boxfile = BoxWriter::create_with_alignment(&path, 8).expect("create");
+            if thfst {
+                insert_thfst(
+                    &mut boxfile,
+                    &fixture("lexicon.thfst"),
+                    THFST_ACCEPTOR_MEMBER,
+                );
+            }
+            if thfst_errmodel {
+                insert_thfst(
+                    &mut boxfile,
+                    &fixture("mutator.thfst"),
+                    THFST_ERRMODEL_MEMBER,
+                );
+            }
+            for (member, bytes) in [
+                (DHFST_ACCEPTOR_MEMBER, dhfst.then(dhfst_lexicon)),
+                (DHFST_ERRMODEL_MEMBER, (!thfst_errmodel).then(dhfst_mutator)),
+            ] {
+                if let Some(bytes) = bytes {
+                    boxfile
+                        .insert(
+                            &CompressionConfig::new(Compression::Stored),
+                            BoxPath::new(member).expect("box path"),
+                            std::io::Cursor::new(bytes),
+                            BoxHashMap::new(),
+                        )
+                        .expect("insert");
+                }
+            }
+            boxfile.finish().expect("finish");
+            path
+        }
+
+        #[test]
+        fn a_dhfst_acceptor_member_is_read_with_either_error_model() {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let mut want = None;
+            for thfst_errmodel in [true, false] {
+                let open = |thfst, dhfst| {
+                    ThfstBoxSpellerArchive::open(&with_acceptor(
+                        dir.path(),
+                        thfst,
+                        dhfst,
+                        thfst_errmodel,
+                    ))
+                    .expect("opens")
+                };
+                let thfst = open(true, false);
+                assert_eq!(thfst.hfst_speller().is_some(), thfst_errmodel);
+                let dhfst = open(false, true);
+                assert!(dhfst.hfst_speller().is_none());
+                let from_thfst = suggestions(&thfst);
+                assert!(from_thfst.iter().any(|s| !s.is_empty()));
+                assert_eq!(
+                    suggestions(&dhfst),
+                    from_thfst,
+                    "THFST error model: {thfst_errmodel}"
+                );
+                assert_eq!(want.get_or_insert(from_thfst), &suggestions(&dhfst));
+            }
+        }
+
+        #[test]
+        fn an_archive_with_two_acceptors_is_refused() {
+            let dir = tempfile::tempdir().expect("tempdir");
+            for thfst_errmodel in [false, true] {
+                assert!(matches!(
+                    ThfstBoxSpellerArchive::open(&with_acceptor(
+                        dir.path(),
+                        true,
+                        true,
+                        thfst_errmodel
+                    )),
+                    Err(SpellerArchiveError::Io { member, .. }) if member == DHFST_ACCEPTOR_MEMBER
+                ));
+            }
+        }
+
+        #[test]
+        fn an_error_model_in_the_acceptor_member_is_refused() {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("swapped.bhfst");
+            let mut boxfile = BoxWriter::create_with_alignment(&path, 8).expect("create");
+            for member in [DHFST_ACCEPTOR_MEMBER, DHFST_ERRMODEL_MEMBER] {
+                boxfile
+                    .insert(
+                        &CompressionConfig::new(Compression::Stored),
+                        BoxPath::new(member).expect("box path"),
+                        std::io::Cursor::new(dhfst_mutator()),
+                        BoxHashMap::new(),
+                    )
+                    .expect("insert");
+            }
+            boxfile.finish().expect("finish");
+            assert!(matches!(
+                ThfstBoxSpellerArchive::open(&path),
+                Err(SpellerArchiveError::Transducer {
+                    source: crate::transducer::TransducerError::WrongDhfstType { .. },
+                    ..
+                })
+            ));
         }
 
         #[test]
