@@ -1,4 +1,7 @@
-//! Write, check and package error models in the compact DHFST format.
+//! Write, check and package error models in the compact DHFST format, and
+//! acceptors in the DHFST acceptor format.
+
+mod acceptor;
 
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
@@ -26,7 +29,7 @@ use zip::ZipArchive;
 #[derive(Debug, Parser)]
 #[command(
     name = "dhfst-tools",
-    about = "Write, check and package error models in the compact DHFST format."
+    about = "Write, check and package error models in the compact DHFST format, and acceptors in the DHFST acceptor format."
 )]
 enum Opts {
     /// Write an error model as DHFST, checking every (state, pair) of the
@@ -60,7 +63,7 @@ enum Opts {
         threads: usize,
     },
 
-    /// Describe a DHFST file
+    /// Describe a DHFST file, an error model or an acceptor
     Info {
         /// the DHFST file
         path: PathBuf,
@@ -108,6 +111,48 @@ enum Opts {
         input: PathBuf,
         /// the AT&T text file to write
         output: PathBuf,
+    },
+
+    /// Write an HFST optimized-lookup acceptor as a DHFST acceptor, checking
+    /// every state's finality, distance to a final state, free arcs and
+    /// answer for every symbol of the written file against the source
+    Acceptor {
+        /// the acceptor, HFST optimized lookup
+        input: PathBuf,
+        /// the DHFST acceptor to write
+        output: PathBuf,
+        /// a THFST copy of the acceptor to check the written file against too
+        #[arg(long)]
+        thfst: Option<PathBuf>,
+        /// place the states that need the most slots first, instead of in
+        /// depth-first order
+        #[arg(long)]
+        fan_out: bool,
+        /// worker threads for the check (0: all cores)
+        #[arg(long, default_value_t = 0)]
+        threads: usize,
+    },
+
+    /// Repackage a BHFST archive with a DHFST error model, taking its
+    /// acceptor from a DHFST acceptor file, a THFST directory, or the archive
+    /// itself
+    Pack {
+        /// the BHFST archive whose metadata and error model to use
+        from: PathBuf,
+        /// the BHFST archive to write
+        output: PathBuf,
+        /// a DHFST acceptor to store as acceptor.default.dhfst
+        #[arg(long)]
+        acceptor: Option<PathBuf>,
+        /// a THFST directory to store as acceptor.default.thfst
+        #[arg(long)]
+        thfst: Option<PathBuf>,
+        /// a DHFST error model to store instead of the archive's
+        #[arg(long)]
+        errmodel: Option<PathBuf>,
+        /// a speller config to bundle instead of the archive's
+        #[arg(long)]
+        config: Option<PathBuf>,
     },
 
     /// Build a BHFST archive from a ZHFST archive's acceptor and a DHFST
@@ -297,6 +342,17 @@ fn cmd_check(source: &Path, dhfst_path: &Path, threads: usize) -> anyhow::Result
 }
 
 fn cmd_info(path: &Path) -> anyhow::Result<()> {
+    let mut header = [0u8; 8];
+    let filled = std::fs::File::open(path)
+        .with_context(|| format!("failed to open '{}'", path.display()))?
+        .read(&mut header)?;
+    if let TransducerFormat::Dhfst {
+        kind: dhfst::DhfstType::Acceptor,
+        ..
+    } = TransducerFormat::detect(&header[..filled], path)?
+    {
+        return acceptor::cmd_acceptor_info(path);
+    }
     let reader = DhfstTransducer::from_path(&Fs, path)
         .with_context(|| format!("failed to load '{}'", path.display()))?;
     let b = reader.buffer();
@@ -1019,6 +1075,28 @@ fn run() -> anyhow::Result<()> {
             &top, &reference, &output, &stored, &table, max_depth, threads,
         ),
         Opts::Dump { input, output } => cmd_dump(&input, &output),
+        Opts::Acceptor {
+            input,
+            output,
+            thfst,
+            fan_out,
+            threads,
+        } => acceptor::cmd_acceptor(&input, &output, thfst.as_deref(), fan_out, threads),
+        Opts::Pack {
+            from,
+            output,
+            acceptor,
+            thfst,
+            errmodel,
+            config,
+        } => acceptor::cmd_pack(
+            &from,
+            &output,
+            acceptor.as_deref(),
+            thfst.as_deref(),
+            errmodel.as_deref(),
+            config.as_deref(),
+        ),
     }
 }
 
