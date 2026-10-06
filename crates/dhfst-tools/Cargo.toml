@@ -1,6 +1,6 @@
 [package]
 name = "dhfst-tools"
-description = "Write, check and package error models in the compact DHFST format."
+description = "Write, check and package error models and acceptors in the DHFST format."
 version.workspace = true
 authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
 edition = "2024"

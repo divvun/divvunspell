@@ -29,13 +29,13 @@ use crate::transducer::dhfst::{
 use crate::transducer::{Transducer, TransducerError};
 use crate::types::{SymbolNumber, TransitionTableIndex};
 
-/// Why a model could not be written.
+/// Why a transducer could not be written.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum WriteError {
     /// The source transducer has something the format cannot hold, or the
     /// search has never read.
-    #[error("the source error model cannot be written as DHFST: {0}")]
+    #[error("the source transducer cannot be written as DHFST: {0}")]
     Unsupported(String),
     /// The encoding or the written bytes do not answer what the source does.
     /// This is a writer bug; nothing was written.
