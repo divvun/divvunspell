@@ -165,25 +165,12 @@ fn walk<T: Transducer>(
     }
 
     // 1. Free input moves: epsilon-input arcs and flag diacritics.
-    //
-    //    A state's eps slot lives at `state + 1` (slot 0 is the
-    //    final-state marker), so pass `state.incr()` to the check.
-    if lexicon.has_epsilons_or_flags(node_state.incr()) {
-        if let Some(mut pos) = lexicon.next(node_state, SymbolNumber::ZERO) {
-            let operations = lexicon.alphabet().operations();
-            while let Some(trans) = lexicon.take_epsilons_and_flags(pos) {
-                let input_sym = lexicon
-                    .transition_input_symbol(pos)
-                    .unwrap_or(SymbolNumber::ZERO);
-                if input_sym == SymbolNumber::ZERO {
-                    try_advance(lexicon, input_sym, trans, lemma_idx, weight, depth, ws);
-                } else if let Some(op) = operations.get(&input_sym) {
-                    try_advance_with_flag(
-                        lexicon, input_sym, op, trans, lemma_idx, weight, depth, ws,
-                    );
-                }
-                pos = pos.incr();
-            }
+    let operations = lexicon.alphabet().operations();
+    for (input_sym, trans) in lexicon.free_arcs(node_state) {
+        if input_sym == SymbolNumber::ZERO {
+            try_advance(lexicon, input_sym, trans, lemma_idx, weight, depth, ws);
+        } else if let Some(op) = operations.get(&input_sym) {
+            try_advance_with_flag(lexicon, input_sym, op, trans, lemma_idx, weight, depth, ws);
         }
     }
 
@@ -198,16 +185,13 @@ fn walk<T: Transducer>(
     //    multichar input symbols like `+V`, `+Sg`, etc.
     //
     //    `has_transitions(state.incr(), Some(sym))` MUST be checked
-    //    before `next(state, sym)` — see same caveat in input-side
-    //    callers in `speller/worker.rs`.
+    //    before `transitions(state, sym)` — see same caveat in
+    //    input-side callers in `speller/worker.rs`.
     if lemma_idx < ws.lemma_syms.len() {
         let sym = ws.lemma_syms[lemma_idx];
         if lexicon.has_transitions(node_state.incr(), Some(sym)) {
-            if let Some(mut pos) = lexicon.next(node_state, sym) {
-                while let Some(trans) = lexicon.take_non_epsilons(pos, sym) {
-                    try_advance(lexicon, sym, trans, lemma_idx, weight, depth, ws);
-                    pos = pos.incr();
-                }
+            for trans in lexicon.transitions(node_state, sym) {
+                try_advance(lexicon, sym, trans, lemma_idx, weight, depth, ws);
             }
         }
     } else {
@@ -217,12 +201,8 @@ fn walk<T: Transducer>(
             if !lexicon.has_transitions(node_state.incr(), Some(sym)) {
                 continue;
             }
-            let Some(mut pos) = lexicon.next(node_state, sym) else {
-                continue;
-            };
-            while let Some(trans) = lexicon.take_non_epsilons(pos, sym) {
+            for trans in lexicon.transitions(node_state, sym) {
                 try_advance(lexicon, sym, trans, lemma_idx, weight, depth, ws);
-                pos = pos.incr();
             }
         }
     }

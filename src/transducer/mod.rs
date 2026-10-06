@@ -404,6 +404,13 @@ pub trait Transducer: Sized {
     /// file extension.
     const FILE_EXT: &'static str;
 
+    /// Whether the cursor API (`next`, `take_epsilons_and_flags`,
+    /// `take_non_epsilons`) walks this transducer's arcs. The suggestion
+    /// search walks a lexicon that has it the way it always has, and one
+    /// that has not through [`free_arcs`](Self::free_arcs) and
+    /// [`transitions`](Self::transitions).
+    const CURSOR: bool = true;
+
     /// get transducer's alphabet.
     fn alphabet(&self) -> &TransducerAlphabet;
     /// get transducer's alphabet as mutable reference.
@@ -504,6 +511,66 @@ pub trait Transducer: Sized {
 
             next = next.incr();
         }
+    }
+
+    /// The epsilon and flag diacritic arcs leaving `state`, in the order the
+    /// transducer stores them, each as its input symbol and the transition
+    /// the search takes.
+    ///
+    /// The default implementation walks the cursor API, exactly as the
+    /// lexicon walk always has; a format without that cursor overrides it.
+    #[inline(always)]
+    fn free_arcs(
+        &self,
+        state: TransitionTableIndex,
+    ) -> impl Iterator<Item = (SymbolNumber, SymbolTransition)> + '_ {
+        let mut next = if self.has_epsilons_or_flags(state.incr()) {
+            self.next(state, SymbolNumber::ZERO)
+        } else {
+            None
+        };
+        std::iter::from_fn(move || {
+            loop {
+                let at = next?;
+                let Some(transition) = self.take_epsilons_and_flags(at) else {
+                    next = None;
+                    return None;
+                };
+                next = Some(at.incr());
+                if let Some(input) = self.transition_input_symbol(at) {
+                    return Some((input, transition));
+                }
+            }
+        })
+    }
+
+    /// The arcs leaving `state` on the input symbol `input`, neither epsilon
+    /// nor a flag diacritic, in the order the transducer stores them.
+    ///
+    /// The caller has already found some with
+    /// [`has_transitions`](Self::has_transitions), which the cursor API needs
+    /// asked first. The default implementation walks that cursor, exactly as
+    /// the lexicon walk always has; a format without it overrides this.
+    #[inline(always)]
+    fn transitions(
+        &self,
+        state: TransitionTableIndex,
+        input: SymbolNumber,
+    ) -> impl Iterator<Item = SymbolTransition> + '_ {
+        let mut next = self.next(state, input);
+        std::iter::from_fn(move || {
+            let at = next?;
+            match self.take_non_epsilons(at, input) {
+                Some(transition) => {
+                    next = Some(at.incr());
+                    Some(transition)
+                }
+                None => {
+                    next = None;
+                    None
+                }
+            }
+        })
     }
 
     /// Like [`for_each_arc`](Self::for_each_arc), but a group of arcs that
