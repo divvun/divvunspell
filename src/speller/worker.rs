@@ -7,6 +7,7 @@ use std::sync::Arc;
 use super::subset::{MutatorSubsets, SubsetStats};
 use super::{HfstSpeller, OutputMode, SpellerConfig};
 use crate::speller::suggestion::{Suggestion, WeightDetails};
+use crate::transducer::symbol_transition::SymbolTransition;
 use crate::transducer::tree_node::{NodeTables, TreeNode};
 use crate::transducer::{ArcGroup, SymbolSet, Transducer};
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
@@ -577,6 +578,13 @@ where
     ) {
         let lexicon = self.speller.lexicon();
 
+        if !U::CURSOR {
+            for (sym, transition) in lexicon.free_arcs(next_node.lexicon_state) {
+                self.lexicon_free_arc(tables, max_weight, next_node, sym, transition, output_nodes);
+            }
+            return;
+        }
+
         if !lexicon.has_epsilons_or_flags(next_node.lexicon_state.incr()) {
             return;
         }
@@ -619,6 +627,41 @@ where
             }
 
             next = next.incr();
+        }
+    }
+
+    /// What the search does with one free lexicon arc, for a lexicon walked
+    /// through [`Transducer::free_arcs`]; the cursor walk in
+    /// [`lexicon_epsilons`](Self::lexicon_epsilons) does the same in place.
+    #[inline(always)]
+    fn lexicon_free_arc(
+        &self,
+        tables: &NodeTables,
+        max_weight: Weight,
+        next_node: &TreeNode,
+        sym: SymbolNumber,
+        transition: SymbolTransition,
+        output_nodes: &mut Vec<TreeNode>,
+    ) {
+        let transition_weight = transition.weight().expect("a lexicon arc has a weight");
+
+        if sym == SymbolNumber::ZERO {
+            if self.is_under_weight_limit(max_weight, next_node.weight() + transition_weight) {
+                let new_node = match self.output_mode {
+                    OutputMode::WithoutTags => {
+                        next_node.update_lexicon(tables, transition.clone_with_epsilon_symbol())
+                    }
+                    OutputMode::WithTags => next_node.update_lexicon(tables, transition),
+                };
+                output_nodes.push(new_node);
+            }
+        } else if let Some(op) = self.speller.flag_operation(sym) {
+            if !self.is_under_weight_limit(max_weight, transition_weight) {
+                return;
+            }
+            if let Some(applied_node) = next_node.apply_operation(tables, op, &transition) {
+                output_nodes.push(applied_node);
+            }
         }
     }
 
@@ -916,6 +959,25 @@ where
     ) {
         let lexicon = self.speller.lexicon();
         let identity = lexicon.alphabet().identity();
+
+        if !U::CURSOR {
+            for transition in lexicon.transitions(next_node.lexicon_state, input_sym) {
+                self.lexicon_arc(
+                    tables,
+                    max_weight,
+                    next_node,
+                    input_sym,
+                    identity,
+                    transition,
+                    mutator_state,
+                    mutator_weight,
+                    input_increment,
+                    output_nodes,
+                );
+            }
+            return;
+        }
+
         let mut next = lexicon.next(next_node.lexicon_state, input_sym).unwrap();
 
         // TODO: Potential infinite loop!
@@ -961,6 +1023,53 @@ where
 
             next = next.incr();
         }
+    }
+
+    /// What the search does with one lexicon arc on `input_sym`, for a
+    /// lexicon walked through [`Transducer::transitions`]; the cursor walk in
+    /// [`queue_lexicon_arcs`](Self::queue_lexicon_arcs) does the same in
+    /// place.
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    fn lexicon_arc(
+        &self,
+        tables: &NodeTables,
+        max_weight: Weight,
+        next_node: &TreeNode,
+        input_sym: SymbolNumber,
+        identity: Option<SymbolNumber>,
+        transition: SymbolTransition,
+        mutator_state: TransitionTableIndex,
+        mutator_weight: Weight,
+        input_increment: i16,
+        output_nodes: &mut Vec<TreeNode>,
+    ) {
+        let Some(mut sym) = transition.symbol() else {
+            return;
+        };
+        if identity == Some(sym) {
+            sym = self.input[next_node.input_state.0 as usize];
+        }
+        let lexicon_weight = transition.weight().expect("a lexicon arc has a weight");
+        if !self.is_under_weight_limit(
+            max_weight,
+            next_node.weight() + lexicon_weight + mutator_weight,
+        ) {
+            return;
+        }
+        let output = match self.output_mode {
+            OutputMode::WithoutTags => input_sym,
+            OutputMode::WithTags => sym,
+        };
+        output_nodes.push(next_node.update(
+            tables,
+            output,
+            Some(next_node.input_state.incr(input_increment as u32)),
+            mutator_state,
+            transition.target().expect("a lexicon arc has a target"),
+            lexicon_weight + mutator_weight,
+            mutator_weight,
+        ));
     }
 
     /// Queue the lexicon arcs an `@_UNKNOWN_@` on the mutator's *output* tape
