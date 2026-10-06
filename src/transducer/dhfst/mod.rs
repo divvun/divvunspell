@@ -48,8 +48,7 @@
 //!
 //! A reader refuses a type it does not know, naming the number, a version it
 //! does not read, and a reserved byte that is not zero. This module reads and
-//! writes type 1. The layout of an acceptor from byte 8 on is not defined
-//! here.
+//! writes type 1; [`acceptor`] reads type 2 and documents its layout.
 //!
 //! # Error model layout (type 1, version 1)
 //!
@@ -113,6 +112,9 @@ use crate::transducer::{
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use crate::vfs::{self, Filesystem};
 
+pub mod acceptor;
+#[cfg(any(test, feature = "dhfst-writer"))]
+pub mod acceptor_writer;
 pub(crate) mod stage;
 #[cfg(any(test, feature = "dhfst-writer"))]
 pub mod writer;
@@ -1702,5 +1704,7 @@ impl<F: vfs::File> TransducerLoader<F> for DhfstTransducer {
     }
 }
 
+#[cfg(test)]
+mod acceptor_tests;
 #[cfg(test)]
 mod tests;
