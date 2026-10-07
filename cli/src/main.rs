@@ -296,10 +296,20 @@ fn run(
         }
     }
 }
+/// The version, with the build date and git revision `build.rs` stamps in.
+const VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    " (",
+    env!("DIVVUNSPELL_BUILD_DATE"),
+    ", ",
+    env!("DIVVUNSPELL_BUILD_REV"),
+    ")"
+);
+
 #[derive(Debug, Parser)]
 #[command(
     name = "divvunspell",
-    version,
+    version = VERSION,
     about = "Spell checking tool for ZHFST/BHFST spellers"
 )]
 struct Args {
