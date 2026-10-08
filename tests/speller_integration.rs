@@ -3068,6 +3068,54 @@ fn test_initial_case_corrects_a_mistyped_capital() {
     assert!(suggestion_values(&s, "Kat", &off).is_empty());
 }
 
+/// Lexicon with letters capitalised inside the word (`aBc`, as in iPod) and
+/// a hyphenated form with a capitalised first part (`AB-ba`, as in
+/// NAV-bagádallen). The identity mutator can reach neither from lower case.
+fn mixed_case_speller() -> Arc<HfstSpeller<MmapThfstTransducer, MmapThfstTransducer>> {
+    let dir = tempfile::tempdir().expect("temp dir for the mixed-case fixture");
+    let root = dir.keep();
+    let lexicon_dir = root.join("lexicon.thfst");
+    let mutator_dir = root.join("mutator.thfst");
+    std::fs::create_dir_all(&lexicon_dir).expect("create lexicon dir");
+    std::fs::create_dir_all(&mutator_dir).expect("create mutator dir");
+    let symbols = &["@_EPSILON_SYMBOL_@", "a", "b", "c", "A", "B", "C", "-"];
+    build_trie_lexicon(&lexicon_dir, symbols, &[("aBc", 1.0), ("AB-ba", 2.0)]);
+    build_boundary_identity_mutator(&mutator_dir, symbols);
+    load_speller(&lexicon_dir, &mutator_dir)
+}
+
+#[test]
+fn test_case_probe_finds_capitals_inside_the_word() {
+    let s = mixed_case_speller();
+    let config = SpellerConfig {
+        reweight: None,
+        ..SpellerConfig::default()
+    };
+
+    // Lexicon 1, case 10 (twice the default middle surcharge).
+    assert_eq!(
+        suggestion_values(&s, "abc", &config),
+        vec![("aBc".to_string(), 11.0)]
+    );
+    assert!(!s.clone().is_correct_with_config("abc", &config));
+}
+
+#[test]
+fn test_boundary_edit_takes_the_lexicons_casing() {
+    let s = mixed_case_speller();
+    let config = SpellerConfig {
+        recase: true,
+        boundary_edit_weight: Some(Weight(10.0)),
+        ..raw_config()
+    };
+
+    // ab-ba is no word, but AB-ba is: lexicon 2, separator 10, and 10 for
+    // the capitals the input does not have. A capitalised input keeps the
+    // lexicon's capitals rather than becoming Ab-ba.
+    assert_suggests_at_weight(&s, "abba", "AB-ba", 22.0, &config);
+    assert_suggests_at_weight(&s, "Abba", "AB-ba", 22.0, &config);
+}
+
 // `max_weight` is enforced during the search, on weights that have not been
 // reweighted yet. Without a second pass a penalty can push a returned
 // suggestion past the one limit a caller can rely on.

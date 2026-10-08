@@ -205,6 +205,52 @@ pub enum CaseMutation {
     None,
 }
 
+/// A suggestion as the input's casing asks for it.
+///
+/// The case variants of an input are searched in lower case, so a suggestion
+/// usually comes back in the lexicon's lower case and takes the input's
+/// capitals here. A form the lexicon spells with capitals of its own keeps
+/// them: capitalising `iPod` gives `IPod`, and upper-casing `NSR:a` for a
+/// slipped shift key gives `NSR:A`, neither of which is a word. Only input
+/// typed entirely in capitals overrides them, and a first capital still goes
+/// on a compound whose own capitals come later (`stuora-Britannias`).
+pub fn recase_form(form: &str, typed: &str, mutation: CaseMutation) -> SmolStr {
+    let own_capitals = form.chars().any(char::is_uppercase);
+    let first_part_capitals = form
+        .chars()
+        .take_while(|c| c.is_alphanumeric())
+        .any(char::is_uppercase);
+    match mutation {
+        CaseMutation::AllCaps if !own_capitals || is_strictly_all_caps(typed) => upper_case(form),
+        CaseMutation::FirstCaps if !first_part_capitals => upper_first(form),
+        _ => SmolStr::from(form),
+    }
+}
+
+/// How many letters of `form` differ from `typed` in case alone.
+pub fn case_changes(form: &str, typed: &str) -> usize {
+    form.chars()
+        .zip(typed.chars())
+        .filter(|(f, t)| f != t && f.to_lowercase().eq(t.to_lowercase()))
+        .count()
+}
+
+/// How many of the parts of `form` between separators (`DNA-prosessajda` has
+/// two) differ from `typed` in case.
+pub fn case_changed_parts(form: &str, typed: &str) -> usize {
+    let mut parts = 0;
+    let mut changed = false;
+    for (f, t) in form.chars().zip(typed.chars()) {
+        if !f.is_alphanumeric() {
+            parts += usize::from(changed);
+            changed = false;
+        } else if f != t && f.to_lowercase().eq(t.to_lowercase()) {
+            changed = true;
+        }
+    }
+    parts + usize::from(changed)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CaseMode {
     FirstResults,
@@ -310,6 +356,37 @@ mod tests {
         // println!("{:?}", word_variants(&a, "Giella"));
         // println!("{:?}", word_variants(&a, "abc"));
         // println!("{:?}", word_variants(&a, "$GIELLA$"));
+    }
+
+    #[test]
+    fn recasing_keeps_the_lexicons_own_capitals() {
+        use CaseMutation::*;
+        assert_eq!(recase_form("girji", "Girje", FirstCaps), "Girji");
+        assert_eq!(recase_form("girji", "GIRJE", AllCaps), "GIRJI");
+        assert_eq!(recase_form("girji", "girje", None), "girji");
+        // Capitalising iPod, or upper-casing NSR:a for one slipped shift key,
+        // spells something the lexicon does not have.
+        assert_eq!(recase_form("iPod", "Ipod", FirstCaps), "iPod");
+        assert_eq!(recase_form("NSR:a", "NSRa", AllCaps), "NSR:a");
+        // Input typed entirely in capitals still gets capitals throughout.
+        assert_eq!(recase_form("NSR:a", "NSRA", AllCaps), "NSR:A");
+        // A compound whose capitals start in a later part still takes one.
+        assert_eq!(
+            recase_form("stuora-Britannias", "Stuorabritannias", FirstCaps),
+            "Stuora-Britannias"
+        );
+    }
+
+    #[test]
+    fn case_changes_count_letters_and_parts() {
+        assert_eq!(case_changes("DNA-prosessajda", "dna-prosessajda"), 3);
+        assert_eq!(case_changed_parts("DNA-prosessajda", "dna-prosessajda"), 1);
+        assert_eq!(
+            case_changed_parts("Gasska-Nordlánda", "gasska-nordlánda"),
+            2
+        );
+        assert_eq!(case_changed_parts("iPod", "ipod"), 1);
+        assert_eq!(case_changed_parts("girji", "girji"), 0);
     }
 
     #[test]

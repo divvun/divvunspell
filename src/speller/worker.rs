@@ -1465,6 +1465,77 @@ where
         best
     }
 
+    /// Every lexicon form that spells the input with any of its letters in
+    /// the other case, with the cheapest weight of each, in the lexicon's own
+    /// case. The input must be in the lexicon alphabet.
+    pub(crate) fn caseless_forms(&self) -> Vec<(SmolStr, Weight)> {
+        debug_assert!(self.input_is_lexicon_alphabet);
+        let tables = NodeTables::new(self.state_size());
+        let mut nodes = speller_start_node();
+        let mut forms: HashMap<SmolStr, Weight> = HashMap::new();
+
+        while let Some(next_node) = nodes.pop() {
+            if next_node.input_state.0 as usize == self.input.len()
+                && self.speller.lexicon().is_final(next_node.lexicon_state)
+            {
+                let form = self
+                    .speller
+                    .lexicon()
+                    .alphabet()
+                    .string_from_symbols(&tables.symbols(next_node.string));
+                let weight = next_node.weight()
+                    + self
+                        .speller
+                        .lexicon()
+                        .final_weight(next_node.lexicon_state)
+                        .expect("a final lexicon state has a final weight");
+                let best = forms.entry(form).or_insert(weight);
+                if *best > weight {
+                    *best = weight;
+                }
+            }
+
+            self.lexicon_epsilons(&tables, Weight::INFINITE, &next_node, &mut nodes);
+            self.lexicon_consume_caseless(&tables, &next_node, &mut nodes);
+        }
+
+        forms.into_iter().collect()
+    }
+
+    /// [`lexicon_consume`](Self::lexicon_consume), taking the input letter in
+    /// either case.
+    fn lexicon_consume_caseless(
+        &self,
+        tables: &NodeTables,
+        next_node: &TreeNode,
+        output_nodes: &mut Vec<TreeNode>,
+    ) {
+        let Some(&typed) = self.input.get(next_node.input_state.0 as usize) else {
+            return;
+        };
+        let lexicon = self.speller.lexicon();
+        let lookup = next_node.lexicon_state.incr();
+        let other = self
+            .speller
+            .upper_of(typed)
+            .or_else(|| self.speller.lower_of(typed));
+
+        for symbol in std::iter::once(typed).chain(other) {
+            if lexicon.has_transitions(lookup, Some(symbol)) {
+                self.queue_lexicon_arcs(
+                    tables,
+                    Weight::INFINITE,
+                    next_node,
+                    symbol,
+                    next_node.mutator_state,
+                    Weight::ZERO,
+                    1,
+                    output_nodes,
+                );
+            }
+        }
+    }
+
     pub(crate) fn analyze(&self) -> Vec<Suggestion> {
         tracing::trace!("Beginning analyze");
         let tables = NodeTables::new(self.state_size());

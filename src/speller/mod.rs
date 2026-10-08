@@ -11,7 +11,6 @@ use std::f32;
 use std::sync::Arc;
 
 use hashbrown::{HashMap, HashSet};
-use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 use unic_emoji_char::is_emoji;
@@ -21,8 +20,8 @@ use unic_ucd_category::GeneralCategory;
 use self::worker::SpellerWorker;
 use crate::speller::suggestion::{Suggestion, WeightDetails};
 use crate::tokenizer::case_handling::{
-    CaseHandler, CaseMutation, is_all_lower, starts_upper_case, upper_case, upper_first,
-    word_variants,
+    CaseHandler, CaseMutation, case_changed_parts, case_changes, is_all_lower, recase_form,
+    starts_upper_case, upper_case, upper_first, word_variants,
 };
 use crate::transducer::Transducer;
 use crate::types::{FlagDiacriticOperation, SymbolNumber, Weight};
@@ -517,20 +516,17 @@ impl ReweightContext {
 /// values and unpenalised totals for hyphen/colon-containing inputs (#65).
 fn apply_first_results_reweight(
     suggestions: &mut [Suggestion],
+    typed: &str,
     mutation: crate::tokenizer::case_handling::CaseMutation,
     input_lower: &[&str],
     input_first: Option<&str>,
     reweight: Option<&ReweightingConfig>,
     dl_buf: &mut Vec<usize>,
 ) {
-    use crate::tokenizer::case_handling::{CaseMutation, upper_case, upper_first};
+    use crate::tokenizer::case_handling::recase_form;
 
     for sugg in suggestions.iter_mut() {
-        match mutation {
-            CaseMutation::FirstCaps => sugg.value = upper_first(sugg.value()),
-            CaseMutation::AllCaps => sugg.value = upper_case(sugg.value()),
-            CaseMutation::None => {}
-        }
+        sugg.value = recase_form(sugg.value(), typed, mutation);
 
         let penalties = compute_reweight_penalties(
             input_lower,
@@ -1062,6 +1058,24 @@ fn recase_split_half(accepted: SmolStr, typed: &str, mutation: CaseMutation) -> 
     }
 }
 
+/// What a correction found by a direct lexicon walk pays for changing case.
+///
+/// The walk bypasses the error model, but correcting case is still an edit.
+/// Charge twice the configured middle surcharge; the default is 10, matching an
+/// ordinary one-grapheme substitution in the standard error model. Retain that
+/// default raw charge when positional reweighting itself is disabled.
+fn direct_case_weight(config: &SpellerConfig) -> Weight {
+    Weight(
+        config
+            .reweight
+            .as_ref()
+            .map_or(ReweightingConfig::default_const().mid_penalty, |reweight| {
+                reweight.mid_penalty
+            })
+            * 2.0,
+    )
+}
+
 /// Fold corrections produced outside the error-model search into its
 /// suggestions, then re-apply the order and limits.
 ///
@@ -1425,27 +1439,36 @@ where
         .collect()
 }
 
-/// The upper-case counterpart of every single-letter lower-case lexicon symbol
-/// that has one in the lexicon, indexed by lexicon symbol.
-fn build_upper_of<U>(lexicon: &U) -> Vec<Option<SymbolNumber>>
+/// The other-case counterpart of every single-letter lexicon symbol that has
+/// one in the lexicon, indexed by lexicon symbol: upper case for a lower-case
+/// letter, lower case for an upper-case one.
+fn build_case_maps<U>(lexicon: &U) -> (Vec<Option<SymbolNumber>>, Vec<Option<SymbolNumber>>)
 where
     U: Transducer,
 {
     let alphabet = lexicon.alphabet();
     let lookup = alphabet.string_to_symbol();
-    alphabet
-        .key_table()
-        .iter()
-        .map(|key| {
-            let mut chars = key.chars();
-            let c = chars.next()?;
-            if chars.next().is_some() || !c.is_lowercase() {
-                return None;
-            }
-            let upper: String = c.to_uppercase().collect();
-            lookup.get(upper.as_str()).copied()
-        })
-        .collect()
+    let counterpart = |key: &SmolStr, lower: bool| {
+        let mut chars = key.chars();
+        let c = chars.next()?;
+        let cased = match lower {
+            true => c.is_lowercase(),
+            false => c.is_uppercase(),
+        };
+        if chars.next().is_some() || !cased {
+            return None;
+        }
+        let other: String = match lower {
+            true => c.to_uppercase().collect(),
+            false => c.to_lowercase().collect(),
+        };
+        lookup.get(other.as_str()).copied()
+    };
+    let keys = alphabet.key_table();
+    (
+        keys.iter().map(|key| counterpart(key, true)).collect(),
+        keys.iter().map(|key| counterpart(key, false)).collect(),
+    )
 }
 
 /// A determinisation warmed up past this many subsets is dropped rather than
@@ -1474,6 +1497,9 @@ where
     /// The upper-case counterpart of each lexicon symbol that is a lower-case
     /// letter, where the lexicon has one.
     upper_of: Vec<Option<SymbolNumber>>,
+    /// The lower-case counterpart of each lexicon symbol that is an upper-case
+    /// letter, where the lexicon has one.
+    lower_of: Vec<Option<SymbolNumber>>,
     /// The lexicon's flag diacritic operations by symbol, for a lookup by
     /// index on every flag arc the search crosses.
     flag_operations: Vec<Option<FlagDiacriticOperation>>,
@@ -1520,7 +1546,7 @@ where
     ) -> Arc<HfstSpeller<T, U>> {
         let alphabet_translator = lexicon.alphabet_mut().create_translator_from(&mutator);
         let unknown_output_domain = build_unknown_output_domain(&lexicon, &alphabet_translator);
-        let upper_of = build_upper_of(&lexicon);
+        let (upper_of, lower_of) = build_case_maps(&lexicon);
         let operations = lexicon.alphabet().operations();
         let mut flag_operations = vec![
             None;
@@ -1540,6 +1566,7 @@ where
             alphabet_translator,
             unknown_output_domain,
             upper_of,
+            lower_of,
             flag_operations,
             bundled_config,
             subset_pool: parking_lot::Mutex::new(Vec::new()),
@@ -1682,7 +1709,8 @@ where
         out
     }
 
-    /// Exact title-case and all-caps lexicon matches for lower-case input.
+    /// Lexicon forms that spell a lower-case input with some letters in upper
+    /// case: title case and all caps, but also `iPod` or `IKT-vædtsaga`.
     ///
     /// These candidates bypass the error model because a model is not required
     /// to contain Unicode case arcs. The normal positional reweighting prices
@@ -1692,27 +1720,16 @@ where
         let input_lower: Vec<&str> = Graphemes::new(&input_lower_str).collect();
         let input_first = Graphemes::new(word).next();
         let mut dl_buf = Vec::new();
-        // A direct lexicon walk bypasses the error model, but correcting case
-        // is still an edit. Charge twice the configured middle surcharge; the
-        // default is 10, matching an ordinary one-grapheme substitution in the
-        // standard error model. Retain that default raw charge when positional
-        // reweighting itself is disabled.
-        let case_weight = Weight(
-            config
-                .reweight
-                .as_ref()
-                .map_or(ReweightingConfig::default_const().mid_penalty, |reweight| {
-                    reweight.mid_penalty
-                })
-                * 2.0,
-        );
+        let case_weight = direct_case_weight(config);
 
-        [upper_first(word), upper_case(word)]
+        self.clone()
+            .caseless_lexicon_forms(word, config)
             .into_iter()
-            .unique()
-            .filter(|variant| variant.as_str() != word)
-            .filter_map(|value| {
-                let lexicon_weight = self.clone().exact_lexicon_weight(&value, config)?;
+            .filter(|(value, _)| value.as_str() != word)
+            .map(|(value, lexicon_weight)| {
+                // One charge per part whose case changes: OSLO is one edit
+                // from oslo, GÁ-LBBE-NAHK-båvsåjt three.
+                let case_weight = Weight(case_weight.0 * case_changed_parts(&value, word) as f32);
                 let penalties = compute_reweight_penalties(
                     &input_lower,
                     input_first,
@@ -1743,7 +1760,7 @@ where
                     false => Suggestion::new(value, total_weight, completed),
                 };
 
-                Some(suggestion.with_lexicon_weight(lexicon_weight))
+                suggestion.with_lexicon_weight(lexicon_weight)
             })
             .collect()
     }
@@ -1772,23 +1789,43 @@ where
                 // inflections such as `NSR:a` intentionally mix upper- and
                 // lower-case; choosing a cheaper lower-case lexicon variant
                 // first and then applying AllCaps would turn it into `NSR:A`.
-                let (value, lexicon_weight) =
+                let (value, lexicon_weight, edit_weight) =
                     match self.clone().exact_lexicon_weight(&typed_value, config) {
-                        Some(weight) => (typed_value, weight),
+                        Some(weight) => (typed_value, weight, boundary_weight),
                         None => {
-                            let (accepted_value, weight) =
-                                self.clone().accepted_lexicon_weight(&typed_value, config)?;
-                            (
-                                recase_split_half(accepted_value, &typed_value, mutation),
-                                weight,
-                            )
+                            // The lexicon's own casing of the probe
+                            // (dna-prosessajda is DNA-prosessajda), changing as
+                            // few letters as it can, then cheapest. Each part
+                            // whose case the input's own casing does not
+                            // explain is another edit, and costs one.
+                            let plain =
+                                recase_form(&typed_value.to_lowercase(), &typed_value, mutation);
+                            let (value, weight) = self
+                                .clone()
+                                .caseless_lexicon_forms(&typed_value, config)
+                                .into_iter()
+                                .map(|(form, weight)| {
+                                    (recase_form(&form, &typed_value, mutation), weight)
+                                })
+                                .min_by(|a, b| {
+                                    case_changes(&a.0, &plain)
+                                        .cmp(&case_changes(&b.0, &plain))
+                                        .then(a.1.cmp(&b.1))
+                                        .then_with(|| a.0.cmp(&b.0))
+                                })?;
+                            let edit_weight = boundary_weight
+                                + Weight(
+                                    direct_case_weight(config).0
+                                        * case_changed_parts(&value, &plain) as f32,
+                                );
+                            (value, weight, edit_weight)
                         }
                     };
                 let penalties = compute_reweight_penalties(
                     &input_lower,
                     input_first,
                     &value,
-                    Some(boundary_weight),
+                    Some(edit_weight),
                     config.reweight.as_ref(),
                     &mut dl_buf,
                 );
@@ -1796,7 +1833,7 @@ where
                     .completion_marker
                     .as_ref()
                     .map(|marker| !value.ends_with(marker.as_str()));
-                let total_weight = lexicon_weight + boundary_weight + penalties.additional_weight;
+                let total_weight = lexicon_weight + edit_weight + penalties.additional_weight;
 
                 let suggestion = match config.verbose {
                     true => Suggestion::new_with_details(
@@ -1805,7 +1842,7 @@ where
                         completed,
                         WeightDetails {
                             lexicon_weight,
-                            mutator_weight: boundary_weight,
+                            mutator_weight: edit_weight,
                             reweight_start: penalties.start,
                             reweight_mid: penalties.mid,
                             reweight_end: penalties.end,
@@ -1920,6 +1957,22 @@ where
             .min_by_key(|(_, weight)| *weight)
     }
 
+    /// Every lexicon form that spells `word` with any of its letters in the
+    /// other case, in the lexicon's own case, with the cheapest weight of each.
+    fn caseless_lexicon_forms(
+        self: Arc<Self>,
+        word: &str,
+        config: &SpellerConfig,
+    ) -> Vec<(SmolStr, Weight)> {
+        SpellerWorker::new_lexicon_input(
+            self.clone(),
+            self.to_input_vec_lexicon(word),
+            config,
+            OutputMode::WithoutTags,
+        )
+        .caseless_forms()
+    }
+
     /// The cheapest lexicon-only path accepting `word` exactly as written.
     fn exact_lexicon_weight(self: Arc<Self>, word: &str, config: &SpellerConfig) -> Option<Weight> {
         let worker = SpellerWorker::new_lexicon_input(
@@ -1957,6 +2010,13 @@ where
     #[inline(always)]
     fn upper_of(&self, symbol: SymbolNumber) -> Option<SymbolNumber> {
         *self.upper_of.get(symbol.0 as usize)?
+    }
+
+    /// The lower-case counterpart of lexicon symbol `symbol`, if it is an
+    /// upper-case letter and the lexicon has one.
+    #[inline(always)]
+    fn lower_of(&self, symbol: SymbolNumber) -> Option<SymbolNumber> {
+        *self.lower_of.get(symbol.0 as usize)?
     }
 
     /// The symbols an `@_UNKNOWN_@` on the mutator's output tape stands for.
@@ -2059,15 +2119,7 @@ where
 
                         // Apply case mutation first (for output display),
                         // then calculate penalties using case-insensitive comparison below
-                        match mutation {
-                            CaseMutation::FirstCaps => {
-                                sugg.value = upper_first(sugg.value());
-                            }
-                            CaseMutation::AllCaps => {
-                                sugg.value = upper_case(sugg.value());
-                            }
-                            _ => {}
-                        }
+                        sugg.value = recase_form(sugg.value(), &original_input, mutation);
 
                         let ReweightPenalties {
                             start: penalty_start,
@@ -2155,6 +2207,7 @@ where
                         let mut suggestions = suggestions;
                         apply_first_results_reweight(
                             &mut suggestions,
+                            &original_input,
                             mutation,
                             &input_lower,
                             input_first,
@@ -2188,6 +2241,7 @@ where
                 if !suggestions.is_empty() {
                     apply_first_results_reweight(
                         &mut suggestions,
+                        &original_input,
                         mutation,
                         &input_lower,
                         input_first,
