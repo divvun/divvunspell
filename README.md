@@ -197,7 +197,8 @@ divvunspell accuracy -c config.json typos.tsv language.zhfst
   "recase": true,
   "completion-marker": null,
   "search-budget": null,
-  "boundary-edit-weight": null
+  "boundary-edit-weight": null,
+  "initial-case-weight": null
 }
 ```
 
@@ -214,6 +215,7 @@ divvunspell accuracy -c config.json typos.tsv language.zhfst
 - **`completion-marker`** (default: `null`): Marker used when suggesting incomplete word parts. Set to `null` to disable
 - **`search-budget`** (default: `null`): How many nodes the suggestion search may examine per word before it returns what it has found so far. `null` searches until the weight limits prune everything, which is exact but unbounded — a word with no correction near it can take seconds against a large error model. A number bounds the work instead: the search is best-first, so it spends the budget on the most promising candidates and a stop costs the dear tail of the results
 - **`boundary-edit-weight`** (default: `null`): When set, directly probe exact lexicon forms one inserted, deleted, or replaced non-leading separator away and charge this weight. This covers punctuation and compound boundaries that are outside the error model; `null` disables the probes
+- **`initial-case-weight`** (default: `null`): When set, the suggestion search may start a capitalised lexicon form from a lower-case letter, for this weight on top of the edits. That reaches a proper noun typed in lower case and misspelt besides (`skotlánda` → `Skottlánda`), and one whose first letter was mistyped (`Ufuohtá` → `Ofuohtá`), which an error model without upper-case letters cannot correct. `null` disables it
 
 **Bundling the configuration in an archive:** an archive can carry its own copy of exactly this JSON, so that every client loading it runs with the parameters the speller was tuned against rather than the library defaults:
 

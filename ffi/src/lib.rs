@@ -300,6 +300,8 @@ impl FromForeign<*const std::ffi::c_void, SpellerConfig> for SpellerConfigMarsha
             // Likewise opt-in and answer-changing; keep it off for the fixed
             // C ABI until a host asks to expose it.
             boundary_edit_weight: SpellerConfig::default().boundary_edit_weight,
+            // Likewise.
+            initial_case_weight: SpellerConfig::default().initial_case_weight,
             verbose: config.verbose != 0,
         };
 

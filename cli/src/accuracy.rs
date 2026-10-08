@@ -85,6 +85,7 @@ static CFG: SpellerConfig = SpellerConfig {
     search_budget: None,
     word_split_weight: None,
     boundary_edit_weight: None,
+    initial_case_weight: None,
     verbose: false,
 };
 

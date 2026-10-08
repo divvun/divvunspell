@@ -820,6 +820,19 @@ pub struct SpellerConfig {
     /// exclude from its alphabet. `None`, the default, switches it off.
     #[serde(default = "default_boundary_edit_weight")]
     pub boundary_edit_weight: Option<Weight>,
+    /// what to charge for starting a capitalised lexicon form from a
+    /// lower-case letter
+    ///
+    /// `Some(w)` lets the suggestion search, before it has written anything,
+    /// match a lower-case letter from the error model against the lexicon's
+    /// upper-case one, for `w` on top of the edits. That reaches a proper
+    /// noun typed in lower case and misspelt besides (`skotlánda` →
+    /// `Skottlánda`), and, through the lower-cased variant of a capitalised
+    /// input, one whose first letter was mistyped (`Ufuohtá` → `Ofuohtá`):
+    /// corrections an error model without upper-case letters cannot make.
+    /// `None`, the default, switches it off.
+    #[serde(default = "default_initial_case_weight")]
+    pub initial_case_weight: Option<Weight>,
     /// whether to output detailed weight information (not serialized)
     #[serde(skip)]
     pub verbose: bool,
@@ -840,6 +853,7 @@ impl SpellerConfig {
     /// * search_budget = None
     /// * word_split_weight = None
     /// * boundary_edit_weight = None
+    /// * initial_case_weight = None
     /// * verbose = false
     pub const fn default() -> SpellerConfig {
         SpellerConfig {
@@ -855,6 +869,7 @@ impl SpellerConfig {
             search_budget: default_search_budget(),
             word_split_weight: default_word_split_weight(),
             boundary_edit_weight: default_boundary_edit_weight(),
+            initial_case_weight: default_initial_case_weight(),
             verbose: false,
         }
     }
@@ -919,6 +934,10 @@ const fn default_word_split_weight() -> Option<Weight> {
 }
 
 const fn default_boundary_edit_weight() -> Option<Weight> {
+    None
+}
+
+const fn default_initial_case_weight() -> Option<Weight> {
     None
 }
 
@@ -1406,6 +1425,29 @@ where
         .collect()
 }
 
+/// The upper-case counterpart of every single-letter lower-case lexicon symbol
+/// that has one in the lexicon, indexed by lexicon symbol.
+fn build_upper_of<U>(lexicon: &U) -> Vec<Option<SymbolNumber>>
+where
+    U: Transducer,
+{
+    let alphabet = lexicon.alphabet();
+    let lookup = alphabet.string_to_symbol();
+    alphabet
+        .key_table()
+        .iter()
+        .map(|key| {
+            let mut chars = key.chars();
+            let c = chars.next()?;
+            if chars.next().is_some() || !c.is_lowercase() {
+                return None;
+            }
+            let upper: String = c.to_uppercase().collect();
+            lookup.get(upper.as_str()).copied()
+        })
+        .collect()
+}
+
 /// A determinisation warmed up past this many subsets is dropped rather than
 /// handed back to the pool.
 ///
@@ -1429,6 +1471,9 @@ where
     lexicon: U,
     alphabet_translator: Vec<SymbolNumber>,
     unknown_output_domain: Vec<SymbolNumber>,
+    /// The upper-case counterpart of each lexicon symbol that is a lower-case
+    /// letter, where the lexicon has one.
+    upper_of: Vec<Option<SymbolNumber>>,
     /// The lexicon's flag diacritic operations by symbol, for a lookup by
     /// index on every flag arc the search crosses.
     flag_operations: Vec<Option<FlagDiacriticOperation>>,
@@ -1475,6 +1520,7 @@ where
     ) -> Arc<HfstSpeller<T, U>> {
         let alphabet_translator = lexicon.alphabet_mut().create_translator_from(&mutator);
         let unknown_output_domain = build_unknown_output_domain(&lexicon, &alphabet_translator);
+        let upper_of = build_upper_of(&lexicon);
         let operations = lexicon.alphabet().operations();
         let mut flag_operations = vec![
             None;
@@ -1493,6 +1539,7 @@ where
             lexicon,
             alphabet_translator,
             unknown_output_domain,
+            upper_of,
             flag_operations,
             bundled_config,
             subset_pool: parking_lot::Mutex::new(Vec::new()),
@@ -1903,6 +1950,13 @@ where
     #[inline(always)]
     fn flag_operation(&self, symbol: SymbolNumber) -> Option<&FlagDiacriticOperation> {
         self.flag_operations.get(symbol.0 as usize)?.as_ref()
+    }
+
+    /// The upper-case counterpart of lexicon symbol `symbol`, if it is a
+    /// lower-case letter and the lexicon has one.
+    #[inline(always)]
+    fn upper_of(&self, symbol: SymbolNumber) -> Option<SymbolNumber> {
+        *self.upper_of.get(symbol.0 as usize)?
     }
 
     /// The symbols an `@_UNKNOWN_@` on the mutator's output tape stands for.

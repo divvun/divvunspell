@@ -833,6 +833,26 @@ where
 
         let lookup = next_node.lexicon_state.incr();
 
+        // Nothing written yet: a lower-case letter may also start a
+        // capitalised lexicon form, for the configured case weight.
+        if let Some(case_weight) = self.config.initial_case_weight
+            && next_node.string == TreeNode::empty().string
+            && matches!(self.output_mode, OutputMode::WithoutTags)
+            && let Some(upper) = self.speller.upper_of(trans_sym)
+            && lexicon.has_transitions(lookup, Some(upper))
+        {
+            self.queue_lexicon_arcs(
+                tables,
+                max_weight,
+                next_node,
+                upper,
+                target,
+                weight + case_weight,
+                input_increment,
+                output_nodes,
+            );
+        }
+
         if !lexicon.has_transitions(lookup, Some(trans_sym)) {
             // No regular transitions for this: an input outside the lexicon's
             // original alphabet may still travel on unknown or identity.

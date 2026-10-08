@@ -3001,6 +3001,73 @@ fn test_direct_case_candidate_has_reweight_details() {
     assert_eq!(details.reweight_end, 0.0);
 }
 
+fn initial_case_speller() -> Arc<HfstSpeller<MmapThfstTransducer, MmapThfstTransducer>> {
+    let dir = tempfile::tempdir().expect("temp dir for the initial-case fixture");
+    let root = dir.keep();
+    let lexicon_dir = root.join("lexicon.thfst");
+    let mutator_dir = root.join("mutator.thfst");
+    std::fs::create_dir_all(&lexicon_dir).expect("create lexicon dir");
+    std::fs::create_dir_all(&mutator_dir).expect("create mutator dir");
+    build_case_lexicon(&lexicon_dir);
+    build_mutator(&mutator_dir);
+    load_speller(&lexicon_dir, &mutator_dir)
+}
+
+#[test]
+fn test_initial_case_is_off_by_default() {
+    let s = initial_case_speller();
+
+    assert_eq!(SpellerConfig::default().initial_case_weight, None);
+    // `kat` is one edit from `cat`, which the lexicon only has as `Cat`.
+    assert!(suggestion_values(&s, "kat", &raw_config()).is_empty());
+}
+
+#[test]
+fn test_initial_case_reaches_a_capitalised_form_through_an_edit() {
+    let s = initial_case_speller();
+    let config = SpellerConfig {
+        initial_case_weight: Some(Weight(3.0)),
+        ..raw_config()
+    };
+
+    // Lexicon 2, k -> c 5, case 3.
+    assert_eq!(
+        suggestion_values(&s, "kat", &config),
+        vec![("Cat".to_string(), 10.0)]
+    );
+    assert!(
+        !s.clone().is_correct_with_config("cat", &config),
+        "the case weight must not make a lower-case proper noun correct"
+    );
+    assert!(
+        s.clone()
+            .analyze_output_with_config("kat", &config)
+            .is_empty(),
+        "tagged analysis output must not change"
+    );
+}
+
+#[test]
+fn test_initial_case_corrects_a_mistyped_capital() {
+    let s = initial_case_speller();
+    let config = SpellerConfig {
+        initial_case_weight: Some(Weight(3.0)),
+        recase: true,
+        ..raw_config()
+    };
+
+    // `Kat` is searched as typed and as `kat`; only the lower-case variant can
+    // edit the first letter, and the case weight gets it to `Cat`.
+    let suggs = suggestion_values(&s, "Kat", &config);
+    assert_eq!(suggs.first(), Some(&("Cat".to_string(), 10.0)), "{suggs:?}");
+
+    let off = SpellerConfig {
+        initial_case_weight: None,
+        ..config
+    };
+    assert!(suggestion_values(&s, "Kat", &off).is_empty());
+}
+
 // `max_weight` is enforced during the search, on weights that have not been
 // reweighted yet. Without a second pass a penalty can push a returned
 // suggestion past the one limit a caller can rely on.
