@@ -1,9 +1,13 @@
 //! Dioxus web viewer for divvunspell accuracy reports.
 //!
-//! Fetches `report.json` (served alongside the page, e.g. on GitHub Pages) and
+//! Fetches `speller-accuracy.json.gz` (served alongside the page, e.g. on GitHub
+//! Pages, or from the repo's `generated/docs-data` branch) and
 //! renders the speller configuration, performance/classification/suggestion
-//! statistics, and a sortable, colour-coded results table. This is a Rust/WASM
-//! reimplementation of the former Svelte app — no Node toolchain required.
+//! statistics, and a sortable, filterable, paged, colour-coded results table.
+//! This is a Rust/WASM reimplementation of the former Svelte app — no Node
+//! toolchain required.
+
+use std::rc::Rc;
 
 use dioxus::prelude::*;
 use serde::Deserialize;
@@ -61,12 +65,6 @@ struct AccuracyResult {
     position: Option<usize>,
     time: Time,
     false_accept: bool,
-    /// Stable row identity, independent of `input` (which is not guaranteed
-    /// unique — the same typo can appear more than once in a corpus) and of
-    /// sort order. Assigned after deserializing; must be used as the
-    /// `ResultRow` key so Dioxus's keyed diffing survives re-sorts.
-    #[serde(skip, default)]
-    id: usize,
 }
 
 #[derive(Deserialize, Clone, PartialEq)]
@@ -129,6 +127,18 @@ fn classify(r: &AccuracyResult) -> Class {
         Class::Fp
     } else {
         Class::Tn
+    }
+}
+
+/// The four classes in display order; `class_index` indexes into this.
+const CLASSES: [Class; 4] = [Class::Tp, Class::Fn_, Class::Tn, Class::Fp];
+
+fn class_index(c: Class) -> usize {
+    match c {
+        Class::Tp => 0,
+        Class::Fn_ => 1,
+        Class::Tn => 2,
+        Class::Fp => 3,
     }
 }
 
@@ -444,6 +454,103 @@ fn compute_stats(report: &Report) -> Stats {
 }
 
 // ===========================================================================
+// Loaded report + the derived row view
+// ===========================================================================
+
+/// A report as the UI holds it: stats computed once, results stored once,
+/// plus per-row data for filtering. Everything downstream (sorting, filtering,
+/// paging) works on indices into `results`, so no result is ever copied.
+struct LoadedReport {
+    stats: Stats,
+    results: Vec<AccuracyResult>,
+    /// Lowercased `input` and `expected`, newline-joined, per result: what the
+    /// search box matches against, so typing doesn't re-lowercase every row.
+    search_keys: Vec<String>,
+    /// Number of results per classification, indexed by `class_index`.
+    class_counts: [usize; 4],
+}
+
+impl LoadedReport {
+    fn new(report: Report) -> Self {
+        let stats = compute_stats(&report);
+        let mut class_counts = [0; 4];
+        let search_keys = report
+            .results
+            .iter()
+            .map(|r| {
+                class_counts[class_index(classify(r))] += 1;
+                let mut key = r.input.to_lowercase();
+                if let Some(exp) = &r.expected {
+                    key.push('\n');
+                    key.push_str(&exp.to_lowercase());
+                }
+                key
+            })
+            .collect();
+        Self {
+            stats,
+            results: report.results,
+            search_keys,
+            class_counts,
+        }
+    }
+}
+
+/// Shared handle to the loaded report. Cloning it (e.g. into every row's
+/// props) copies a pointer, and props diffing compares pointers rather than
+/// walking every suggestion of every row.
+#[derive(Clone)]
+struct ReportRef(Rc<LoadedReport>);
+
+impl PartialEq for ReportRef {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+/// Indices of the results to list: those whose class is enabled in
+/// `classes` and whose words contain `query` (case-insensitive), ordered by
+/// `mode` (`"<field>:asc"` / `"<field>:desc"`, `None` for input order). Ties
+/// break on input order, so every sort is deterministic.
+fn row_view(rep: &LoadedReport, classes: [bool; 4], query: &str, mode: Option<&str>) -> Vec<u32> {
+    let query = query.trim().to_lowercase();
+    let results = &rep.results;
+    let r = |i: u32| &results[i as usize];
+    let mut view: Vec<u32> = (0..results.len() as u32)
+        .filter(|&i| classes[class_index(classify(r(i)))])
+        .filter(|&i| query.is_empty() || rep.search_keys[i as usize].contains(&query))
+        .collect();
+    let Some((field, dir)) = mode.and_then(|m| m.split_once(':')) else {
+        return view;
+    };
+    match field {
+        // Slowest first.
+        "time" => view.sort_by(|&a, &b| r(b).time.cmp(&r(a).time).then(a.cmp(&b))),
+        "position" => view.sort_by_key(|&i| (position_key(r(i)), i)),
+        "distance" => view.sort_by_key(|&i| (r(i).distance, i)),
+        "classification" => view.sort_by_key(|&i| (class_order(r(i)), i)),
+        _ => {}
+    }
+    if dir == "desc" {
+        view.reverse();
+    }
+    view
+}
+
+/// `12345` → `"12,345"`.
+fn group_digits(n: usize) -> String {
+    let s = n.to_string();
+    let mut out = String::with_capacity(s.len() + s.len() / 3);
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+// ===========================================================================
 // Theme handling (light / dark / auto, persisted in localStorage)
 // ===========================================================================
 
@@ -521,33 +628,68 @@ fn docs_data_base() -> String {
         .unwrap_or_default()
 }
 
-/// `speller-accuracy.json`, or `speller-accuracy-<tag>.json` for a variant
-/// (dialect/area/orthography/writing system — see `fetch_variants` below).
+/// `speller-accuracy.json.gz`, or `speller-accuracy-<tag>.json.gz` for a
+/// variant (dialect/area/orthography/writing system — see `fetch_variants`
+/// below). The reports are published gzipped because the largest ones pass
+/// GitHub's 100 MB file limit as plain JSON; raw.githubusercontent.com serves
+/// the `.gz` as opaque bytes, so it is inflated here. Falls back to the plain
+/// `.json` when there is no `.gz` (a repo not yet rebuilt, or local testing).
 async fn fetch_report(variant: Option<&str>) -> Result<Report, String> {
     let file = match variant {
         Some(tag) => format!("speller-accuracy-{tag}.json"),
         None => "speller-accuracy.json".to_string(),
     };
-    let url = format!("{}{file}", docs_data_base());
-    let resp = gloo_net::http::Request::get(&url)
+    let base = docs_data_base();
+    let gz_url = format!("{base}{file}.gz");
+    let mut url = gz_url.clone();
+    let mut resp = gloo_net::http::Request::get(&url)
         .send()
         .await
         .map_err(|e| format!("Failed to load {url}: {e}"))?;
+    if resp.status() == 404 {
+        url = format!("{base}{file}");
+        resp = gloo_net::http::Request::get(&url)
+            .send()
+            .await
+            .map_err(|e| format!("Failed to load {url}: {e}"))?;
+    }
     if !resp.ok() {
+        let tried = if url == gz_url {
+            url.clone()
+        } else {
+            format!("{gz_url} or {url}")
+        };
         return Err(format!(
-            "Failed to load {url}: {} {}",
+            "Failed to load {tried}: {} {}",
             resp.status(),
             resp.status_text()
         ));
     }
-    let mut report = resp
-        .json::<Report>()
+    let bytes = resp
+        .binary()
         .await
-        .map_err(|e| format!("Failed to parse {url}: {e}"))?;
-    for (i, r) in report.results.iter_mut().enumerate() {
-        r.id = i;
+        .map_err(|e| format!("Failed to load {url}: {e}"))?;
+    parse_report(&bytes).map_err(|e| format!("Failed to parse {url}: {e}"))
+}
+
+/// Parse a report that may or may not be gzipped, going by the gzip magic
+/// bytes rather than the file name: a host that sends the `.gz` with
+/// `Content-Encoding: gzip` has the browser inflate it before we see it.
+///
+/// Inflates into a buffer before parsing rather than handing the decoder to
+/// `serde_json::from_reader`, which reads a byte at a time and made a
+/// sme-sized report (~100 MB inflated) take minutes in wasm.
+fn parse_report(bytes: &[u8]) -> Result<Report, String> {
+    if bytes.starts_with(&[0x1f, 0x8b]) {
+        use std::io::Read;
+        let mut json = Vec::new();
+        flate2::read::GzDecoder::new(bytes)
+            .read_to_end(&mut json)
+            .map_err(|e| format!("gzip: {e}"))?;
+        serde_json::from_slice(&json).map_err(|e| e.to_string())
+    } else {
+        serde_json::from_slice(bytes).map_err(|e| e.to_string())
     }
-    Ok(report)
 }
 
 // ===========================================================================
@@ -555,7 +697,8 @@ async fn fetch_report(variant: Option<&str>) -> Result<Report, String> {
 // ===========================================================================
 
 /// One `<option>` in the variant selector. `tag: None` is the always-present
-/// "Default" entry (`report.json`); `Some(code)` fetches `report-<code>.json`.
+/// "Default" entry (`speller-accuracy.json.gz`); `Some(code)` fetches
+/// `speller-accuracy-<code>.json.gz`.
 #[derive(Clone, PartialEq)]
 struct VariantOption {
     tag: Option<String>,
@@ -617,28 +760,146 @@ async fn fetch_variants() -> Vec<VariantOption> {
     out
 }
 
-/// The `?variant=` query param on the current page, if any.
-fn variant_from_url() -> Option<String> {
-    let window = web_sys::window()?;
-    let href = window.location().href().ok()?;
-    let url = web_sys::Url::new(&href).ok()?;
-    url.search_params().get("variant")
+/// Classification codes for the `show` URL parameter, indexed by
+/// `class_index`.
+const CLASS_CODES: [&str; 4] = ["tp", "fn", "tn", "fp"];
+
+/// Fields the results can be sorted by, as used in `sort_mode`
+/// (`"<field>:asc"` / `"<field>:desc"`) and the `sort` URL parameter.
+const SORT_FIELDS: [&str; 4] = ["time", "position", "distance", "classification"];
+
+fn is_sort_mode(mode: &str) -> bool {
+    mode.split_once(':')
+        .is_some_and(|(f, d)| SORT_FIELDS.contains(&f) && (d == "asc" || d == "desc"))
 }
 
-/// Reflects the selected variant into the URL (`?variant=<tag>`, or removed
-/// for the default) via `history.pushState`, so the page is linkable/
-/// reloadable without a network round trip — mirrors the Svelte bundle.
-fn set_variant_in_url(tag: Option<&str>) {
-    let Some(window) = web_sys::window() else { return };
-    let Ok(href) = window.location().href() else { return };
-    let Ok(url) = web_sys::Url::new(&href) else { return };
-    let params = url.search_params();
-    match tag {
-        Some(t) => params.set("variant", t),
-        None => params.delete("variant"),
+/// The view a link carries in its query string, so the address bar is always
+/// a shareable link to what is on screen:
+/// `?variant=<tag>&q=<search>&show=fn,fp&sort=time:desc&page=3`. Values at
+/// their defaults are left out, so a plain view keeps a plain URL. A row
+/// permalink (`#<input>`) rides along in the fragment (see `anchor_from_url`).
+#[derive(Clone, PartialEq)]
+struct UrlState {
+    variant: Option<String>,
+    query: String,
+    /// Which classes to list, indexed by `class_index`.
+    classes: [bool; 4],
+    sort: Option<String>,
+    /// 0-based (the URL's `page` is 1-based).
+    page: usize,
+}
+
+impl UrlState {
+    /// The current page's URL state. Unknown or malformed values fall back to
+    /// their defaults.
+    fn from_url() -> Self {
+        let params = current_url().map(|u| u.search_params());
+        let get = |k: &str| params.as_ref().and_then(|p| p.get(k));
+        let classes = match get("show") {
+            None => [true; 4],
+            Some(show) => {
+                let mut classes = [false; 4];
+                for code in show.split(',') {
+                    if let Some(i) = CLASS_CODES.iter().position(|&c| c == code.trim()) {
+                        classes[i] = true;
+                    }
+                }
+                classes
+            }
+        };
+        UrlState {
+            variant: get("variant").filter(|v| !v.is_empty()),
+            query: get("q").unwrap_or_default(),
+            classes,
+            sort: get("sort").filter(|s| is_sort_mode(s)),
+            page: get("page")
+                .and_then(|p| p.parse::<usize>().ok())
+                .map_or(0, |p| p.saturating_sub(1)),
+        }
     }
-    if let Ok(history) = window.history() {
-        let _ = history.push_state_with_url(&wasm_bindgen::JsValue::NULL, "", Some(&url.href()));
+
+    /// Writes this state into `url`'s query string, replacing any previous
+    /// values (in a fixed order, so equal states give equal URLs) and leaving
+    /// other parameters alone.
+    ///
+    /// Built by hand rather than with `URLSearchParams`, which form-encodes
+    /// `,` and `:` and would turn `show=fn,fp&sort=time:desc` into
+    /// `show=fn%2Cfp&sort=time%3Adesc`; both are legal as-is in a query.
+    fn write_search(&self, url: &web_sys::Url) {
+        let params = url.search_params();
+        for key in ["variant", "q", "show", "sort", "page"] {
+            params.delete(key);
+        }
+        let mut parts: Vec<String> = Vec::new();
+        let others = params.to_string().as_string().unwrap_or_default();
+        if !others.is_empty() {
+            parts.push(others);
+        }
+        let mut add = |key: &str, value: &str| parts.push(format!("{key}={}", encode_query_value(value)));
+        if let Some(v) = &self.variant {
+            add("variant", v);
+        }
+        if !self.query.is_empty() {
+            add("q", &self.query);
+        }
+        if self.classes != [true; 4] {
+            let show: Vec<&str> = CLASS_CODES
+                .iter()
+                .zip(self.classes)
+                .filter_map(|(&code, on)| on.then_some(code))
+                .collect();
+            add("show", &show.join(","));
+        }
+        if let Some(s) = &self.sort {
+            add("sort", s);
+        }
+        if self.page > 0 {
+            add("page", &(self.page + 1).to_string());
+        }
+        url.set_search(&parts.join("&"));
+    }
+}
+
+/// Percent-encodes a query parameter value, leaving `,` and `:` readable.
+/// Anything that would end or split the value (`&`, `=`, `#`, `+`, spaces,
+/// ...) is still escaped, as are non-ASCII letters (browsers show those
+/// decoded in the address bar).
+fn encode_query_value(value: &str) -> String {
+    String::from(js_sys::encode_uri_component(value))
+        .replace("%2C", ",")
+        .replace("%3A", ":")
+}
+
+fn current_url() -> Option<web_sys::Url> {
+    let href = web_sys::window()?.location().href().ok()?;
+    web_sys::Url::new(&href).ok()
+}
+
+/// Sets `signal` to `value` only if that changes it, so re-applying the same
+/// URL state doesn't wake everything subscribed to it.
+fn set_if_changed<T: PartialEq + 'static>(mut signal: Signal<T>, value: T) {
+    if *signal.peek() != value {
+        signal.set(value);
+    }
+}
+
+/// The word named by the URL fragment (`#<input>`, the rows' permalinks), if
+/// any.
+fn anchor_from_url() -> Option<String> {
+    let hash = web_sys::window()?.location().hash().ok()?;
+    let raw = hash.strip_prefix('#').filter(|h| !h.is_empty())?;
+    js_sys::decode_uri_component(raw)
+        .ok()
+        .and_then(|s| s.as_string())
+        .or_else(|| Some(raw.to_string()))
+}
+
+fn scroll_to_id(id: &str) {
+    if let Some(el) = web_sys::window()
+        .and_then(|w| w.document())
+        .and_then(|d| d.get_element_by_id(id))
+    {
+        el.scroll_into_view();
     }
 }
 
@@ -646,9 +907,28 @@ fn set_variant_in_url(tag: Option<&str>) {
 // Components
 // ===========================================================================
 
+/// Suggestions listed per row until "Show all" is clicked. Lists can run to
+/// ~100 entries, and rendering every one for every row is most of the page's
+/// DOM on a large report.
+const SUGGESTION_LIMIT: usize = 10;
+
 #[component]
-fn ResultRow(result: AccuracyResult) -> Element {
-    let cls = classify(&result);
+fn ResultRow(report: ReportRef, index: u32) -> Element {
+    let mut expanded = use_signal(|| false);
+    let result = &report.0.results[index as usize];
+    let cls = classify(result);
+    let n = result.suggestions.len();
+    let collapsed = n > SUGGESTION_LIMIT && !expanded();
+    // Collapsed: the top suggestions, plus the correct one wherever it ranks
+    // (after a gap marker if it isn't right after them), so a row still shows
+    // whether and where the speller found the correction.
+    let correct_below = result.position.filter(|&p| collapsed && p >= SUGGESTION_LIMIT);
+    let shown: Vec<usize> = if collapsed {
+        (0..SUGGESTION_LIMIT).chain(correct_below).collect()
+    } else {
+        (0..n).collect()
+    };
+    let gap_before = correct_below.filter(|&p| p > SUGGESTION_LIMIT);
     let label_color = if cls == Class::Fp || cls == Class::Fn_ {
         "#d00"
     } else {
@@ -656,7 +936,7 @@ fn ResultRow(result: AccuracyResult) -> Element {
     };
 
     rsx! {
-        tr { class: result_class(&result), id: "{result.input}",
+        tr { class: result_class(result), id: "{result.input}",
             td { class: "right",
                 p {
                     a { href: "#{result.input}", class: "word", "{result.input}" }
@@ -694,18 +974,32 @@ fn ResultRow(result: AccuracyResult) -> Element {
                     em { "Incorrectly accepted as correct" }
                 } else if !result.suggestions.is_empty() {
                     ol {
-                        for (i , sugg) in result.suggestions.iter().enumerate() {
-                            li {
+                        for i in shown {
+                            if gap_before == Some(i) {
+                                li { class: "suggestion-gap", "\u{2026}" }
+                            }
+                            li { value: "{i + 1}",
                                 span {
                                     class: if result.position == Some(i) { "word word-correct" } else { "word" },
-                                    "{sugg.value}"
+                                    "{result.suggestions[i].value}"
                                 }
                                 small {
-                                    "{format_weight(sugg.weight)} "
-                                    if let Some(wd) = sugg.weight_details.as_ref() {
+                                    "{format_weight(result.suggestions[i].weight)} "
+                                    if let Some(wd) = result.suggestions[i].weight_details.as_ref() {
                                         span { class: "weight-details", "{weight_details_str(wd)}" }
                                     }
                                 }
+                            }
+                        }
+                    }
+                    if n > SUGGESTION_LIMIT {
+                        button {
+                            class: "link-button",
+                            onclick: move |_| expanded.set(!expanded()),
+                            if collapsed {
+                                "Show all {n} suggestions"
+                            } else {
+                                "Show fewer"
                             }
                         }
                     }
@@ -931,40 +1225,116 @@ fn sort_mode_label(mode: Option<&str>) -> &'static str {
     }
 }
 
-/// Loads `variant`'s report into the shared signals — used both for the
-/// initial fetch and every variant-selector change. Reflects the choice into
-/// the URL on success so the page is linkable/reloadable.
-async fn load_variant(
-    variant: Option<String>,
-    mut report: Signal<Option<Report>>,
-    mut results: Signal<Vec<AccuracyResult>>,
-    mut original_results: Signal<Vec<AccuracyResult>>,
-    mut load_error: Signal<Option<String>>,
-    mut current_variant: Signal<Option<String>>,
-    mut sort_mode: Signal<Option<String>>,
-) {
-    report.set(None);
-    load_error.set(None);
+/// Rows per results page. Rendering every row of a large report (sme: ~16k
+/// rows) at once froze the page for minutes; a page's worth renders at once.
+const PAGE_SIZE: usize = 100;
+
+/// The app's state signals, bundled so they can be handed around as one
+/// (signals are `Copy`).
+#[derive(Clone, Copy)]
+struct AppState {
+    loaded: Signal<Option<ReportRef>>,
+    load_error: Signal<Option<String>>,
+    current_variant: Signal<Option<String>>,
+    sort_mode: Signal<Option<String>>,
+    /// Which classes to list, indexed by `class_index`.
+    class_filter: Signal<[bool; 4]>,
+    query: Signal<String>,
+    page: Signal<usize>,
+    /// A row permalink (`#<input>`) still to be brought into view: its page
+    /// is selected, then it is scrolled to once rendered.
+    pending_anchor: Signal<Option<String>>,
+}
+
+impl AppState {
+    /// Takes on a URL's search, filter, sort and page (the variant is loaded
+    /// separately, being a fetch).
+    fn apply_url_state(self, u: &UrlState) {
+        set_if_changed(self.query, u.query.clone());
+        set_if_changed(self.class_filter, u.classes);
+        set_if_changed(self.sort_mode, u.sort.clone());
+        set_if_changed(self.page, u.page);
+    }
+}
+
+/// Loads `variant`'s report into the shared signals — used for the initial
+/// fetch, every variant-selector change, and Back/Forward across variants.
+/// Search, filters and sort carry over, so the same view can be compared
+/// across variants; the URL follows via the URL-sync effect in `App`.
+async fn load_variant(variant: Option<String>, mut st: AppState) {
+    st.loaded.set(None);
+    st.load_error.set(None);
     match fetch_report(variant.as_deref()).await {
         Ok(rep) => {
-            original_results.set(rep.results.clone());
-            results.set(rep.results.clone());
-            report.set(Some(rep));
-            current_variant.set(variant.clone());
-            sort_mode.set(None);
-            set_variant_in_url(variant.as_deref());
+            st.loaded.set(Some(ReportRef(Rc::new(LoadedReport::new(rep)))));
+            st.current_variant.set(variant);
+            st.pending_anchor.set(anchor_from_url());
         }
-        Err(e) => load_error.set(Some(e)),
+        Err(e) => st.load_error.set(Some(e)),
+    }
+}
+
+/// `requested` if it names one of `variants`; unknown variants in a URL are
+/// ignored, same as the Svelte bundle.
+fn known_variant(requested: Option<String>, variants: &[VariantOption]) -> Option<String> {
+    requested.filter(|t| variants.iter().any(|v| v.tag.as_deref() == Some(t.as_str())))
+}
+
+#[component]
+fn Pager(
+    page: usize,
+    pages: usize,
+    first: usize,
+    last: usize,
+    matching: usize,
+    total: usize,
+    on_change: EventHandler<usize>,
+) -> Element {
+    let of = if matching == total {
+        group_digits(total)
+    } else {
+        format!("{} matching ({} total)", group_digits(matching), group_digits(total))
+    };
+    rsx! {
+        div { class: "pager",
+            button { disabled: page == 0, onclick: move |_| on_change.call(0), "\u{00ab} First" }
+            button { disabled: page == 0, onclick: move |_| on_change.call(page - 1), "\u{2039} Prev" }
+            span { class: "pager-status",
+                "Page {page + 1} of {pages} \u{00b7} showing {group_digits(first)}\u{2013}{group_digits(last)} of {of}"
+            }
+            button { disabled: page + 1 >= pages, onclick: move |_| on_change.call(page + 1), "Next \u{203a}" }
+            button { disabled: page + 1 >= pages, onclick: move |_| on_change.call(pages - 1), "Last \u{00bb}" }
+        }
     }
 }
 
 #[component]
 fn App() -> Element {
-    let report = use_signal(|| None::<Report>);
-    let mut results = use_signal(Vec::<AccuracyResult>::new);
-    let original_results = use_signal(Vec::<AccuracyResult>::new);
-    let load_error = use_signal(|| None::<String>);
-    let mut sort_mode = use_signal(|| None::<String>);
+    let st = AppState {
+        loaded: use_signal(|| None),
+        load_error: use_signal(|| None),
+        current_variant: use_signal(|| None),
+        sort_mode: use_signal(|| None),
+        class_filter: use_signal(|| [true; 4]),
+        query: use_signal(String::new),
+        page: use_signal(|| 0),
+        pending_anchor: use_signal(|| None),
+    };
+    let AppState {
+        loaded,
+        load_error,
+        current_variant,
+        mut sort_mode,
+        mut class_filter,
+        mut query,
+        mut page,
+        mut pending_anchor,
+    } = st;
+    // A variant to load, requested from outside a Dioxus event handler (the
+    // `popstate` listener), where `spawn` isn't available.
+    let mut variant_request = use_signal(|| None::<Option<String>>);
+    // Whether the URL-sync effect has run since the report loaded (see there).
+    let mut url_written = use_signal(|| false);
     let mut theme = use_signal(saved_theme);
     let mut variants = use_signal(|| {
         vec![VariantOption {
@@ -972,50 +1342,131 @@ fn App() -> Element {
             label: "Default".to_string(),
         }]
     });
-    let current_variant = use_signal(|| None::<String>);
 
-    // Discover variants (if any), then fetch the report once on mount — the
-    // ?variant= URL param is honoured only if it names a variant that
-    // actually exists, same as the Svelte bundle.
+    // Discover variants (if any), take on the view the URL describes, then
+    // fetch the report once on mount.
     use_future(move || async move {
         let vs = fetch_variants().await;
         variants.set(vs.clone());
-        let requested = variant_from_url();
-        let effective =
-            requested.filter(|t| vs.iter().any(|v| v.tag.as_deref() == Some(t.as_str())));
-        load_variant(
-            effective,
-            report,
-            results,
-            original_results,
-            load_error,
-            current_variant,
-            sort_mode,
-        )
-        .await;
+        let u = UrlState::from_url();
+        st.apply_url_state(&u);
+        load_variant(known_variant(u.variant, &vs), st).await;
     });
 
     let select_variant = move |evt: dioxus::events::FormEvent| {
         let value = evt.value();
         let tag = if value.is_empty() { None } else { Some(value) };
-        spawn(load_variant(
-            tag,
-            report,
-            results,
-            original_results,
-            load_error,
-            current_variant,
-            sort_mode,
-        ));
+        page.set(0);
+        spawn(load_variant(tag, st));
     };
 
-    // One-time theme setup: apply the saved theme and react to OS theme changes
-    // while in "auto" mode.
+    use_effect(move || {
+        let Some(v) = variant_request() else { return };
+        variant_request.set(None);
+        spawn(load_variant(v, st));
+    });
+
+    // The rows to list, as indices into the report's results: recomputed only
+    // when the report, sort, filter or search changes (not on paging).
+    let view = use_memo(move || {
+        let Some(rep) = loaded() else {
+            return Rc::new(Vec::new());
+        };
+        Rc::new(row_view(
+            &rep.0,
+            class_filter(),
+            &query.read(),
+            sort_mode.read().as_deref(),
+        ))
+    });
+
+    // Bring a permalinked row into view: select its page, then scroll to it
+    // once that page has rendered (this re-runs after the page change).
+    use_effect(move || {
+        let Some(word) = pending_anchor() else { return };
+        let Some(rep) = loaded() else { return };
+        let target = view
+            .read()
+            .iter()
+            .position(|&i| rep.0.results[i as usize].input == word)
+            .map(|pos| pos / PAGE_SIZE);
+        match target {
+            Some(p) if p != page() => page.set(p),
+            Some(_) => {
+                scroll_to_id(&word);
+                pending_anchor.set(None);
+            }
+            // Filtered out, or not in this report.
+            None => pending_anchor.set(None),
+        }
+    });
+
+    // Keep the URL describing the current view (see `UrlState`), so the
+    // address bar is always a shareable link. A search edit replaces the
+    // history entry (Back shouldn't undo it a keystroke at a time); paging,
+    // sorting, filtering and variant changes push one, so Back undoes them.
+    use_effect(move || {
+        let Some(rep) = loaded() else { return };
+        // Let a permalink settle on its page first.
+        if pending_anchor().is_some() {
+            return;
+        }
+        let rows = view();
+        let pages = rows.len().div_ceil(PAGE_SIZE).max(1);
+        let p = page();
+        if p >= pages {
+            // e.g. `page=` past the end of a link, or of a narrower view.
+            page.set(pages - 1);
+            return;
+        }
+        let state = UrlState {
+            variant: current_variant(),
+            query: query(),
+            classes: class_filter(),
+            sort: sort_mode(),
+            page: p,
+        };
+        let (Some(window), Some(url)) = (web_sys::window(), current_url()) else {
+            return;
+        };
+        let before = UrlState::from_url();
+        state.write_search(&url);
+        // Keep a `#<input>` permalink only while its row is on the page shown;
+        // otherwise it would pull the link's recipient to another page.
+        let shown = &rows[p * PAGE_SIZE..((p + 1) * PAGE_SIZE).min(rows.len())];
+        let keep_hash = anchor_from_url()
+            .is_some_and(|w| shown.iter().any(|&i| rep.0.results[i as usize].input == w));
+        if !keep_hash {
+            url.set_hash("");
+        }
+        // The first run after load only tidies the URL the page was opened
+        // with (even if that changes nothing), so it never adds an entry.
+        let first = !*url_written.peek();
+        if first {
+            url_written.set(true);
+        }
+        let href = url.href();
+        if window.location().href().ok().as_deref() == Some(href.as_str()) {
+            return;
+        }
+        let replace = first || state.query != before.query;
+        if let Ok(history) = window.history() {
+            let null = wasm_bindgen::JsValue::NULL;
+            let _ = if replace {
+                history.replace_state_with_url(&null, "", Some(&href))
+            } else {
+                history.push_state_with_url(&null, "", Some(&href))
+            };
+        }
+    });
+
+    // One-time setup: apply the saved theme and react to OS theme changes
+    // while in "auto" mode; follow permalink clicks/edits (`#<input>`) to rows
+    // on other pages; restore the view on Back/Forward.
     use_hook(move || {
         apply_theme(&saved_theme());
-        if let Some(mq) = web_sys::window()
-            .and_then(|w| w.match_media("(prefers-color-scheme: dark)").ok().flatten())
-        {
+        let Some(window) = web_sys::window() else { return };
+        if let Ok(Some(mq)) = window.match_media("(prefers-color-scheme: dark)") {
             let cb = Closure::<dyn FnMut()>::new(move || {
                 if theme.peek().as_str() == "auto" {
                     apply_theme("auto");
@@ -1024,6 +1475,20 @@ fn App() -> Element {
             let _ = mq.add_event_listener_with_callback("change", cb.as_ref().unchecked_ref());
             cb.forget();
         }
+        let cb = Closure::<dyn FnMut()>::new(move || pending_anchor.set(anchor_from_url()));
+        let _ = window.add_event_listener_with_callback("hashchange", cb.as_ref().unchecked_ref());
+        cb.forget();
+        let cb = Closure::<dyn FnMut()>::new(move || {
+            let u = UrlState::from_url();
+            st.apply_url_state(&u);
+            set_if_changed(pending_anchor, anchor_from_url());
+            let variant = known_variant(u.variant, &variants.peek());
+            if variant != *current_variant.peek() {
+                variant_request.set(Some(variant));
+            }
+        });
+        let _ = window.add_event_listener_with_callback("popstate", cb.as_ref().unchecked_ref());
+        cb.forget();
     });
 
     let cycle_theme = move |_| {
@@ -1037,14 +1502,33 @@ fn App() -> Element {
         theme.set(next.to_string());
     };
 
+    // Sort buttons toggle between a field's ascending and descending order.
+    let mut sort_by = move |field: &str| {
+        let asc = format!("{field}:asc");
+        let next = if sort_mode.read().as_deref() == Some(asc.as_str()) {
+            format!("{field}:desc")
+        } else {
+            asc
+        };
+        sort_mode.set(Some(next));
+        page.set(0);
+    };
+
     let theme_val = theme();
-    let stats = report.read().as_ref().map(compute_stats);
-    let loaded = stats.is_some();
+    let rep = loaded();
     let err = load_error();
-    let rows = results.read().clone();
     let mode = sort_mode();
     let variant_list = variants();
     let active_variant = current_variant();
+
+    let rows = view();
+    let matching = rows.len();
+    let pages = matching.div_ceil(PAGE_SIZE).max(1);
+    let cur = page().min(pages - 1);
+    let start = cur * PAGE_SIZE;
+    let end = (start + PAGE_SIZE).min(matching);
+    let classes = class_filter();
+    let q = query();
 
     rsx! {
         button {
@@ -1075,8 +1559,8 @@ fn App() -> Element {
         }
 
         div { class: "container",
-            if let Some(s) = stats {
-                StatsView { stats: s }
+            if let Some(r) = rep.as_ref() {
+                StatsView { stats: r.0.stats.clone() }
             }
 
             if let Some(e) = err {
@@ -1093,13 +1577,13 @@ fn App() -> Element {
                             " in "
                             code { ".build-config.yml" }
                             " so CI generates "
-                            code { "speller-accuracy.json" }
+                            code { "speller-accuracy.json.gz" }
                         }
                         li {
                             "Check that the repo's "
                             code { "generated/docs-data" }
                             " branch has a "
-                            code { "speller-accuracy.json" }
+                            code { "speller-accuracy.json.gz" }
                             " from a recent build (published by "
                             code { "divvun-actions run lang-docs-publish" }
                             ")"
@@ -1120,90 +1604,98 @@ fn App() -> Element {
                     p { "Generate a report file:" }
                     pre { "divvunspell accuracy -o speller-accuracy.json typos.tsv language.zhfst" }
                     p {
-                        "Then copy the speller-accuracy.json file next to the built "
+                        "Then copy the speller-accuracy.json file (or a gzipped speller-accuracy.json.gz) next to the built "
                         code { "index.html" }
                         " (the Trunk "
                         code { "dist/" }
                         " directory)."
                     }
                 }
-            } else if !loaded {
-                div { class: "loading", "Loading..." }
-            } else {
-                h2 { "Detailed Results" }
-                p { "{sort_mode_label(mode.as_deref())}" }
+            } else if let Some(r) = rep {
+                h2 { id: "detailed-results", "Detailed Results" }
 
+                div { class: "filter-bar",
+                    input {
+                        r#type: "search",
+                        class: "search-input",
+                        placeholder: "Search words\u{2026}",
+                        "aria-label": "Search input and expected words",
+                        value: "{q}",
+                        oninput: move |e| {
+                            query.set(e.value());
+                            page.set(0);
+                        },
+                    }
+                    for (i , c) in CLASSES.into_iter().enumerate() {
+                        label { class: "class-filter",
+                            input {
+                                r#type: "checkbox",
+                                checked: classes[i],
+                                onchange: move |_| {
+                                    class_filter.with_mut(|f| f[i] = !f[i]);
+                                    page.set(0);
+                                },
+                            }
+                            " {class_label(c)} ({group_digits(r.0.class_counts[i])})"
+                        }
+                    }
+                }
+
+                p { "{sort_mode_label(mode.as_deref())}" }
                 button {
                     onclick: move |_| {
-                        results.set(original_results.read().clone());
                         sort_mode.set(None);
+                        page.set(0);
                     },
                     "Sort by Input Order"
                 }
-                button {
-                    onclick: move |_| {
-                        if sort_mode().as_deref() == Some("time:asc") {
-                            results.write().reverse();
-                            sort_mode.set(Some("time:desc".to_string()));
-                        } else {
-                            results
-                                .write()
-                                .sort_by(|a, b| b.time.cmp(&a.time).then(a.id.cmp(&b.id)));
-                            sort_mode.set(Some("time:asc".to_string()));
-                        }
-                    },
-                    "Sort by Time"
-                }
-                button {
-                    onclick: move |_| {
-                        if sort_mode().as_deref() == Some("position:asc") {
-                            results.write().reverse();
-                            sort_mode.set(Some("position:desc".to_string()));
-                        } else {
-                            results.write().sort_by_key(|r| (position_key(r), r.id));
-                            sort_mode.set(Some("position:asc".to_string()));
-                        }
-                    },
-                    "Sort by Position"
-                }
-                button {
-                    onclick: move |_| {
-                        if sort_mode().as_deref() == Some("distance:asc") {
-                            results.write().reverse();
-                            sort_mode.set(Some("distance:desc".to_string()));
-                        } else {
-                            results.write().sort_by_key(|r| (r.distance, r.id));
-                            sort_mode.set(Some("distance:asc".to_string()));
-                        }
-                    },
-                    "Sort by Edit Distance"
-                }
-                button {
-                    onclick: move |_| {
-                        if sort_mode().as_deref() == Some("classification:asc") {
-                            results.write().reverse();
-                            sort_mode.set(Some("classification:desc".to_string()));
-                        } else {
-                            results.write().sort_by_key(|r| (class_order(r), r.id));
-                            sort_mode.set(Some("classification:asc".to_string()));
-                        }
-                    },
-                    "Sort by Classification"
-                }
+                button { onclick: move |_| sort_by("time"), "Sort by Time" }
+                button { onclick: move |_| sort_by("position"), "Sort by Position" }
+                button { onclick: move |_| sort_by("distance"), "Sort by Edit Distance" }
+                button { onclick: move |_| sort_by("classification"), "Sort by Classification" }
 
-                table { class: "table",
-                    thead {
-                        tr {
-                            th { "Spelling error data" }
-                            th { "Suggestion list" }
+                if matching == 0 {
+                    p { class: "no-results", em { "No results match the current filters." } }
+                } else {
+                    Pager {
+                        page: cur,
+                        pages,
+                        first: start + 1,
+                        last: end,
+                        matching,
+                        total: r.0.results.len(),
+                        on_change: move |p| page.set(p),
+                    }
+                    table { class: "table",
+                        thead {
+                            tr {
+                                th { "Spelling error data" }
+                                th { "Suggestion list" }
+                            }
+                        }
+                        tbody {
+                            // Keyed by index into `results` (never reordered),
+                            // not by `input`, which can repeat in a corpus.
+                            for &i in rows[start..end].iter() {
+                                ResultRow { key: "{i}", report: r.clone(), index: i }
+                            }
                         }
                     }
-                    tbody {
-                        for result in rows.iter() {
-                            ResultRow { key: "{result.id}", result: result.clone() }
-                        }
+                    Pager {
+                        page: cur,
+                        pages,
+                        first: start + 1,
+                        last: end,
+                        matching,
+                        total: r.0.results.len(),
+                        on_change: move |p| {
+                            page.set(p);
+                            scroll_to_id("detailed-results");
+                        },
                     }
                 }
+            } else {
+                div { class: "loading", "Loading..." }
             }
         }
     }
