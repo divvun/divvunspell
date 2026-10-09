@@ -3070,7 +3070,8 @@ fn test_initial_case_corrects_a_mistyped_capital() {
 
 /// Lexicon with letters capitalised inside the word (`aBc`, as in iPod) and
 /// a hyphenated form with a capitalised first part (`AB-ba`, as in
-/// NAV-bagádallen). The identity mutator can reach neither from lower case.
+/// NAV-bagádallen), next to a never-suggest `ab-Ba` that is fewer case
+/// changes away. The identity mutator can reach none from lower case.
 fn mixed_case_speller() -> Arc<HfstSpeller<MmapThfstTransducer, MmapThfstTransducer>> {
     let dir = tempfile::tempdir().expect("temp dir for the mixed-case fixture");
     let root = dir.keep();
@@ -3079,7 +3080,11 @@ fn mixed_case_speller() -> Arc<HfstSpeller<MmapThfstTransducer, MmapThfstTransdu
     std::fs::create_dir_all(&lexicon_dir).expect("create lexicon dir");
     std::fs::create_dir_all(&mutator_dir).expect("create mutator dir");
     let symbols = &["@_EPSILON_SYMBOL_@", "a", "b", "c", "A", "B", "C", "-"];
-    build_trie_lexicon(&lexicon_dir, symbols, &[("aBc", 1.0), ("AB-ba", 2.0)]);
+    build_trie_lexicon(
+        &lexicon_dir,
+        symbols,
+        &[("aBc", 1.0), ("AB-ba", 2.0), ("ab-Ba", 10030.0)],
+    );
     build_boundary_identity_mutator(&mutator_dir, symbols);
     load_speller(&lexicon_dir, &mutator_dir)
 }
@@ -3110,8 +3115,9 @@ fn test_boundary_edit_takes_the_lexicons_casing() {
     };
 
     // ab-ba is no word, but AB-ba is: lexicon 2, separator 10, and 10 for
-    // the capitals the input does not have. A capitalised input keeps the
-    // lexicon's capitals rather than becoming Ab-ba.
+    // the capitals the input does not have. ab-Ba is closer in case but
+    // never-suggest. A capitalised input keeps the lexicon's capitals rather
+    // than becoming Ab-ba.
     assert_suggests_at_weight(&s, "abba", "AB-ba", 22.0, &config);
     assert_suggests_at_weight(&s, "Abba", "AB-ba", 22.0, &config);
 }

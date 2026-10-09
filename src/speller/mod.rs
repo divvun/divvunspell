@@ -1670,10 +1670,12 @@ where
             .clone()
             .suggest_case(case, config, config.reweight.as_ref(), mode);
 
-        // A lower-cased proper noun is still misspelled, but its exact
-        // title-case or all-caps lexicon form is a useful correction. Keep this
-        // suggestion-only: analyses must preserve tags, and correctness must
-        // not start accepting the lower-cased form.
+        // A lower-cased proper noun is still misspelled, but its lexicon form
+        // in the right case is a useful correction. Keep this suggestion-only:
+        // analyses must preserve tags, and correctness must not start
+        // accepting the lower-cased form. Lower-case input only: the lexicons
+        // take any run of capitals as an abbreviation, so for a capitalised
+        // input this offers SUNN-áhkon for Sunn-áhkon.
         if config.recase && mode == OutputMode::WithoutTags && is_all_lower(word) {
             let candidates = self.clone().case_suggestions(word, config);
             if !candidates.is_empty() {
@@ -1804,6 +1806,11 @@ where
                                 .clone()
                                 .caseless_lexicon_forms(&typed_value, config)
                                 .into_iter()
+                                // A never-suggest form must not win the choice
+                                // and then be cut by the ceiling.
+                                .filter(|(_, weight)| {
+                                    config.max_weight.is_none_or(|max| *weight <= max)
+                                })
                                 .map(|(form, weight)| {
                                     (recase_form(&form, &typed_value, mutation), weight)
                                 })
