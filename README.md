@@ -88,6 +88,28 @@ also needs the `compression` feature. Single transducers load with
 `DhfstAcceptor::from_bytes`, and a THFST directory loads as a
 `BytesThfstTransducer` from a `vfs::bytes::Filesystem`.
 
+### Lookup
+
+`transducer::lookup` gives every output a transducer has for a word, with its
+weight, cheapest first: what an analyser or a generator is asked, without a
+speller around it.
+
+```rust
+use divvun_fst::transducer::{hfst::HfstTransducer, lookup};
+
+let analyser = HfstTransducer::from_bytes(&bytes, "analyser.hfstol")?;
+for result in lookup(&analyser, "sámi") {
+    println!("{}\t{}", result.output, result.weight);
+}
+```
+
+The word is read as `hfst-optimized-lookup` reads it, by longest match over
+the transducer's input symbols, so a generator's tags such as `+N` are read
+whole; text no symbol matches is read a grapheme cluster at a time as
+`@_UNKNOWN_SYMBOL_@` where the transducer has one. (The speller reads its
+input one grapheme cluster per symbol.) A `transducer::Lookup` keeps its
+tables from one word to the next.
+
 ## Command-Line Tools
 
 ### divvunspell

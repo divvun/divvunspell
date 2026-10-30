@@ -14,24 +14,39 @@ const TARGET_TABLE: u32 = 2_147_483_648;
 /// with arcs on several inputs are read correctly; each state's arcs sit in
 /// the transition table sorted by input, closed by an entry with no input.
 pub(crate) fn ol_bytes(symbols: &[&str], states: &[OlState]) -> Vec<u8> {
+    ol_bytes_with(symbols, states, true)
+}
+
+/// [`ol_bytes`], but unweighted where `weighted` is false: transitions carry
+/// no weight, and a final state's index entry targets 1 instead of storing a
+/// final weight.
+pub(crate) fn ol_bytes_with(symbols: &[&str], states: &[OlState], weighted: bool) -> Vec<u8> {
     let n = symbols.len() as u32;
     let slot = 1 + n;
 
+    // Flag diacritic arcs are free arcs, which optimized lookup keeps in one
+    // run with the epsilon arcs, under the epsilon slot.
+    let free = |input: u16| {
+        let name = symbols[input as usize];
+        input == 0 || (name.starts_with('@') && name.as_bytes().get(2) == Some(&b'.'))
+    };
     let mut transitions: Vec<(u16, u16, u32, f32)> = Vec::new();
     let mut index: Vec<(u16, u32)> = Vec::new();
     for (final_weight, arcs) in states {
         let mut arcs = arcs.clone();
-        arcs.sort_by_key(|a| (a.0, a.1, a.2));
+        arcs.sort_by_key(|a| (!free(a.0), a.0, a.1, a.2));
         let base = index.len();
         index.push(match final_weight {
-            Some(w) => (u16::MAX, w.to_bits()),
+            Some(w) if weighted => (u16::MAX, w.to_bits()),
+            Some(_) => (u16::MAX, 1),
             None => (u16::MAX, u32::MAX),
         });
         index.extend((0..n).map(|_| (u16::MAX, u32::MAX)));
         for arc in &arcs {
-            let at = base + 1 + arc.0 as usize;
+            let slot_input = if free(arc.0) { 0 } else { arc.0 };
+            let at = base + 1 + slot_input as usize;
             if index[at].0 == u16::MAX {
-                index[at] = (arc.0, TARGET_TABLE + transitions.len() as u32);
+                index[at] = (slot_input, TARGET_TABLE + transitions.len() as u32);
             }
             transitions.push((arc.0, arc.1, arc.2 * slot, arc.3));
         }
@@ -51,7 +66,7 @@ pub(crate) fn ol_bytes(symbols: &[&str], states: &[OlState]) -> Vec<u8> {
     out.extend_from_slice(&(states.len() as u32).to_le_bytes());
     out.extend_from_slice(&(transitions.len() as u32).to_le_bytes());
     for property in 0..9u32 {
-        out.extend_from_slice(&u32::from(property == 0).to_le_bytes());
+        out.extend_from_slice(&u32::from(property == 0 && weighted).to_le_bytes());
     }
     for s in symbols {
         out.extend_from_slice(s.as_bytes());
@@ -65,7 +80,9 @@ pub(crate) fn ol_bytes(symbols: &[&str], states: &[OlState]) -> Vec<u8> {
         out.extend_from_slice(&input.to_le_bytes());
         out.extend_from_slice(&output.to_le_bytes());
         out.extend_from_slice(&target.to_le_bytes());
-        out.extend_from_slice(&weight.to_bits().to_le_bytes());
+        if weighted {
+            out.extend_from_slice(&weight.to_bits().to_le_bytes());
+        }
     }
     out
 }

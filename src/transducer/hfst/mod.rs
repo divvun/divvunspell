@@ -149,8 +149,9 @@ impl HfstTransducer {
                     offset: alphabet_offset,
                 })?;
 
-        let alphabet =
+        let mut alphabet =
             TransducerAlphabetParser::parse(alphabet_slice, header.symbol_count(), &path)?;
+        alphabet.input_symbol_count = Some(header.input_symbol_count());
 
         let index_table_offset = alphabet_offset + alphabet.len();
         let index_bytes = INDEX_TABLE_SIZE
@@ -175,7 +176,13 @@ impl HfstTransducer {
             });
         }
 
-        let trans_bytes = TRANS_TABLE_SIZE
+        let weighted = header.has_flag(HeaderFlag::Weighted);
+        let record = if weighted {
+            TRANS_TABLE_SIZE
+        } else {
+            UNWEIGHTED_TRANS_TABLE_SIZE
+        };
+        let trans_bytes = record
             .checked_mul(header.target_table_size().0 as usize)
             .ok_or_else(|| TransducerError::CorruptTables {
                 path: path.clone(),
@@ -196,6 +203,22 @@ impl HfstTransducer {
                 )),
             });
         }
+
+        let buf = if weighted {
+            buf
+        } else {
+            let tables = Tables {
+                index: index_table_offset..index_table_end,
+                transitions: index_table_end..trans_table_end,
+            };
+            let copy = vfs::copy_to_map(&with_weights(&buf, tables)).map_err(|source| {
+                TransducerError::Memmap {
+                    path: path.clone(),
+                    source,
+                }
+            })?;
+            Arc::new(copy)
+        };
 
         let index_table = MappedIndexTable::new(
             buf.clone(),
@@ -218,6 +241,8 @@ impl HfstTransducer {
         })
     }
 
+    /// The bytes the tables are read from: the file's own, or for an
+    /// unweighted file a copy of it whose transitions carry weights.
     #[inline(always)]
     pub fn buffer(&self) -> &[u8] {
         &self.buf
@@ -232,6 +257,42 @@ impl HfstTransducer {
     pub fn header(&self) -> &TransducerHeader {
         &self.header
     }
+}
+
+/// Bytes of an unweighted transition record: input, output and target, the
+/// weight being left out.
+const UNWEIGHTED_TRANS_TABLE_SIZE: usize = 8;
+
+/// Where the tables of an optimized-lookup file are.
+struct Tables {
+    index: std::ops::Range<usize>,
+    transitions: std::ops::Range<usize>,
+}
+
+/// An unweighted optimized-lookup file `buf` laid out as a weighted one, every
+/// weight zero, so that it is read by the weighted tables.
+///
+/// The header and alphabet are copied as they are. An unweighted index table
+/// marks a final state with target 1 where a weighted one stores the final
+/// weight; a transition record gains a zero weight, which is also the final
+/// weight of a final state's record in the transition table.
+fn with_weights(buf: &[u8], tables: Tables) -> Vec<u8> {
+    let count = tables.transitions.len() / UNWEIGHTED_TRANS_TABLE_SIZE;
+    let mut out = Vec::with_capacity(tables.transitions.start + count * TRANS_TABLE_SIZE);
+    out.extend_from_slice(&buf[..tables.transitions.start]);
+    for at in tables.index.step_by(INDEX_TABLE_SIZE) {
+        let input = u16::from_le_bytes([out[at], out[at + 1]]);
+        let target = &mut out[at + 2..at + INDEX_TABLE_SIZE];
+        if input == u16::MAX && target != [0xFF; 4] {
+            target.copy_from_slice(&0f32.to_le_bytes());
+        }
+    }
+    let (records, _) = buf[tables.transitions].as_chunks::<UNWEIGHTED_TRANS_TABLE_SIZE>();
+    for record in records {
+        out.extend_from_slice(record);
+        out.extend_from_slice(&0f32.to_le_bytes());
+    }
+    out
 }
 
 impl Transducer for HfstTransducer {

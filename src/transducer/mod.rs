@@ -11,6 +11,7 @@ pub mod thfst;
 
 mod alphabet;
 pub(crate) mod heuristic;
+mod lookup;
 pub(crate) mod symbol_transition;
 pub(crate) mod tree_node;
 
@@ -25,6 +26,8 @@ use crate::transducer::alphabet::TransducerAlphabet;
 use crate::transducer::symbol_transition::SymbolTransition;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use crate::vfs::{self, Filesystem};
+
+pub use self::lookup::{Lookup, LookupResult, lookup};
 
 /// Error with transducer reading or processing.
 ///

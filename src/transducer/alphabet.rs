@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use hashbrown::HashMap;
 use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
@@ -19,6 +21,18 @@ pub struct TransducerAlphabet {
     /// walk asks whether a symbol is a flag at every state it leaves.
     #[serde(skip)]
     pub(crate) flag_bits: Vec<u64>,
+    /// How many of the symbols, numbered first, occur on the input side,
+    /// where the file says so: an optimized-lookup header does, a THFST
+    /// alphabet does not.
+    #[serde(skip)]
+    pub(crate) input_symbol_count: Option<SymbolNumber>,
+    /// The length in bytes of the longest symbol
+    /// [`longest_input_symbol`](Self::longest_input_symbol) can match, found
+    /// on first use. It counts only symbols numbered below
+    /// `initial_symbol_count`, which [`add_symbol`](Self::add_symbol) never
+    /// adds, so it holds for the alphabet's lifetime.
+    #[serde(skip)]
+    pub(crate) longest_input: OnceLock<usize>,
 }
 
 impl TransducerAlphabet {
@@ -73,6 +87,38 @@ impl TransducerAlphabet {
             bits[s.0 as usize / 64] |= 1 << (s.0 % 64);
         }
         self.flag_bits = bits;
+    }
+
+    /// Whether input text may be read as `symbol`: a regular symbol of the
+    /// transducer's own, on its input side where the file says which those
+    /// are, and not a flag diacritic.
+    fn is_input_symbol(&self, symbol: SymbolNumber) -> bool {
+        symbol < self.initial_symbol_count
+            && self.input_symbol_count.is_none_or(|count| symbol < count)
+            && !self.is_flag(symbol)
+    }
+
+    /// The longest input symbol whose text `text` starts with, and the length
+    /// of that text in bytes.
+    pub(crate) fn longest_input_symbol(&self, text: &str) -> Option<(SymbolNumber, usize)> {
+        let longest = *self.longest_input.get_or_init(|| {
+            self.string_to_symbol
+                .iter()
+                .filter(|(_, symbol)| self.is_input_symbol(**symbol))
+                .map(|(key, _)| key.len())
+                .max()
+                .unwrap_or(0)
+        });
+        (1..=longest.min(text.len()))
+            .rev()
+            .filter(|&len| text.is_char_boundary(len))
+            .find_map(|len| {
+                self.string_to_symbol
+                    .get(&text[..len])
+                    .copied()
+                    .filter(|symbol| self.is_input_symbol(*symbol))
+                    .map(|symbol| (symbol, len))
+            })
     }
 
     #[inline(always)]
