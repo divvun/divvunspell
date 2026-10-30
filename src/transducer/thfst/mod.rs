@@ -21,17 +21,27 @@ use crate::transducer::{TransducerError, symbol_transition::SymbolTransition};
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "fs")]
 pub(crate) mod chunked;
 pub(crate) mod index_table;
 pub(crate) mod transition_table;
 
 /// THFST transducer using memory-mapped access (recommended for production).
+#[cfg(feature = "fs")]
 pub type MmapThfstTransducer =
     ThfstTransducer<IndexTable<memmap2::Mmap>, TransitionTable<memmap2::Mmap>>;
 
 /// THFST transducer using file-based access (Unix only, slower but lower memory footprint).
-#[cfg(unix)]
+#[cfg(all(unix, feature = "fs"))]
 pub type FileThfstTransducer<F> = ThfstTransducer<IndexTable<F>, TransitionTable<F>>;
+
+/// THFST transducer held in memory, its tables read in place from
+/// [`Bytes`](crate::vfs::Bytes). It loads through any
+/// [`Filesystem`](crate::vfs::Filesystem); from
+/// [`vfs::bytes::Filesystem`](crate::vfs::bytes::Filesystem), a box archive
+/// held in memory among them, without copying a table.
+pub type BytesThfstTransducer =
+    ThfstTransducer<IndexTable<crate::vfs::Bytes>, TransitionTable<crate::vfs::Bytes>>;
 
 use crate::transducer::{Transducer, TransducerAlphabet, TransducerLoader};
 use crate::vfs::{self, Filesystem};

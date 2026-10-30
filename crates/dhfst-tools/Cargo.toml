@@ -12,7 +12,7 @@ anyhow.workspace = true
 serde_json.workspace = true
 serde.workspace = true
 divvun-fst = { features = ["compression", "dhfst-writer"], path = "../.." }
-box-format = { workspace = true, features = ["writer"] }
+box-format = { workspace = true, features = ["writer", "xz", "zstd"] }
 clap.workspace = true
 tempfile.workspace = true
 zip = { workspace = true, features = ["deflate"] }

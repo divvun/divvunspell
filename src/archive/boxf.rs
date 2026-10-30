@@ -1,34 +1,60 @@
 //! Box-based archive stuff.
+use std::path::Path;
 use std::sync::Arc;
 
+#[cfg(feature = "fs")]
 use box_format::sync::BoxReader as BoxFileReader;
 
 use super::error::SpellerArchiveError;
 use super::{ErrmodelSource, SpellerArchive, meta::SpellerMetadata};
 use crate::speller::{HfstSpeller, Speller, SpellerConfig};
+#[cfg(feature = "fs")]
+use crate::transducer::thfst::{MmapThfstTransducer, chunked::MmapThfstChunkedTransducer};
 use crate::transducer::{
-    ErrorModel, Transducer,
-    dhfst::acceptor::DhfstAcceptor,
-    thfst::{MmapThfstTransducer, chunked::MmapThfstChunkedTransducer},
+    ErrorModel, Transducer, TransducerLoader, dhfst::acceptor::DhfstAcceptor,
+    thfst::BytesThfstTransducer,
 };
-use crate::vfs::Filesystem;
-use crate::vfs::boxf::Filesystem as BoxFilesystem;
+use crate::vfs::{self, Filesystem};
 
 /// An archive with mmaped language and error model THFST automata archive.
+#[cfg(feature = "fs")]
 pub type ThfstBoxSpellerArchive = BoxSpellerArchive<MmapThfstTransducer, MmapThfstTransducer>;
 
 /// An archive with mmaped chunked language and error model THFST automata
 /// file.
+#[cfg(feature = "fs")]
 pub type ThfstChunkedBoxSpeller =
     HfstSpeller<MmapThfstChunkedTransducer, MmapThfstChunkedTransducer>;
 
 /// An archive with mmaped language and error model THFST automata file.
+#[cfg(feature = "fs")]
 pub type ThfstBoxSpeller = HfstSpeller<MmapThfstTransducer, MmapThfstTransducer>;
 
 /// An archive with mmaped chunked language and error model THFST automata
 /// archive.
+#[cfg(feature = "fs")]
 pub type ThfstChunkedBoxSpellerArchive =
     BoxSpellerArchive<MmapThfstChunkedTransducer, MmapThfstChunkedTransducer>;
+
+/// An archive held in memory, its THFST members read in place from the
+/// archive's bytes. Load one with [`BoxSpellerArchive::from_bytes`].
+pub type ThfstBytesBoxSpellerArchive =
+    BoxSpellerArchive<BytesThfstTransducer, BytesThfstTransducer>;
+
+/// The speller of a [`ThfstBytesBoxSpellerArchive`] whose error model and
+/// acceptor are both THFST.
+pub type ThfstBytesBoxSpeller = HfstSpeller<BytesThfstTransducer, BytesThfstTransducer>;
+
+/// The file the transducers of a [`BoxSpellerArchive`] are loaded from, which
+/// a type must load from to be one of its transducers: a member of an archive
+/// file with the `fs` feature, a window onto an archive's bytes without it.
+#[cfg(feature = "fs")]
+pub type MemberFile = vfs::boxf::File;
+/// The file the transducers of a [`BoxSpellerArchive`] are loaded from, which
+/// a type must load from to be one of its transducers: a member of an archive
+/// file with the `fs` feature, a window onto an archive's bytes without it.
+#[cfg(not(feature = "fs"))]
+pub type MemberFile = vfs::bytes::File;
 
 /// The THFST error-model member every BHFST archive has carried.
 pub const THFST_ERRMODEL_MEMBER: &str = "errmodel.default.thfst";
@@ -125,27 +151,46 @@ where
     }
 }
 
-impl<T, U> SpellerArchive for BoxSpellerArchive<T, U>
+impl<T, U> BoxSpellerArchive<T, U>
 where
-    T: Transducer
-        + crate::transducer::TransducerLoader<crate::vfs::boxf::File>
-        + Send
-        + Sync
-        + 'static,
-    U: Transducer
-        + crate::transducer::TransducerLoader<crate::vfs::boxf::File>
-        + Send
-        + Sync
-        + 'static,
+    T: Transducer + TransducerLoader<vfs::bytes::File> + Send + Sync + 'static,
+    U: Transducer + TransducerLoader<vfs::bytes::File> + Send + Sync + 'static,
 {
-    fn open(file_path: &std::path::Path) -> Result<BoxSpellerArchive<T, U>, SpellerArchiveError> {
-        let archive = BoxFileReader::open(file_path).map_err(|e| SpellerArchiveError::Open {
-            path: file_path.to_path_buf(),
-            source: std::io::Error::other(e),
+    /// Read a BHFST archive held in memory, box format version 0 or 1.
+    ///
+    /// The archive must store its members uncompressed, as every BHFST
+    /// archive does. With [`ThfstBytesBoxSpellerArchive`] the THFST tables
+    /// are read in place from `bytes`, never copied; a DHFST or optimized
+    /// lookup member is read in place without the `fs` feature and copied
+    /// into an anonymous map with it. `path` names the archive in errors.
+    pub fn from_bytes(
+        bytes: impl Into<vfs::Bytes>,
+        path: impl AsRef<Path>,
+    ) -> Result<BoxSpellerArchive<T, U>, SpellerArchiveError> {
+        let path = path.as_ref();
+        let fs = vfs::bytes::Filesystem::from_box(bytes).map_err(|source| {
+            SpellerArchiveError::Open {
+                path: path.to_path_buf(),
+                source,
+            }
         })?;
+        BoxSpellerArchive::read(&fs, path)
+    }
+}
 
-        let fs = BoxFilesystem::new(&archive);
-
+impl<T, U> BoxSpellerArchive<T, U>
+where
+    T: Transducer + Send + Sync + 'static,
+    U: Transducer + Send + Sync + 'static,
+{
+    /// Load the archive whose members `fs` serves. `file_path` names the
+    /// archive in errors.
+    fn read<FS>(fs: &FS, file_path: &Path) -> Result<BoxSpellerArchive<T, U>, SpellerArchiveError>
+    where
+        FS: Filesystem,
+        T: TransducerLoader<FS::File>,
+        U: TransducerLoader<FS::File>,
+    {
         let meta_json = match fs.open_file("meta.json") {
             Ok(mut f) => {
                 use std::io::Read as _;
@@ -196,18 +241,16 @@ where
                     ),
                 });
             }
-            let acceptor = <DhfstAcceptor as crate::transducer::TransducerLoader<_>>::from_path(
-                &fs,
-                DHFST_ACCEPTOR_MEMBER,
-            )
-            .map_err(|source| SpellerArchiveError::Transducer {
-                archive: file_path.to_path_buf(),
-                member: DHFST_ACCEPTOR_MEMBER.into(),
-                source,
-            })?;
+            let acceptor =
+                <DhfstAcceptor as TransducerLoader<_>>::from_path(fs, DHFST_ACCEPTOR_MEMBER)
+                    .map_err(|source| SpellerArchiveError::Transducer {
+                        archive: file_path.to_path_buf(),
+                        member: DHFST_ACCEPTOR_MEMBER.into(),
+                        source,
+                    })?;
             Acceptor::Dhfst(acceptor)
         } else {
-            let acceptor = U::from_path(&fs, THFST_ACCEPTOR_MEMBER).map_err(|source| {
+            let acceptor = U::from_path(fs, THFST_ACCEPTOR_MEMBER).map_err(|source| {
                 SpellerArchiveError::Transducer {
                     archive: file_path.to_path_buf(),
                     member: THFST_ACCEPTOR_MEMBER.into(),
@@ -229,7 +272,7 @@ where
                     path: file_path.to_path_buf(),
                 });
             }
-            let errmodel = ErrorModel::from_path(&fs, DHFST_ERRMODEL_MEMBER).map_err(|source| {
+            let errmodel = ErrorModel::from_path(fs, DHFST_ERRMODEL_MEMBER).map_err(|source| {
                 SpellerArchiveError::Transducer {
                     archive: file_path.to_path_buf(),
                     member: DHFST_ERRMODEL_MEMBER.into(),
@@ -254,7 +297,7 @@ where
             };
             (speller, None, source)
         } else {
-            let errmodel = T::from_path(&fs, THFST_ERRMODEL_MEMBER).map_err(|source| {
+            let errmodel = T::from_path(fs, THFST_ERRMODEL_MEMBER).map_err(|source| {
                 SpellerArchiveError::Transducer {
                     archive: file_path.to_path_buf(),
                     member: THFST_ERRMODEL_MEMBER.into(),
@@ -292,6 +335,23 @@ where
             bundled_config,
             errmodel_source,
         })
+    }
+}
+
+impl<T, U> SpellerArchive for BoxSpellerArchive<T, U>
+where
+    T: Transducer + TransducerLoader<MemberFile> + Send + Sync + 'static,
+    U: Transducer + TransducerLoader<MemberFile> + Send + Sync + 'static,
+{
+    #[cfg(feature = "fs")]
+    fn open(file_path: &std::path::Path) -> Result<BoxSpellerArchive<T, U>, SpellerArchiveError> {
+        let archive = BoxFileReader::open(file_path).map_err(|e| SpellerArchiveError::Open {
+            path: file_path.to_path_buf(),
+            source: std::io::Error::other(e),
+        })?;
+
+        let fs = vfs::boxf::Filesystem::new(&archive);
+        BoxSpellerArchive::read(&fs, file_path)
     }
 
     fn speller(&self) -> Arc<dyn Speller + Send + Sync> {
@@ -351,6 +411,7 @@ mod tests {
         assert!(read("42").is_none());
     }
 
+    #[cfg(feature = "fs")]
     mod dhfst_member {
         use super::*;
         use crate::speller::suggestion::Suggestion;
@@ -434,7 +495,7 @@ mod tests {
             path
         }
 
-        fn suggestions(archive: &ThfstBoxSpellerArchive) -> Vec<Vec<(String, u32)>> {
+        fn suggestions(archive: &dyn SpellerArchive) -> Vec<Vec<(String, u32)>> {
             let mut config = SpellerConfig::default();
             config.n_best = None;
             ["kat", "cet", "car", "cäät", "katt"]
@@ -608,6 +669,122 @@ mod tests {
             assert!(matches!(
                 ThfstBoxSpellerArchive::open(&bhfst(dir.path(), true, true)),
                 Err(SpellerArchiveError::TwoErrorModels { .. })
+            ));
+        }
+
+        /// The archive at `path`, read from its bytes instead of from the file.
+        fn from_bytes(path: &Path) -> Result<ThfstBytesBoxSpellerArchive, SpellerArchiveError> {
+            ThfstBytesBoxSpellerArchive::from_bytes(std::fs::read(path).expect("read"), path)
+        }
+
+        #[test]
+        fn an_archive_read_from_bytes_is_the_archive_read_from_its_file() {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let mut archives = vec![
+                bhfst(dir.path(), false, true),
+                bhfst(dir.path(), true, false),
+            ];
+            for thfst_errmodel in [true, false] {
+                archives.push(with_acceptor(dir.path(), true, false, thfst_errmodel));
+                archives.push(with_acceptor(dir.path(), false, true, thfst_errmodel));
+            }
+            for path in archives {
+                let file = ThfstBoxSpellerArchive::open(&path).expect("opens");
+                let bytes = from_bytes(&path).expect("reads");
+                assert_eq!(bytes.errmodel_source(), file.errmodel_source());
+                assert_eq!(
+                    bytes.hfst_speller().is_some(),
+                    file.hfst_speller().is_some()
+                );
+                let want = suggestions(&file);
+                assert!(want.iter().any(|s| !s.is_empty()));
+                assert_eq!(suggestions(&bytes), want, "{}", path.display());
+            }
+        }
+
+        #[test]
+        fn an_archive_read_from_bytes_is_refused_as_its_file_is() {
+            let dir = tempfile::tempdir().expect("tempdir");
+            assert!(matches!(
+                from_bytes(&bhfst(dir.path(), true, true)),
+                Err(SpellerArchiveError::TwoErrorModels { .. })
+            ));
+            assert!(matches!(
+                from_bytes(&with_acceptor(dir.path(), true, true, true)),
+                Err(SpellerArchiveError::Io { member, .. }) if member == DHFST_ACCEPTOR_MEMBER
+            ));
+            assert!(matches!(
+                ThfstBytesBoxSpellerArchive::from_bytes(b"\xffBOX".to_vec(), "short.bhfst"),
+                Err(SpellerArchiveError::Open { .. })
+            ));
+        }
+
+        /// The fixture lexicon and error model as THFST members, ready for
+        /// [`v0_archive`](crate::vfs::bytes::v0_archive).
+        fn thfst_members() -> Vec<(String, Vec<u8>)> {
+            let mut members = Vec::new();
+            for (fixture_dir, member) in [
+                ("lexicon.thfst", THFST_ACCEPTOR_MEMBER),
+                ("mutator.thfst", THFST_ERRMODEL_MEMBER),
+            ] {
+                for component in ["alphabet", "index", "transition"] {
+                    let bytes =
+                        std::fs::read(fixture(fixture_dir).join(component)).expect("fixture");
+                    members.push((format!("{member}/{component}"), bytes));
+                }
+            }
+            members
+        }
+
+        #[test]
+        fn a_version_0_archive_reads_as_the_version_1_archive_does() {
+            let members = thfst_members();
+            let files: Vec<(&str, &[u8], u8)> = members
+                .iter()
+                .map(|(name, bytes)| (name.as_str(), bytes.as_slice(), 0))
+                .collect();
+            let v0 = ThfstBytesBoxSpellerArchive::from_bytes(
+                crate::vfs::bytes::v0_archive(&files),
+                "v0.bhfst",
+            )
+            .expect("reads");
+            assert!(v0.hfst_speller().is_some());
+
+            let dir = tempfile::tempdir().expect("tempdir");
+            let v1 = ThfstBoxSpellerArchive::open(&bhfst(dir.path(), true, false)).expect("opens");
+            assert_eq!(suggestions(&v0), suggestions(&v1));
+        }
+
+        #[test]
+        fn a_compressed_member_is_refused_when_read_from_bytes() {
+            let members = thfst_members();
+            let files: Vec<(&str, &[u8], u8)> = members
+                .iter()
+                .map(|(name, bytes)| {
+                    let compression = if name.ends_with("/index") { 0x10 } else { 0 };
+                    (name.as_str(), bytes.as_slice(), compression)
+                })
+                .collect();
+            assert!(matches!(
+                ThfstBytesBoxSpellerArchive::from_bytes(
+                    crate::vfs::bytes::v0_archive(&files),
+                    "compressed.bhfst"
+                ),
+                Err(SpellerArchiveError::Transducer { .. })
+            ));
+        }
+
+        #[test]
+        fn archive_from_bytes_tells_a_box_archive_by_its_first_bytes() {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = bhfst(dir.path(), true, false);
+            let archive = crate::archive::from_bytes(std::fs::read(&path).expect("read"), "x")
+                .expect("reads");
+            let file = ThfstBoxSpellerArchive::open(&path).expect("opens");
+            assert_eq!(suggestions(archive.as_ref()), suggestions(&file));
+            assert!(matches!(
+                crate::archive::from_bytes(b"not an archive".to_vec(), "x"),
+                Err(SpellerArchiveError::UnrecognisedArchive { .. })
             ));
         }
     }

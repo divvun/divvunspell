@@ -7,6 +7,8 @@
 //! THFST fixtures; the ZHFST member reading is covered by unit tests in
 //! `src/archive/zip.rs`, which need no transducers.
 
+#![cfg(feature = "fs")]
+
 use std::path::{Path, PathBuf};
 
 use box_format::{BoxPath, Compression, CompressionConfig, HashMap as BoxHashMap, sync::BoxWriter};

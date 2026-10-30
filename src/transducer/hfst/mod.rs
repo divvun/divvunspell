@@ -15,6 +15,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
+#[cfg(feature = "fs")]
 use memmap2::Mmap;
 
 use self::alphabet::TransducerAlphabetParser;
@@ -30,7 +31,7 @@ use crate::types::{HeaderFlag, SymbolNumber, TransitionTableIndex, Weight};
 use crate::vfs::{self, Filesystem};
 
 pub struct HfstTransducer {
-    buf: Arc<Mmap>,
+    buf: Arc<vfs::Map>,
     header: TransducerHeader,
     alphabet: TransducerAlphabet,
     pub(crate) index_table: MappedIndexTable,
@@ -108,8 +109,33 @@ impl HfstTransducer {
     /// is malformed, or the header-declared index/transition table sizes would
     /// read past the end of the buffer. Once this function succeeds, all
     /// subsequent per-state lookups are guaranteed to stay in bounds.
+    #[cfg(feature = "fs")]
     pub fn from_mapped_memory(
         buf: Arc<Mmap>,
+        path: impl Into<PathBuf>,
+    ) -> Result<HfstTransducer, TransducerError> {
+        HfstTransducer::from_map(buf, path)
+    }
+
+    /// Load a HFST transducer held in memory, from a copy of `bytes`: an
+    /// anonymous mapping with the `fs` feature, bytes on the heap without it.
+    pub fn from_bytes(
+        bytes: &[u8],
+        path: impl Into<PathBuf>,
+    ) -> Result<HfstTransducer, TransducerError> {
+        let path = path.into();
+        if bytes.is_empty() {
+            return Err(TransducerError::CorruptHeader { path, offset: 0 });
+        }
+        let map = vfs::copy_to_map(bytes).map_err(|source| TransducerError::Memmap {
+            path: path.clone(),
+            source,
+        })?;
+        HfstTransducer::from_map(Arc::new(map), path)
+    }
+
+    pub(crate) fn from_map(
+        buf: Arc<vfs::Map>,
         path: impl Into<PathBuf>,
     ) -> Result<HfstTransducer, TransducerError> {
         let path = path.into();
@@ -359,10 +385,14 @@ impl<F: vfs::File> TransducerLoader<F> for HfstTransducer {
             path: path.to_path_buf(),
             source,
         })?;
-        let mmap = unsafe { file.memory_map() }.map_err(|source| TransducerError::Memmap {
+        #[cfg(feature = "fs")]
+        let map = unsafe { file.memory_map() };
+        #[cfg(not(feature = "fs"))]
+        let map = file.contents();
+        let map = map.map_err(|source| TransducerError::Memmap {
             path: path.to_path_buf(),
             source,
         })?;
-        HfstTransducer::from_mapped_memory(Arc::new(mmap), path.to_path_buf())
+        HfstTransducer::from_map(Arc::new(map), path.to_path_buf())
     }
 }

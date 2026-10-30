@@ -65,6 +65,29 @@ for analysis in analyses {
 }
 ```
 
+### Without a File System (WebAssembly)
+
+The default `fs` feature reads files on the host: memory-mapped transducers,
+archives opened by path, temporary directories. Without it every format loads
+from bytes in memory, and the crate builds for `wasm32-unknown-unknown`:
+
+```toml
+[dependencies]
+divvun-fst = { git = "https://github.com/divvun/divvunspell", default-features = false }
+```
+
+```rust
+let archive = divvun_fst::archive::from_bytes(bytes, "language.bhfst")?;
+let speller = archive.speller();
+```
+
+`archive::from_bytes` tells a BHFST from a ZHFST archive by its first bytes
+and reads the members of a BHFST in place. A ZHFST whose members are deflated
+also needs the `compression` feature. Single transducers load with
+`HfstTransducer::from_bytes`, `DhfstTransducer::from_bytes` and
+`DhfstAcceptor::from_bytes`, and a THFST directory loads as a
+`BytesThfstTransducer` from a `vfs::bytes::Filesystem`.
+
 ## Command-Line Tools
 
 ### divvunspell

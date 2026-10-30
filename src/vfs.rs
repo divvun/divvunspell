@@ -2,26 +2,75 @@
 //!
 //! This module provides traits for abstracting file system operations and memory access,
 //! allowing the codebase to work with different storage backends (real files, archives,
-//! memory-mapped regions, etc.) through a unified interface.
+//! memory-mapped regions, bytes in memory) through a unified interface.
+//!
+//! `Fs` and `boxf` read files on the host and need the `fs` feature;
+//! [`bytes`] holds files in memory and is always there, which is how a build
+//! without a host file system, such as `wasm32-unknown-unknown`, reads them.
 
+pub mod bytes;
 pub mod memory;
 
+pub use bytes::Bytes;
 pub use memory::Memory;
 
+#[cfg(feature = "fs")]
 use fs_extra::dir::CopyOptions;
+#[cfg(feature = "fs")]
 use memmap2::{Mmap, MmapOptions};
 use std::fmt::Debug;
 use std::io::{Read, Result};
 use std::path::Path;
+#[cfg(feature = "fs")]
 use tempfile::TempDir;
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "fs"))]
 use std::os::unix::fs::FileExt;
+
+/// What the HFST optimized-lookup and DHFST readers read in place: a memory
+/// map with the `fs` feature, bytes on the heap without it.
+#[cfg(feature = "fs")]
+pub(crate) type Map = Mmap;
+/// What the HFST optimized-lookup and DHFST readers read in place: a memory
+/// map with the `fs` feature, bytes on the heap without it.
+#[cfg(not(feature = "fs"))]
+pub(crate) type Map = Bytes;
+
+/// A copy of `bytes` as a [`Map`]: an anonymous memory map with the `fs`
+/// feature, bytes on the heap without it.
+#[cfg(feature = "fs")]
+pub(crate) fn copy_to_map(bytes: &[u8]) -> Result<Map> {
+    let mut map = memmap2::MmapMut::map_anon(bytes.len())?;
+    map.copy_from_slice(bytes);
+    map.make_read_only()
+}
+
+/// A copy of `bytes` as a [`Map`]: an anonymous memory map with the `fs`
+/// feature, bytes on the heap without it.
+#[cfg(not(feature = "fs"))]
+pub(crate) fn copy_to_map(bytes: &[u8]) -> Result<Map> {
+    Ok(Bytes::from(bytes))
+}
+
+/// `bytes` as a [`Map`]: copied into an anonymous memory map with the `fs`
+/// feature, and handed over as they are without it.
+#[cfg(feature = "fs")]
+pub(crate) fn into_map(bytes: Bytes) -> Result<Map> {
+    copy_to_map(&bytes)
+}
+
+/// `bytes` as a [`Map`]: copied into an anonymous memory map with the `fs`
+/// feature, and handed over as they are without it.
+#[cfg(not(feature = "fs"))]
+pub(crate) fn into_map(bytes: Bytes) -> Result<Map> {
+    Ok(bytes)
+}
 
 pub trait Filesystem {
     type File: File;
 
     fn open_file<P: AsRef<Path>>(&self, path: P) -> Result<Self::File>;
+    #[cfg(feature = "fs")]
     fn copy_to_temp_dir<P: AsRef<Path>>(&self, path: P) -> Result<TempDir>;
 }
 
@@ -32,10 +81,16 @@ pub trait File: Read + Debug {
     fn read_at(&self, buf: &mut [u8], offset: u64) -> Result<usize>;
     #[cfg(unix)]
     fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> Result<()>;
+    /// The whole file as bytes on the heap: the bytes themselves for a file
+    /// held in memory, a copy for any other.
+    fn contents(&self) -> Result<Bytes>;
+    #[cfg(feature = "fs")]
     unsafe fn memory_map(&self) -> Result<Mmap>;
+    #[cfg(feature = "fs")]
     unsafe fn partial_memory_map(&self, offset: u64, len: usize) -> Result<Mmap>;
 }
 
+#[cfg(feature = "fs")]
 impl File for std::fs::File {
     fn len(&self) -> Result<u64> {
         self.metadata().map(|m| m.len())
@@ -57,6 +112,15 @@ impl File for std::fs::File {
         FileExt::read_exact_at(self, buf, offset)
     }
 
+    fn contents(&self) -> Result<Bytes> {
+        use std::io::{Seek, SeekFrom};
+        let mut file = self;
+        let mut data = Vec::with_capacity(File::len(self)? as usize);
+        file.seek(SeekFrom::Start(0))?;
+        file.read_to_end(&mut data)?;
+        Ok(Bytes::from(data))
+    }
+
     unsafe fn memory_map(&self) -> Result<Mmap> {
         unsafe { MmapOptions::new().map(self) }
     }
@@ -67,8 +131,10 @@ impl File for std::fs::File {
 }
 
 /// File system.
+#[cfg(feature = "fs")]
 pub struct Fs;
 
+#[cfg(feature = "fs")]
 impl Filesystem for Fs {
     type File = std::fs::File;
 
@@ -86,6 +152,7 @@ impl Filesystem for Fs {
 }
 
 /// Box file.
+#[cfg(feature = "fs")]
 pub mod boxf {
     use box_format::{BoxPath, sync::BoxReader as BoxFileReader};
     use std::io::{Read, Result};
@@ -135,6 +202,11 @@ pub mod boxf {
         #[inline(always)]
         fn read_exact_at(&self, buf: &mut [u8], offset: u64) -> Result<()> {
             self.file.read_exact_at(buf, self.offset + offset)
+        }
+
+        fn contents(&self) -> Result<super::Bytes> {
+            let slice = self.segment.as_slice().map_err(std::io::Error::other)?;
+            Ok(super::Bytes::from(slice))
         }
 
         unsafe fn memory_map(&self) -> Result<memmap2::Mmap> {

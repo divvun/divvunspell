@@ -1,17 +1,23 @@
 //! Handling of archives of spell-checking models.
+#[cfg(feature = "fs")]
 use memmap2::Mmap;
-use std::{ffi::OsString, path::Path, sync::Arc};
+#[cfg(feature = "fs")]
+use std::ffi::OsString;
+use std::{path::Path, sync::Arc};
 
 pub mod boxf;
 pub mod error;
 pub mod meta;
 pub mod zip;
 
-use self::{boxf::ThfstChunkedBoxSpellerArchive, meta::SpellerMetadata};
+#[cfg(feature = "fs")]
+use self::boxf::ThfstChunkedBoxSpellerArchive;
+use self::{boxf::ThfstBytesBoxSpellerArchive, meta::SpellerMetadata};
 use crate::{
     archive::{error::SpellerArchiveError, zip::ZipSpellerArchive},
     speller::{Speller, SpellerConfig},
     transducer::TransducerFormat,
+    vfs::Bytes,
 };
 
 /// Top-level, one-line hint printed by CLIs when an error chain indicates the
@@ -89,6 +95,7 @@ impl ErrmodelSource {
     }
 }
 
+#[cfg(feature = "fs")]
 pub(crate) struct TempMmap {
     mmap: Arc<Mmap>,
 
@@ -96,11 +103,13 @@ pub(crate) struct TempMmap {
     _tempdir: tempfile::TempDir,
 }
 
+#[cfg(feature = "fs")]
 pub(crate) enum MmapRef {
     Direct(Arc<Mmap>),
     Temp(TempMmap),
 }
 
+#[cfg(feature = "fs")]
 impl MmapRef {
     pub fn map(&self) -> Arc<Mmap> {
         match self {
@@ -113,6 +122,7 @@ impl MmapRef {
 /// Speller archive is a file read into spell-checker with metadata.
 pub trait SpellerArchive {
     /// Read and parse a speller archive.
+    #[cfg(feature = "fs")]
     fn open(path: &Path) -> Result<Self, SpellerArchiveError>
     where
         Self: Sized;
@@ -142,6 +152,7 @@ pub trait SpellerArchive {
 }
 
 /// Reads a speller archive.
+#[cfg(feature = "fs")]
 pub fn open<P>(path: P) -> Result<Arc<dyn SpellerArchive + Send + Sync>, SpellerArchiveError>
 where
     P: AsRef<Path>,
@@ -157,4 +168,38 @@ where
             ext: unknown.map(|x| x.to_owned()).unwrap_or_else(OsString::new),
         }),
     }
+}
+
+/// The first bytes of a box archive.
+const BOX_MAGIC: &[u8] = b"\xffBOX";
+/// The first bytes of a zip archive with members, and of an empty one.
+const ZIP_MAGICS: [&[u8]; 2] = [b"PK\x03\x04", b"PK\x05\x06"];
+
+/// Reads a speller archive held in memory: a BHFST or a ZHFST archive, told
+/// apart by its first bytes rather than by a name.
+///
+/// `path` names the archive in errors. See
+/// [`BoxSpellerArchive::from_bytes`](boxf::BoxSpellerArchive::from_bytes) and
+/// [`ZipSpellerArchive::from_bytes`] for what each reads in place.
+pub fn from_bytes(
+    bytes: impl Into<Bytes>,
+    path: impl AsRef<Path>,
+) -> Result<Arc<dyn SpellerArchive + Send + Sync>, SpellerArchiveError> {
+    let bytes = bytes.into();
+    let path = path.as_ref();
+    if bytes.starts_with(BOX_MAGIC) {
+        return ThfstBytesBoxSpellerArchive::from_bytes(bytes, path).map(|x| Arc::new(x) as _);
+    }
+    if ZIP_MAGICS.iter().any(|magic| bytes.starts_with(magic)) {
+        return ZipSpellerArchive::from_bytes(bytes, path).map(|x| Arc::new(x) as _);
+    }
+    Err(SpellerArchiveError::UnrecognisedArchive {
+        path: path.to_path_buf(),
+        start: bytes
+            .iter()
+            .take(4)
+            .map(|b| format!("{b:02x}"))
+            .collect::<Vec<_>>()
+            .join(" "),
+    })
 }

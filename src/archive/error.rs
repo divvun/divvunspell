@@ -60,6 +60,19 @@ pub enum SpellerArchiveError {
         path: PathBuf,
     },
 
+    /// Bytes handed over as an archive are neither a BHFST (box) nor a ZHFST
+    /// (zip) archive.
+    #[error(
+        "'{}' is neither a BHFST nor a ZHFST archive: it starts with the bytes {start}",
+        path.display()
+    )]
+    UnrecognisedArchive {
+        /// the name the archive was given
+        path: PathBuf,
+        /// its first bytes, in hexadecimal
+        start: String,
+    },
+
     /// The file does not have a recognised archive extension.
     #[error(
         "unsupported archive extension '{}' for '{}': expected .zhfst or .bhfst",

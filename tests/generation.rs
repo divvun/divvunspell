@@ -9,6 +9,8 @@
 //!    speller), run by default — exercises `generate()` end-to-end on
 //!    real Sámi morphology.
 
+#![cfg(feature = "fs")]
+
 use std::path::Path;
 use std::sync::Arc;
 

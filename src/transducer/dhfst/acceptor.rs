@@ -113,6 +113,7 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "fs")]
 use memmap2::Mmap;
 
 use super::{DhfstType, PREFIX_LEN, u16_at, u32_at, u64_at};
@@ -219,9 +220,10 @@ struct Layout {
     n_distances: u32,
 }
 
-/// A validated DHFST acceptor, read in place from a memory map.
+/// A validated DHFST acceptor, read in place from a memory map, or from bytes
+/// on the heap without the `fs` feature.
 pub struct DhfstAcceptor {
-    buf: Mmap,
+    buf: vfs::Map,
     layout: Layout,
     alphabet: TransducerAlphabet,
     symbol_names: Vec<String>,
@@ -342,10 +344,32 @@ impl DhfstAcceptor {
     /// `path` is used only for error reporting. Every section, check, record
     /// and list is checked here, so once this succeeds no later lookup can
     /// read outside the buffer.
+    #[cfg(feature = "fs")]
     pub fn from_mmap(
         buf: Mmap,
         path: impl Into<PathBuf>,
     ) -> Result<DhfstAcceptor, TransducerError> {
+        DhfstAcceptor::from_map(buf, path)
+    }
+
+    /// Load an acceptor held in memory, from a copy of `bytes`: an anonymous
+    /// mapping with the `fs` feature, bytes on the heap without it.
+    pub fn from_bytes(
+        bytes: &[u8],
+        path: impl Into<PathBuf>,
+    ) -> Result<DhfstAcceptor, TransducerError> {
+        let path = path.into();
+        if bytes.is_empty() {
+            return Err(TransducerError::CorruptHeader { path, offset: 0 });
+        }
+        let map = vfs::copy_to_map(bytes).map_err(|source| TransducerError::Memmap {
+            path: path.clone(),
+            source,
+        })?;
+        DhfstAcceptor::from_map(map, path)
+    }
+
+    fn from_map(buf: vfs::Map, path: impl Into<PathBuf>) -> Result<DhfstAcceptor, TransducerError> {
         let path = path.into();
         let parsed = parse(&buf, &path)?;
         Ok(DhfstAcceptor {
@@ -356,31 +380,6 @@ impl DhfstAcceptor {
             meta: parsed.meta,
             least_weight: parsed.least_weight,
         })
-    }
-
-    /// Load an acceptor held in memory, by copying it into an anonymous
-    /// mapping.
-    pub fn from_bytes(
-        bytes: &[u8],
-        path: impl Into<PathBuf>,
-    ) -> Result<DhfstAcceptor, TransducerError> {
-        let path = path.into();
-        if bytes.is_empty() {
-            return Err(TransducerError::CorruptHeader { path, offset: 0 });
-        }
-        let mut map =
-            memmap2::MmapMut::map_anon(bytes.len()).map_err(|source| TransducerError::Memmap {
-                path: path.clone(),
-                source,
-            })?;
-        map.copy_from_slice(bytes);
-        let map = map
-            .make_read_only()
-            .map_err(|source| TransducerError::Memmap {
-                path: path.clone(),
-                source,
-            })?;
-        DhfstAcceptor::from_mmap(map, path)
     }
 
     /// The raw bytes of the file.
@@ -1313,11 +1312,15 @@ impl<F: vfs::File> TransducerLoader<F> for DhfstAcceptor {
             path: path.to_path_buf(),
             source,
         })?;
-        let mmap = unsafe { file.memory_map() }.map_err(|source| TransducerError::Memmap {
+        #[cfg(feature = "fs")]
+        let map = unsafe { file.memory_map() };
+        #[cfg(not(feature = "fs"))]
+        let map = file.contents();
+        let map = map.map_err(|source| TransducerError::Memmap {
             path: path.to_path_buf(),
             source,
         })?;
-        DhfstAcceptor::from_mmap(mmap, path.to_path_buf())
+        DhfstAcceptor::from_map(map, path.to_path_buf())
     }
 }
 

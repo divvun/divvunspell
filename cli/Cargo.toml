@@ -20,7 +20,7 @@ tracing-subscriber = "0.3"
 
 serde.workspace = true
 serde_json.workspace = true
-box-format.workspace = true
+box-format = { workspace = true, features = ["reader", "xz", "zstd"] }
 clap.workspace = true
 anyhow.workspace = true
 

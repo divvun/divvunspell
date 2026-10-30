@@ -1,19 +1,23 @@
 //! Zip archive stuff.
 use ::zip::{CompressionMethod, ZipArchive};
+#[cfg(feature = "fs")]
 use memmap2::MmapOptions;
+#[cfg(feature = "fs")]
 use std::fs::File;
 use std::io::Seek;
 use std::io::prelude::*;
+use std::path::Path;
 use std::sync::Arc;
 
 use super::error::SpellerArchiveError;
 use super::meta::SpellerMetadata;
-use super::{
-    BUNDLED_CONFIG_MEMBER, ErrmodelSource, MmapRef, SpellerArchive, TempMmap, parse_bundled_config,
-};
+use super::{BUNDLED_CONFIG_MEMBER, ErrmodelSource, SpellerArchive, parse_bundled_config};
+#[cfg(feature = "fs")]
+use super::{MmapRef, TempMmap};
 use crate::speller::{HfstSpeller, Speller, SpellerConfig};
 use crate::transducer::TransducerFormat;
 use crate::transducer::hfst::HfstTransducer;
+use crate::vfs::{self, Bytes};
 
 /// Type alias for HFST-based speller loaded from a zip archive.
 ///
@@ -33,6 +37,7 @@ pub struct ZipSpellerArchive {
     errmodel_source: ErrmodelSource,
 }
 
+#[cfg(feature = "fs")]
 fn mmap_by_name<R: Read + Seek>(
     zipfile: &mut File,
     archive: &mut ZipArchive<R>,
@@ -71,6 +76,31 @@ fn mmap_by_name<R: Read + Seek>(
         Ok(v) => Ok(MmapRef::Direct(Arc::new(v))),
         Err(err) => Err(err),
     }
+}
+
+/// The member `name` of the zip archive `bytes`: a window onto them when the
+/// member is stored, its decompressed bytes otherwise.
+fn member_bytes(
+    bytes: &Bytes,
+    archive: &mut ZipArchive<std::io::Cursor<&[u8]>>,
+    name: &str,
+) -> Result<Bytes, std::io::Error> {
+    let mut member = archive.by_name(name)?;
+    if member.compression() == CompressionMethod::Stored {
+        let window = usize::try_from(member.data_start())
+            .ok()
+            .zip(usize::try_from(member.size()).ok())
+            .and_then(|(start, len)| bytes.slice(start..start.checked_add(len)?));
+        return window.ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("zip member '{name}' runs past the end of the archive"),
+            )
+        });
+    }
+    let mut out = Vec::new();
+    member.read_to_end(&mut out)?;
+    Ok(Bytes::from(out))
 }
 
 /// Read the archive's bundled [`SpellerConfig`] from
@@ -112,9 +142,108 @@ impl ZipSpellerArchive {
     pub fn hfst_speller(&self) -> Arc<HfstSpeller<HfstTransducer, HfstTransducer>> {
         self.speller.clone()
     }
+
+    /// Read a ZHFST archive held in memory.
+    ///
+    /// A stored member is read in place from `bytes` without the `fs`
+    /// feature and copied into an anonymous map with it; a deflated member
+    /// is decompressed, which needs the `compression` feature. `path` names
+    /// the archive in errors.
+    pub fn from_bytes(
+        bytes: impl Into<Bytes>,
+        path: impl AsRef<Path>,
+    ) -> Result<ZipSpellerArchive, SpellerArchiveError> {
+        let bytes = bytes.into();
+        let file_path = path.as_ref();
+        let mut archive = ZipArchive::new(std::io::Cursor::new(&bytes[..])).map_err(|source| {
+            SpellerArchiveError::Zip {
+                path: file_path.to_path_buf(),
+                source,
+            }
+        })?;
+        let member = |archive: &mut ZipArchive<_>, name: &str| {
+            member_bytes(&bytes, archive, name).map_err(|source| SpellerArchiveError::Io {
+                archive: file_path.to_path_buf(),
+                member: name.into(),
+                source,
+            })
+        };
+
+        let index = member(&mut archive, "index.xml")?;
+        let metadata = SpellerMetadata::from_bytes(&index).map_err(|source| {
+            SpellerArchiveError::MetadataXml {
+                archive: file_path.to_path_buf(),
+                source: Box::new(source),
+            }
+        })?;
+
+        let bundled_config = read_bundled_config(&mut archive, file_path);
+
+        let acceptor_id = metadata.acceptor().id().to_string();
+        let errmodel_id = metadata.errmodel().id().to_string();
+
+        let map = |archive: &mut ZipArchive<_>, name: &str| {
+            let bytes = member(archive, name)?;
+            vfs::into_map(bytes)
+                .map(Arc::new)
+                .map_err(|source| SpellerArchiveError::Io {
+                    archive: file_path.to_path_buf(),
+                    member: name.into(),
+                    source,
+                })
+        };
+        let acceptor = map(&mut archive, &acceptor_id)?;
+        let errmodel = map(&mut archive, &errmodel_id)?;
+        drop(archive);
+
+        ZipSpellerArchive::assemble(
+            file_path,
+            metadata,
+            bundled_config,
+            (acceptor_id, acceptor),
+            (errmodel_id, errmodel),
+        )
+    }
+
+    /// The archive whose acceptor and error model are the HFST transducers
+    /// in `acceptor` and `errmodel`, each with its member name.
+    fn assemble(
+        file_path: &Path,
+        metadata: SpellerMetadata,
+        bundled_config: Option<SpellerConfig>,
+        (acceptor_id, acceptor): (String, Arc<vfs::Map>),
+        (errmodel_id, errmodel): (String, Arc<vfs::Map>),
+    ) -> Result<ZipSpellerArchive, SpellerArchiveError> {
+        let acceptor =
+            HfstTransducer::from_map(acceptor, file_path.join(&acceptor_id)).map_err(|source| {
+                SpellerArchiveError::Transducer {
+                    archive: file_path.to_path_buf(),
+                    member: acceptor_id.clone(),
+                    source,
+                }
+            })?;
+        let errmodel =
+            HfstTransducer::from_map(errmodel, file_path.join(&errmodel_id)).map_err(|source| {
+                SpellerArchiveError::Transducer {
+                    archive: file_path.to_path_buf(),
+                    member: errmodel_id.clone(),
+                    source,
+                }
+            })?;
+
+        let speller = HfstSpeller::new_with_bundled_config(errmodel, acceptor, bundled_config);
+        let errmodel_source = ErrmodelSource::new(errmodel_id, TransducerFormat::Hfst);
+
+        Ok(ZipSpellerArchive {
+            metadata,
+            speller,
+            errmodel_source,
+        })
+    }
 }
 
 impl SpellerArchive for ZipSpellerArchive {
+    #[cfg(feature = "fs")]
     fn open(file_path: &std::path::Path) -> Result<ZipSpellerArchive, SpellerArchiveError> {
         let file = File::open(file_path).map_err(|source| SpellerArchiveError::Open {
             path: file_path.to_path_buf(),
@@ -170,29 +299,13 @@ impl SpellerArchive for ZipSpellerArchive {
             })?;
         drop(archive);
 
-        let acceptor =
-            HfstTransducer::from_mapped_memory(acceptor_mmap.map(), file_path.join(&acceptor_id))
-                .map_err(|source| SpellerArchiveError::Transducer {
-                archive: file_path.to_path_buf(),
-                member: acceptor_id.clone(),
-                source,
-            })?;
-        let errmodel =
-            HfstTransducer::from_mapped_memory(errmodel_mmap.map(), file_path.join(&errmodel_id))
-                .map_err(|source| SpellerArchiveError::Transducer {
-                archive: file_path.to_path_buf(),
-                member: errmodel_id.clone(),
-                source,
-            })?;
-
-        let speller = HfstSpeller::new_with_bundled_config(errmodel, acceptor, bundled_config);
-        let errmodel_source = ErrmodelSource::new(errmodel_id, TransducerFormat::Hfst);
-
-        Ok(ZipSpellerArchive {
+        ZipSpellerArchive::assemble(
+            file_path,
             metadata,
-            speller,
-            errmodel_source,
-        })
+            bundled_config,
+            (acceptor_id, acceptor_mmap.map()),
+            (errmodel_id, errmodel_mmap.map()),
+        )
     }
 
     fn speller(&self) -> Arc<dyn Speller + Send + Sync> {
@@ -277,6 +390,7 @@ mod tests {
 
     /// A ZHFST archive runs with optimized lookup only: an error model in the
     /// compact DHFST format is refused.
+    #[cfg(feature = "fs")]
     mod dhfst_is_not_zhfst {
         use super::*;
         use crate::archive::error::SpellerArchiveError;
@@ -351,6 +465,62 @@ mod tests {
             assert_eq!(source.format, "HFST optimized lookup");
             let suggestions = archive.speller().suggest("cet");
             assert!(suggestions.iter().any(|s| s.value == "cat"));
+
+            let bytes = std::fs::read(&path).expect("read");
+            let from_bytes = ZipSpellerArchive::from_bytes(bytes.clone(), &path).expect("reads");
+            assert_eq!(from_bytes.errmodel_source(), archive.errmodel_source());
+            let sniffed = crate::archive::from_bytes(bytes, &path).expect("reads");
+            for word in ["cet", "cart", "kar"] {
+                let want: Vec<_> = archive
+                    .speller()
+                    .suggest(word)
+                    .into_iter()
+                    .map(|s| (s.value, s.weight))
+                    .collect();
+                for read in [from_bytes.speller(), sniffed.speller()] {
+                    let got: Vec<_> = read
+                        .suggest(word)
+                        .into_iter()
+                        .map(|s| (s.value, s.weight))
+                        .collect();
+                    assert_eq!(got, want, "{word}");
+                }
+            }
+        }
+
+        #[cfg(feature = "compression")]
+        #[test]
+        fn a_deflated_member_is_decompressed_when_read_from_bytes() {
+            let mut writer = ZipWriter::new(Cursor::new(Vec::new()));
+            let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+            let xml = r#"<hfstspeller>
+  <info><locale>se</locale><title>t</title><description>d</description><producer>p</producer></info>
+  <acceptor type="general" id="acceptor.default.hfst"><title>a</title><description>a</description></acceptor>
+  <errmodel id="errmodel.default.hfst"><title>e</title><description>e</description></errmodel>
+</hfstspeller>"#;
+            writer.start_file("index.xml", stored).expect("start");
+            writer.write_all(xml.as_bytes()).expect("write");
+            writer
+                .start_file("acceptor.default.hfst", stored)
+                .expect("start");
+            writer.write_all(&test_support::lexicon()).expect("write");
+            writer
+                .start_file(
+                    "errmodel.default.hfst",
+                    SimpleFileOptions::default().compression_method(CompressionMethod::Deflated),
+                )
+                .expect("start");
+            writer.write_all(&test_support::errmodel()).expect("write");
+            let bytes = writer.finish().expect("finish").into_inner();
+
+            let archive = ZipSpellerArchive::from_bytes(bytes, "deflated.zhfst").expect("reads");
+            assert!(
+                archive
+                    .speller()
+                    .suggest("cet")
+                    .iter()
+                    .any(|s| s.value == "cat")
+            );
         }
 
         #[test]

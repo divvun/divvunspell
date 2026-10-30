@@ -1,4 +1,6 @@
-// We manually ensure alignment of reads in this file.
+// We manually ensure alignment of reads in this file. Without the `fs` feature
+// the tables are bytes on the heap, which promise no alignment, so their reads
+// take the byte cursor, as on 32-bit ARM.
 #![allow(clippy::cast_ptr_alignment)]
 
 use byteorder::{LittleEndian, ReadBytesExt};
@@ -9,12 +11,12 @@ use std::ptr;
 
 use crate::constants::INDEX_TABLE_SIZE;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
-use memmap2::Mmap;
+use crate::vfs::Map;
 use std::sync::Arc;
 
 pub struct MappedIndexTable {
     pub(crate) size: TransitionTableIndex,
-    pub(crate) mmap: Arc<Mmap>,
+    pub(crate) mmap: Arc<Map>,
     pub(crate) offset: usize,
     pub(crate) len: usize,
 }
@@ -29,7 +31,7 @@ impl fmt::Debug for MappedIndexTable {
 #[allow(clippy::len_without_is_empty)]
 impl MappedIndexTable {
     pub fn new(
-        buf: Arc<Mmap>,
+        buf: Arc<Map>,
         offset: usize,
         len: usize,
         size: TransitionTableIndex,
@@ -60,7 +62,10 @@ impl MappedIndexTable {
 
         let index = self.offset + INDEX_TABLE_SIZE * i.0 as usize;
 
-        let input_symbol = if cfg!(all(target_arch = "arm", target_pointer_width = "32")) {
+        let input_symbol = if cfg!(any(
+            all(target_arch = "arm", target_pointer_width = "32"),
+            not(feature = "fs")
+        )) {
             let mut cursor = self.make_cursor();
             cursor.set_position(index as u64);
             SymbolNumber(cursor.read_u16::<LittleEndian>().unwrap())
@@ -82,7 +87,10 @@ impl MappedIndexTable {
         }
 
         let index = self.offset + INDEX_TABLE_SIZE * i.0 as usize;
-        let target = if cfg!(all(target_arch = "arm", target_pointer_width = "32")) {
+        let target = if cfg!(any(
+            all(target_arch = "arm", target_pointer_width = "32"),
+            not(feature = "fs")
+        )) {
             let mut cursor = self.make_cursor();
             cursor.set_position((index + mem::size_of::<SymbolNumber>()) as u64);
             TransitionTableIndex(cursor.read_u32::<LittleEndian>().unwrap())

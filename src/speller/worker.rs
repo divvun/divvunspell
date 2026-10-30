@@ -197,8 +197,13 @@ impl Parked {
 ///   well above 1 means it is an NFA and the search pays for it on every node.
 ///
 /// Everything accumulated here is allocated only when it is switched on.
+#[cfg(not(all(target_family = "wasm", target_os = "unknown")))]
 static SEARCH_STATS: std::sync::LazyLock<bool> =
     std::sync::LazyLock::new(|| std::env::var_os("DIVVUNSPELL_SEARCH_STATS").is_some());
+/// `wasm32-unknown-unknown` has neither an environment nor a stderr to report
+/// to, so the statistics are off there.
+#[cfg(all(target_family = "wasm", target_os = "unknown"))]
+static SEARCH_STATS: std::sync::LazyLock<bool> = std::sync::LazyLock::new(|| false);
 
 /// Why a search stopped with nodes still queued.
 ///

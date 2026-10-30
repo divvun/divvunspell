@@ -18,6 +18,7 @@ use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+#[cfg(feature = "fs")]
 use memmap2::Mmap;
 
 use crate::transducer::alphabet::TransducerAlphabet;
@@ -229,17 +230,42 @@ pub enum ErrorModel {
 impl ErrorModel {
     /// Load an error model from a mapped file, in whichever format its header
     /// declares.
+    #[cfg(feature = "fs")]
     pub fn from_mapped_memory(
         buf: Arc<Mmap>,
+        path: impl Into<PathBuf>,
+    ) -> Result<ErrorModel, TransducerError> {
+        ErrorModel::from_map(buf, path)
+    }
+
+    /// Load an error model held in memory, in whichever format its header
+    /// declares, from a copy of `bytes`.
+    pub fn from_bytes(
+        bytes: &[u8],
+        path: impl Into<PathBuf>,
+    ) -> Result<ErrorModel, TransducerError> {
+        let path = path.into();
+        if bytes.is_empty() {
+            return Err(TransducerError::CorruptHeader { path, offset: 0 });
+        }
+        let map = vfs::copy_to_map(bytes).map_err(|source| TransducerError::Memmap {
+            path: path.clone(),
+            source,
+        })?;
+        ErrorModel::from_map(Arc::new(map), path)
+    }
+
+    fn from_map(
+        buf: Arc<vfs::Map>,
         path: impl Into<PathBuf>,
     ) -> Result<ErrorModel, TransducerError> {
         let path = path.into();
         match TransducerFormat::detect(&buf, &path)? {
             TransducerFormat::Hfst => {
-                hfst::HfstTransducer::from_mapped_memory(buf, path).map(ErrorModel::Hfst)
+                hfst::HfstTransducer::from_map(buf, path).map(ErrorModel::Hfst)
             }
             TransducerFormat::Dhfst { .. } => {
-                dhfst::DhfstTransducer::from_mapped_memory(buf, path).map(ErrorModel::Dhfst)
+                dhfst::DhfstTransducer::from_map(buf, path).map(ErrorModel::Dhfst)
             }
         }
     }
@@ -684,5 +710,6 @@ pub trait TransitionTable<F: vfs::File>: TransitionTableTrait + TransitionTableL
 pub trait IndexTable<F: vfs::File>: IndexTableTrait + IndexTableLoader<F> {}
 
 #[doc(hidden)]
+#[cfg(feature = "fs")]
 // This is not a public API.
 pub mod convert;

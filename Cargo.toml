@@ -29,7 +29,7 @@ unic-emoji-char = "0.9.0"
 parking_lot = "0.12.5"
 hashbrown = { version = "0.16", features = ["serde"] }
 smol_str = { version = "0.3.2", features = ["serde"] }
-box-format = { git = "https://github.com/bbqsrc/box", features = ["reader", "xz", "zstd"], default-features = false }
+box-format = { git = "https://github.com/bbqsrc/box", default-features = false }
 itertools = "0.14.0"
 strsim = "0.11.1"
 unic-ucd-common = "0.9.0"
@@ -47,7 +47,7 @@ anyhow = "1"
 
 [dependencies]
 libc.workspace = true
-memmap2.workspace = true
+memmap2 = { workspace = true, optional = true }
 byteorder.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -61,25 +61,43 @@ unic-emoji-char.workspace = true
 parking_lot.workspace = true
 hashbrown.workspace = true
 smol_str.workspace = true
-box-format.workspace = true
+box-format = { workspace = true, features = ["alloc"] }
 itertools.workspace = true
 strsim.workspace = true
 unic-ucd-common.workspace = true
 thiserror.workspace = true
-tempfile.workspace = true
-fs_extra.workspace = true
+tempfile = { workspace = true, optional = true }
+fs_extra = { workspace = true, optional = true }
 eieio.workspace = true
-pathos.workspace = true
-language-tags.workspace = true
-globwalk.workspace = true
+pathos = { workspace = true, optional = true }
+language-tags = { workspace = true, optional = true }
+globwalk = { workspace = true, optional = true }
 tracing.workspace = true
-mmap-io = "0.9.4"
+mmap-io = { version = "0.9.4", optional = true }
 
 [dev-dependencies]
 # Tests build a BHFST from the THFST fixtures to exercise archive loading.
 box-format = { workspace = true, features = ["writer"] }
+tempfile.workspace = true
 
 [features]
+default = ["fs"]
+# Files on the host: memory-mapped transducers, std::fs, temporary directories,
+# archives opened by path and installed-speller lookup. Without it every format
+# loads from bytes in memory, which is how a wasm32-unknown-unknown build reads
+# them.
+fs = [
+  "dep:memmap2",
+  "dep:mmap-io",
+  "dep:tempfile",
+  "dep:fs_extra",
+  "dep:pathos",
+  "dep:language-tags",
+  "dep:globwalk",
+  "box-format/reader",
+  "box-format/xz",
+  "box-format/zstd",
+]
 compression = ["zip/deflate"]
 # The DHFST writer: finds default arcs and fallback rows for an error model and
 # writes it in the compact format. Tools need it; spellers do not.

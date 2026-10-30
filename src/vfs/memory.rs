@@ -4,6 +4,7 @@
 //! allowing code to work with either memory-mapped files (zero-copy) or traditional file
 //! I/O (syscall-based) through a unified interface.
 
+#[cfg(feature = "fs")]
 use std::ptr;
 
 /// Trait for reading primitive values from memory or file storage.
@@ -26,6 +27,7 @@ pub trait Memory {
 ///
 /// Provides zero-copy access to file contents via direct pointer reads.
 /// This is the fastest access method and is preferred for production use.
+#[cfg(feature = "fs")]
 impl Memory for memmap2::Mmap {
     #[inline(always)]
     fn read_u16_at(&self, offset: usize) -> u16 {
@@ -48,7 +50,7 @@ impl Memory for memmap2::Mmap {
 /// Uses `read_exact_at` syscalls for each access. This is slower than mmap
 /// but can be useful when memory mapping is not available or when working
 /// with very large files that would exhaust address space.
-#[cfg(unix)]
+#[cfg(all(unix, feature = "fs"))]
 impl Memory for std::fs::File {
     #[inline(always)]
     fn read_u16_at(&self, offset: usize) -> u16 {
@@ -74,4 +76,33 @@ impl Memory for std::fs::File {
         self.read_exact_at(&mut buf, offset as u64).unwrap();
         f32::from_le_bytes(buf)
     }
+}
+
+/// Access to bytes on the heap.
+///
+/// A heap buffer promises no alignment, so each value is assembled from its
+/// bytes rather than read through a pointer to its type.
+impl Memory for super::Bytes {
+    #[inline(always)]
+    fn read_u16_at(&self, offset: usize) -> u16 {
+        u16::from_le_bytes(array(self, offset))
+    }
+
+    #[inline(always)]
+    fn read_u32_at(&self, offset: usize) -> u32 {
+        u32::from_le_bytes(array(self, offset))
+    }
+
+    #[inline(always)]
+    fn read_f32_at(&self, offset: usize) -> f32 {
+        f32::from_le_bytes(array(self, offset))
+    }
+}
+
+/// The `N` bytes at `offset`; the tables never ask past their end.
+#[inline(always)]
+fn array<const N: usize>(bytes: &[u8], offset: usize) -> [u8; N] {
+    let mut out = [0u8; N];
+    out.copy_from_slice(&bytes[offset..offset + N]);
+    out
 }

@@ -5,7 +5,7 @@
 
 use crate::transducer::TransducerError;
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
-use crate::vfs::{self, Filesystem, Memory};
+use crate::vfs::{self, Bytes, Filesystem, Memory};
 
 /// Index table for THFST transducers, generic over memory access pattern.
 ///
@@ -95,6 +95,7 @@ impl<M: Memory> IndexTable<M> {
 }
 
 /// Helper functions to create memory-mapped index tables from files.
+#[cfg(feature = "fs")]
 impl IndexTable<memmap2::Mmap> {
     pub fn from_path<P, FS, F>(fs: &FS, path: P) -> Result<Self, TransducerError>
     where
@@ -154,7 +155,7 @@ impl IndexTable<memmap2::Mmap> {
 ///
 /// This uses syscalls for each access and is slower than mmap, but can be
 /// useful when memory mapping is unavailable.
-#[cfg(unix)]
+#[cfg(all(unix, feature = "fs"))]
 impl<F: vfs::File> IndexTable<F>
 where
     F: Memory,
@@ -197,6 +198,7 @@ impl<M: Memory> crate::transducer::IndexTableTrait for IndexTable<M> {
 }
 
 // Implement loader for memory-mapped tables
+#[cfg(feature = "fs")]
 impl<F: vfs::File> crate::transducer::IndexTableLoader<F> for IndexTable<memmap2::Mmap> {
     fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
     where
@@ -208,7 +210,7 @@ impl<F: vfs::File> crate::transducer::IndexTableLoader<F> for IndexTable<memmap2
 }
 
 // Implement loader for file-based tables (Unix only)
-#[cfg(unix)]
+#[cfg(all(unix, feature = "fs"))]
 impl<F: vfs::File> crate::transducer::IndexTableLoader<F> for IndexTable<F>
 where
     F: Memory,
@@ -222,10 +224,30 @@ where
     }
 }
 
+/// The table held in memory: the file's bytes, read in place where the file
+/// is in memory and copied where it is not.
+impl<F: vfs::File> crate::transducer::IndexTableLoader<F> for IndexTable<Bytes> {
+    fn from_path<P, FS>(fs: &FS, path: P) -> Result<Self, TransducerError>
+    where
+        P: AsRef<std::path::Path>,
+        FS: Filesystem<File = F>,
+    {
+        let path = path.as_ref();
+        let io = |source| TransducerError::Io {
+            path: path.to_path_buf(),
+            source,
+        };
+        let bytes = fs.open_file(path).map_err(io)?.contents().map_err(io)?;
+        let size = bytes.len();
+        Ok(IndexTable::new(bytes, size))
+    }
+}
+
 // Backwards compatibility: implement old combined trait
+#[cfg(feature = "fs")]
 #[allow(deprecated)]
 impl<F: vfs::File> crate::transducer::IndexTable<F> for IndexTable<memmap2::Mmap> {}
 
-#[cfg(unix)]
+#[cfg(all(unix, feature = "fs"))]
 #[allow(deprecated)]
 impl<F: vfs::File + Memory> crate::transducer::IndexTable<F> for IndexTable<F> {}

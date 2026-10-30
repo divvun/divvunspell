@@ -645,7 +645,7 @@ impl std::fmt::Debug for MutatorSubsets {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "fs"))]
 mod tests {
     use super::*;
     use crate::transducer::TransducerLoader;

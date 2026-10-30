@@ -1,8 +1,10 @@
-// We manually ensure alignment of reads in this file.
+// We manually ensure alignment of reads in this file. Without the `fs` feature
+// the tables are bytes on the heap, which promise no alignment, so their reads
+// take the byte cursor, as on 32-bit ARM.
 #![allow(clippy::cast_ptr_alignment)]
 
+use crate::vfs::Map;
 use byteorder::{LittleEndian, ReadBytesExt};
-use memmap2::Mmap;
 use std::fmt;
 use std::io::Cursor;
 use std::mem;
@@ -15,7 +17,7 @@ use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 
 pub struct MappedTransitionTable {
     pub(crate) size: TransitionTableIndex,
-    pub(crate) mmap: Arc<Mmap>,
+    pub(crate) mmap: Arc<Map>,
     pub(crate) offset: usize,
 }
 
@@ -28,11 +30,7 @@ impl fmt::Debug for MappedTransitionTable {
 
 impl MappedTransitionTable {
     #[inline(always)]
-    pub fn new(
-        mmap: Arc<Mmap>,
-        offset: usize,
-        size: TransitionTableIndex,
-    ) -> MappedTransitionTable {
+    pub fn new(mmap: Arc<Map>, offset: usize, size: TransitionTableIndex) -> MappedTransitionTable {
         MappedTransitionTable { size, mmap, offset }
     }
 
@@ -44,7 +42,10 @@ impl MappedTransitionTable {
     #[inline(always)]
     fn read_symbol_from_cursor(&self, index: usize) -> Option<SymbolNumber> {
         let index = self.offset + index;
-        let x = if cfg!(all(target_arch = "arm", target_pointer_width = "32")) {
+        let x = if cfg!(any(
+            all(target_arch = "arm", target_pointer_width = "32"),
+            not(feature = "fs")
+        )) {
             let mut cursor = self.make_cursor();
             cursor.set_position(index as u64);
             SymbolNumber(cursor.read_u16::<LittleEndian>().unwrap())
@@ -87,8 +88,10 @@ impl MappedTransitionTable {
         let index = self.offset
             + ((TRANS_TABLE_SIZE * i.0 as usize) + (2 * mem::size_of::<SymbolNumber>()));
 
-        let x: TransitionTableIndex = if cfg!(all(target_arch = "arm", target_pointer_width = "32"))
-        {
+        let x: TransitionTableIndex = if cfg!(any(
+            all(target_arch = "arm", target_pointer_width = "32"),
+            not(feature = "fs")
+        )) {
             let mut cursor = self.make_cursor();
             cursor.set_position(index as u64);
             TransitionTableIndex(cursor.read_u32::<LittleEndian>().unwrap())
@@ -113,7 +116,10 @@ impl MappedTransitionTable {
                 + (2 * mem::size_of::<SymbolNumber>())
                 + mem::size_of::<TransitionTableIndex>());
 
-        let x: Weight = if cfg!(all(target_arch = "arm", target_pointer_width = "32")) {
+        let x: Weight = if cfg!(any(
+            all(target_arch = "arm", target_pointer_width = "32"),
+            not(feature = "fs")
+        )) {
             let mut cursor = self.make_cursor();
             cursor.set_position(index as u64);
             Weight(cursor.read_f32::<LittleEndian>().unwrap())
