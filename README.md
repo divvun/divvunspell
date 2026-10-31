@@ -110,6 +110,24 @@ whole; text no symbol matches is read a grapheme cluster at a time as
 input one grapheme cluster per symbol.) A `transducer::Lookup` keeps its
 tables from one word to the next.
 
+### From JavaScript
+
+The npm package [`@divvun/fst`](js/fst) is this library as WebAssembly, for
+browsers, Web Workers, Deno, Node and Bun: spelling with BHFST and ZHFST
+archives, and lookup in optimized-lookup, THFST and DHFST transducers, with
+the results the native library gives.
+
+```js
+import { init, readSpeller } from "@divvun/fst";
+
+await init();
+const speller = readSpeller(new Uint8Array(await (await fetch("se.bhfst")).arrayBuffer()));
+speller.suggest("sami", { nBest: 3 }); // [{ value: "sámi", weight: 14.58... }, ...]
+```
+
+`node js/build.mjs` builds it from `crates/divvun-fst-wasm`; see
+[js/fst/README.md](js/fst/README.md).
+
 ## Command-Line Tools
 
 ### divvunspell

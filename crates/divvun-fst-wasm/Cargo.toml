@@ -1,0 +1,48 @@
+[package]
+name = "divvun-fst-wasm"
+description = "wasm-bindgen glue behind @divvun/fst, divvun-fst for JavaScript"
+version.workspace = true
+authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/divvun/divvunspell"
+# The glue reaches users only through the npm package under js/fst, so the
+# crate is never published.
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+# Exports a small owned object, a panic, log events and the config resolver
+# for the JavaScript test suite. Only `js/build.mjs --test` turns it on, and
+# that build writes outside the package directory.
+test-hooks = []
+
+[dependencies]
+# Without default features every format loads from bytes and nothing touches
+# a file system; `compression` reads ZHFST archives whose members are deflated.
+divvun-fst = { path = "../..", default-features = false, features = ["compression"] }
+js-sys = "0.3.95"
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-core = "0.1.36"
+# The registry keeps the span bookkeeping that tracing asks of a subscriber;
+# the layer on it only filters and forwards events.
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry", "std"] }
+# The wasm-bindgen CLI that writes the JavaScript glue must be this exact
+# version, or it refuses the module.
+wasm-bindgen = "=0.2.118"
+# Named only to tell an unsupported zip compression from a broken archive.
+zip.workspace = true
+
+[dev-dependencies]
+# The example that writes the suite's fixtures and native expectations reads
+# every fixture from its file, as a native divvun-fst user does, so the module
+# is compared with the memory-mapped readers rather than with itself. These
+# features reach only the native test and example builds.
+divvun-fst = { path = "../..", features = ["fs", "compression", "dhfst-writer"] }
+box-format = { workspace = true, features = ["reader", "writer"] }
+zip = { workspace = true, features = ["deflate"] }
+tempfile.workspace = true

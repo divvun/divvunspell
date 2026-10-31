@@ -1,0 +1,31 @@
+{
+  "name": "@divvun/fst",
+  "version": "0.1.0",
+  "description": "divvunspell for JavaScript: loads BHFST and ZHFST spellers and checks and corrects words with them, and looks words up in optimized-lookup, THFST and DHFST transducers, as WebAssembly for browsers, Web Workers, Deno, Node and Bun.",
+  "keywords": ["divvunspell", "divvun", "spellchecker", "spelling", "finite-state", "transducer", "hfst", "webassembly"],
+  "license": "MIT OR Apache-2.0",
+  "author": "Brendan Molloy <brendan@bbqsrc.net>",
+  "contributors": ["UiT The Arctic University of Norway", "Sámediggi"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/divvun/divvunspell.git",
+    "directory": "js/fst"
+  },
+  "homepage": "https://github.com/divvun/divvunspell/tree/main/js/fst#readme",
+  "bugs": "https://github.com/divvun/divvunspell/issues",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

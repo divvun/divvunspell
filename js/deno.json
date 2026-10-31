@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "lib": ["esnext", "dom"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true
+  },
+  "imports": {
+    "./fst/pkg/divvun_fst_wasm.js": "./fst/glue-stub.d.ts"
+  },
+  "exclude": ["**/dist/", "**/pkg/", "**/node_modules/", "**/*.mjs"],
+  "lock": false
+}

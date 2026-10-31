@@ -2,3 +2,8 @@ target
 .DS_Store
 report.json
 tmp
+
+# JavaScript build output: wasm-bindgen glue and the compiled package
+/js/fst/pkg/
+/js/fst/dist/
+/js/**/node_modules/
