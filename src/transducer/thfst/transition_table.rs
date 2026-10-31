@@ -18,7 +18,7 @@ pub struct TransitionTable<M: Memory> {
     pub(crate) size: TransitionTableIndex,
 }
 
-const TRANS_TABLE_SIZE: usize = 12;
+pub(super) const TRANS_TABLE_SIZE: usize = 12;
 
 impl<M: Memory> TransitionTable<M> {
     /// Create a transition table from pre-existing memory.
@@ -149,32 +149,25 @@ impl TransitionTable<memmap2::Mmap> {
         Ok(TransitionTable::new(mmap, size))
     }
 
-    pub fn from_path_partial<P, FS, F>(
-        fs: &FS,
-        path: P,
-        chunk: u64,
-        total: u64,
-    ) -> Result<Self, TransducerError>
-    where
-        P: AsRef<std::path::Path>,
-        FS: Filesystem<File = F>,
-        F: vfs::File,
-    {
-        let path = path.as_ref();
-        let file = fs.open_file(path).map_err(|source| TransducerError::Io {
+    /// Map `count` records of the transition table in `file`, from record
+    /// `first`. `path` names the file in errors.
+    pub(crate) fn from_file_partial<F: vfs::File>(
+        file: &F,
+        path: &std::path::Path,
+        first: u64,
+        count: u64,
+    ) -> Result<Self, TransducerError> {
+        let memmap = |source| TransducerError::Memmap {
             path: path.to_path_buf(),
             source,
-        })?;
-        let len = file.len().map_err(|source| TransducerError::Io {
-            path: path.to_path_buf(),
-            source,
-        })? / total;
+        };
+        let record = TRANS_TABLE_SIZE as u64;
+        let len = usize::try_from(count * record)
+            .map_err(std::io::Error::other)
+            .map_err(memmap)?;
         let mmap = unsafe {
-            file.partial_memory_map(chunk * len, len as usize)
-                .map_err(|source| TransducerError::Memmap {
-                    path: path.to_path_buf(),
-                    source,
-                })?
+            file.partial_memory_map(first * record, len)
+                .map_err(memmap)?
         };
         let size = mmap.len();
         Ok(TransitionTable::new(mmap, size))
