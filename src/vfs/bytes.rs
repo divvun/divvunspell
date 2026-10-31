@@ -193,6 +193,13 @@ impl Filesystem {
             .insert(key(path.as_ref()), Entry::Stored(bytes.into()));
     }
 
+    /// The path of every file it holds, by its normal components joined with
+    /// `/`, in no particular order. A box archive member stored compressed is
+    /// listed too, though opening it fails.
+    pub fn paths(&self) -> impl Iterator<Item = &str> {
+        self.files.keys().map(String::as_str)
+    }
+
     /// The files of the box archive `bytes`, each a window onto the archive.
     ///
     /// Reads both versions of the box format. A member stored compressed
@@ -320,6 +327,10 @@ mod tests {
             fs.open_file("dir").map(|_| ()).map_err(|e| e.kind()),
             Err(io::ErrorKind::NotFound)
         );
+        fs.insert("./other", b"y".to_vec());
+        let mut paths: Vec<&str> = fs.paths().collect();
+        paths.sort();
+        assert_eq!(paths, ["dir/file", "other"]);
     }
 
     #[test]
