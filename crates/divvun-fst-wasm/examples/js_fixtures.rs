@@ -181,7 +181,7 @@ fn zip_members(path: &Path) -> Result<Vec<(String, Vec<u8>)>, Failure> {
         let mut member = archive.by_index(index)?;
         let mut bytes = Vec::new();
         member.read_to_end(&mut bytes)?;
-        members.push((member.name().to_owned(), bytes));
+        members.push((member.name()?.into_owned(), bytes));
     }
     Ok(members)
 }

@@ -46,8 +46,10 @@ fn mmap_by_name<R: Read + Seek>(
     let mut index = archive.by_name(name)?;
 
     if index.compression() != CompressionMethod::Stored {
+        // The directory is ours alone, so the member's own name, which the
+        // archive controls, is never part of the path.
         let tempdir = tempfile::tempdir()?;
-        let outpath = tempdir.path().join(index.mangled_name());
+        let outpath = tempdir.path().join("member");
 
         let mut outfile = File::create(&outpath)?;
         std::io::copy(&mut index, &mut outfile)?;
@@ -65,9 +67,10 @@ fn mmap_by_name<R: Read + Seek>(
         };
     }
 
+    let data_start = index.data_start().ok_or_else(|| unknown_data_start(name))?;
     let mmap = unsafe {
         MmapOptions::new()
-            .offset(index.data_start())
+            .offset(data_start)
             .len(index.size() as usize)
             .map(&*zipfile)
     };
@@ -76,6 +79,15 @@ fn mmap_by_name<R: Read + Seek>(
         Ok(v) => Ok(MmapRef::Direct(Arc::new(v))),
         Err(err) => Err(err),
     }
+}
+
+/// The error for a member whose data the archive did not locate when it
+/// opened the member, which a sound archive always does.
+fn unknown_data_start(name: &str) -> std::io::Error {
+    std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        format!("zip member '{name}' has no data offset"),
+    )
 }
 
 /// The member `name` of the zip archive `bytes`: a window onto them when the
@@ -87,8 +99,9 @@ fn member_bytes(
 ) -> Result<Bytes, std::io::Error> {
     let mut member = archive.by_name(name)?;
     if member.compression() == CompressionMethod::Stored {
-        let window = usize::try_from(member.data_start())
-            .ok()
+        let window = member
+            .data_start()
+            .and_then(|start| usize::try_from(start).ok())
             .zip(usize::try_from(member.size()).ok())
             .and_then(|(start, len)| bytes.slice(start..start.checked_add(len)?));
         return window.ok_or_else(|| {
@@ -115,7 +128,7 @@ pub(crate) fn read_bundled_config<R: Read + Seek>(
 ) -> Option<SpellerConfig> {
     if !archive
         .file_names()
-        .any(|name| name == BUNDLED_CONFIG_MEMBER)
+        .any(|name| name.is_ok_and(|name| name == BUNDLED_CONFIG_MEMBER))
     {
         return None;
     }
