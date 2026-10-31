@@ -208,6 +208,7 @@ impl TransducerAlphabetParser {
             identity_symbol: p.identity_symbol,
             unknown_symbol: p.unknown_symbol,
             flag_bits: Vec::new(),
+            flag_operations: Vec::new(),
             input_symbol_count: None,
             longest_input: std::sync::OnceLock::new(),
         };

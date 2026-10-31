@@ -42,6 +42,21 @@ impl MappedIndexTable {
         self.len - self.offset
     }
 
+    /// Entry `i` as stored, its input symbol and its target, read with one
+    /// bounds check, or `None` past the end of the table.
+    #[inline(always)]
+    pub(crate) fn entry(&self, i: TransitionTableIndex) -> Option<(u16, u32)> {
+        if i >= self.size {
+            return None;
+        }
+        let at = self.offset + INDEX_TABLE_SIZE * i.0 as usize;
+        let bytes: &[u8; INDEX_TABLE_SIZE] = self.mmap.get(at..)?.first_chunk()?;
+        Some((
+            u16::from_le_bytes([bytes[0], bytes[1]]),
+            u32::from_le_bytes([bytes[2], bytes[3], bytes[4], bytes[5]]),
+        ))
+    }
+
     #[inline(always)]
     pub fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
         if i >= self.size {
@@ -66,10 +81,8 @@ impl MappedIndexTable {
         }
 
         let index = self.offset + INDEX_TABLE_SIZE * i.0 as usize;
-        let target = TransitionTableIndex(u32_at(
-            &self.mmap,
-            index + mem::size_of::<SymbolNumber>(),
-        ));
+        let target =
+            TransitionTableIndex(u32_at(&self.mmap, index + mem::size_of::<SymbolNumber>()));
 
         if target == TransitionTableIndex::MAX {
             None

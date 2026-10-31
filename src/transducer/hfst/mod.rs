@@ -241,6 +241,31 @@ impl HfstTransducer {
         })
     }
 
+    /// Where the run of `state`'s arcs on `input` starts in the transition
+    /// table, which is where the cursor API's `has_transitions` and `next`
+    /// lead. A state in the transition table has its arcs after its own
+    /// record, and has the run when `opens` admits the first one's input; a
+    /// state in the index table has it when its entry for `input` is its own.
+    #[inline(always)]
+    fn run_start(
+        &self,
+        state: TransitionTableIndex,
+        input: SymbolNumber,
+        opens: impl Fn(u16) -> bool,
+    ) -> Option<TransitionTableIndex> {
+        if state >= TARGET_TABLE {
+            let first = state - TARGET_TABLE + TransitionTableIndex::ONE;
+            let record = self.transition_table.record(first)?;
+            opens(record.input).then_some(first)
+        } else {
+            let (symbol, target) = self
+                .index_table
+                .entry(state + TransitionTableIndex(input.0 as u32 + 1))?;
+            (symbol == input.0 && target != u32::MAX)
+                .then(|| TransitionTableIndex(target) - TARGET_TABLE)
+        }
+    }
+
     /// The bytes the tables are read from: the file's own, or for an
     /// unweighted file a copy of it whose transitions carry weights.
     #[inline(always)]
@@ -424,6 +449,59 @@ impl Transducer for HfstTransducer {
         self.transition_table.input_symbol(i)
     }
 
+    /// The arcs the cursor walk finds, each record read whole.
+    #[inline(always)]
+    fn for_each_arc<V>(&self, state: TransitionTableIndex, input: SymbolNumber, mut visit: V)
+    where
+        V: FnMut(SymbolNumber, TransitionTableIndex, Weight),
+    {
+        let Some(mut at) = self.run_start(state, input, |symbol| symbol == input.0) else {
+            return;
+        };
+        while let Some(record) = self.transition_table.record(at)
+            && record.input == input.0
+        {
+            if record.output != u16::MAX && record.target != u32::MAX {
+                visit(
+                    SymbolNumber(record.output),
+                    TransitionTableIndex(record.target),
+                    Weight(record.weight),
+                );
+            }
+            at = at.incr();
+        }
+    }
+
+    /// The epsilon arcs and the flag diacritic arcs after them, in one run.
+    #[inline(always)]
+    fn for_each_free_arc<V>(&self, state: TransitionTableIndex, mut visit: V)
+    where
+        V: FnMut(SymbolNumber, SymbolNumber, TransitionTableIndex, Weight),
+    {
+        let free = |symbol: u16| symbol == 0 || self.alphabet.is_flag(SymbolNumber(symbol));
+        let Some(mut at) = self.run_start(state, SymbolNumber::ZERO, free) else {
+            return;
+        };
+        while let Some(record) = self.transition_table.record(at)
+            && free(record.input)
+        {
+            let target = TransitionTableIndex(record.target);
+            let weight = Weight(record.weight);
+            if record.input != 0 && record.target != u32::MAX {
+                let flag = SymbolNumber(record.input);
+                visit(flag, flag, target, weight);
+            } else if record.output != u16::MAX && record.target != u32::MAX {
+                visit(
+                    SymbolNumber::ZERO,
+                    SymbolNumber(record.output),
+                    target,
+                    weight,
+                );
+            }
+            at = at.incr();
+        }
+    }
+
     #[inline(always)]
     fn alphabet(&self) -> &TransducerAlphabet {
         &self.alphabet
@@ -455,5 +533,132 @@ impl<F: vfs::File> TransducerLoader<F> for HfstTransducer {
             source,
         })?;
         HfstTransducer::from_map(Arc::new(map), path.to_path_buf())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_support::{OlState, errmodel, lexicon, ol_bytes_with};
+    use super::*;
+
+    type Arc = (u16, u16, u32, u32);
+
+    /// The arcs from `state` on `input` that the cursor API leads to, walked
+    /// as the trait's default `for_each_arc` walks them.
+    fn cursor_arcs(
+        t: &HfstTransducer,
+        state: TransitionTableIndex,
+        input: SymbolNumber,
+    ) -> Vec<Arc> {
+        let mut arcs = Vec::new();
+        if !t.has_transitions(state.incr(), Some(input)) {
+            return arcs;
+        }
+        let Some(mut next) = t.next(state, input) else {
+            return arcs;
+        };
+        loop {
+            let transition = if input == SymbolNumber::ZERO {
+                t.take_epsilons(next)
+            } else {
+                t.take_non_epsilons(next, input)
+            };
+            let Some(transition) = transition else {
+                break;
+            };
+            if let (Some(output), Some(target), Some(weight)) = (
+                transition.symbol(),
+                transition.target(),
+                transition.weight(),
+            ) {
+                arcs.push((input.0, output.0, target.0, weight.0.to_bits()));
+            }
+            next = next.incr();
+        }
+        arcs
+    }
+
+    /// The free arcs from `state` as the trait's default `for_each_free_arc`
+    /// finds them: the cursor walk on epsilon, then the flag arcs of
+    /// `free_arcs`.
+    fn cursor_free_arcs(t: &HfstTransducer, state: TransitionTableIndex) -> Vec<Arc> {
+        let mut arcs = cursor_arcs(t, state, SymbolNumber::ZERO);
+        for (input, transition) in t.free_arcs(state) {
+            if input == SymbolNumber::ZERO {
+                continue;
+            }
+            if let (Some(target), Some(weight)) = (transition.target(), transition.weight()) {
+                arcs.push((input.0, input.0, target.0, weight.0.to_bits()));
+            }
+        }
+        arcs
+    }
+
+    /// Epsilon arcs, flag diacritic arcs before and after them, a state whose
+    /// only free arcs are flags, and arcs on several inputs.
+    fn flags() -> Vec<u8> {
+        let symbols = ["@_EPSILON_SYMBOL_@", "@P.F.A@", "@R.F.A@", "a", "b"];
+        let states: Vec<OlState> = vec![
+            (
+                None,
+                vec![
+                    (1, 1, 1, 0.5),
+                    (0, 3, 2, 0.25),
+                    (3, 3, 3, 1.0),
+                    (3, 4, 2, 2.0),
+                ],
+            ),
+            (None, vec![(2, 2, 3, 0.0), (4, 4, 0, 0.0)]),
+            (
+                Some(0.0),
+                vec![(0, 0, 0, 0.0), (0, 4, 3, 1.5), (2, 2, 1, 0.0)],
+            ),
+            (Some(1.0), vec![]),
+        ];
+        ol_bytes_with(&symbols, &states, true)
+    }
+
+    /// Every place a walk can start, as a state: each index table entry and
+    /// each transition record, whether or not a state is there, so that the
+    /// two walks are compared on every path through their code.
+    fn places(t: &HfstTransducer) -> impl Iterator<Item = TransitionTableIndex> {
+        let index = (0..t.index_table.size.0 + 2).map(TransitionTableIndex);
+        let transitions =
+            (0..t.transition_table.size.0 + 2).map(|i| TARGET_TABLE + TransitionTableIndex(i));
+        index.chain(transitions)
+    }
+
+    #[test]
+    fn records_read_whole_find_the_arcs_the_cursor_walk_finds() {
+        for (name, bytes) in [
+            ("flags", flags()),
+            ("lexicon", lexicon()),
+            ("errmodel", errmodel()),
+        ] {
+            let t = HfstTransducer::from_bytes(&bytes, name).expect("the fixture loads");
+            let symbols = t.alphabet().len() as u16;
+            for state in places(&t) {
+                for input in (0..symbols + 2).map(SymbolNumber) {
+                    let mut arcs = Vec::new();
+                    t.for_each_arc(state, input, |output, target, weight| {
+                        arcs.push((input.0, output.0, target.0, weight.0.to_bits()));
+                    });
+                    assert_eq!(
+                        arcs,
+                        cursor_arcs(&t, state, input),
+                        "{name}: {state:?} on {input:?}"
+                    );
+                }
+                let mut free = Vec::new();
+                t.for_each_free_arc(state, |input, output, target, weight| {
+                    free.push((input.0, output.0, target.0, weight.0.to_bits()));
+                });
+                assert_eq!(
+                    free,
+                    cursor_free_arcs(&t, state),
+                    "{name}: free arcs of {state:?}"
+                );
+            }
+        }
     }
 }

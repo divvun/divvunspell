@@ -18,14 +18,14 @@
 //! epsilon cycle is walked once and left, and every output a path without
 //! such a loop writes is found.
 
-use hashbrown::HashSet;
 use smol_str::SmolStr;
 use unic_segment::Graphemes;
 
 use super::Transducer;
-use super::symbol_transition::SymbolTransition;
-use super::tree_node::{NodeTables, TreeNode};
-use crate::types::{InputIndex, SymbolNumber, Weight};
+use crate::types::{
+    FlagDiacriticOperation, FlagDiacriticOperator, SymbolNumber, TransitionTableIndex, ValueNumber,
+    Weight,
+};
 
 /// One output of a [`lookup`], and the weight of the paths that write it.
 #[derive(Clone, Debug, PartialEq)]
@@ -52,34 +52,68 @@ pub fn lookup<T: Transducer>(transducer: &T, word: &str) -> Vec<LookupResult> {
 
 /// The tables a lookup works in, kept from one lookup to the next so that
 /// they keep their capacity. One serves any transducer, one word at a time.
+///
+/// The walk is depth first and hashes nothing. The path being walked carries
+/// its flag values in one array, with a log of the changes it made so that
+/// stepping back puts them back. A node is compared only with the nodes of the
+/// path at its own input position, the only ones it can coincide with, and
+/// only when a count of the path's states by bucket says one may share its
+/// state.
 #[derive(Default)]
 pub struct Lookup {
-    tables: Option<NodeTables>,
     input: Vec<SymbolNumber>,
     /// The nodes of the path being walked, root first.
     path: Vec<Frame>,
-    /// The `(state, input position, flag state)` of every node of `path`,
-    /// which no two of them share.
-    on_path: HashSet<(u32, u32, u32)>,
+    /// How many nodes of `path` are in a state of each [`bucket`], so that a
+    /// node whose bucket holds none is known at once to stand nowhere the
+    /// path has been. Empty between lookups but for its capacity.
+    on_path: Vec<u32>,
     /// Nodes still to walk, each with how many nodes of `path` lead to it.
     pending: Vec<Pending>,
     /// The output symbols of the path being walked.
     output: Vec<SymbolNumber>,
-    found: HashSet<(Vec<SymbolNumber>, u32)>,
+    /// The flag values of the path being walked, one per feature.
+    flags: Vec<ValueNumber>,
+    /// The flag changes the path has made, oldest first, each as the feature
+    /// and the value it held before.
+    changes: Vec<(SymbolNumber, ValueNumber)>,
+    /// The outputs found, as runs of `found_symbols`.
+    found: Vec<Found>,
+    found_symbols: Vec<SymbolNumber>,
 }
 
 struct Frame {
-    node: TreeNode,
+    state: TransitionTableIndex,
+    input: u32,
     /// How much of the output the path to this node has written.
     output_len: usize,
+    /// How many flag changes the path to this node has made.
+    changes_len: usize,
 }
 
 struct Pending {
     /// How many nodes of the path lead to this one.
     depth: usize,
-    node: TreeNode,
+    state: TransitionTableIndex,
+    input: u32,
+    weight: Weight,
     /// The symbol the arc to this node writes, epsilon for none.
     output: SymbolNumber,
+    /// The feature the arc to this node sets, and the value it sets.
+    flag: Option<(SymbolNumber, ValueNumber)>,
+}
+
+struct Found {
+    start: usize,
+    end: usize,
+    weight: Weight,
+}
+
+/// What a flag diacritic arc does to a path.
+enum FlagStep {
+    Blocks,
+    Passes,
+    Sets(SymbolNumber, ValueNumber),
 }
 
 impl Lookup {
@@ -95,27 +129,26 @@ impl Lookup {
             return Vec::new();
         }
 
-        let width = alphabet.state_size().0 as usize;
-        let tables = match self.tables.take() {
-            Some(mut tables) => {
-                tables.reset(width);
-                tables
-            }
-            None => NodeTables::new(width),
-        };
         self.path.clear();
-        self.on_path.clear();
+        self.on_path.resize(BUCKETS, 0);
         self.output.clear();
+        self.flags.clear();
+        self.flags
+            .resize(alphabet.state_size().0 as usize, ValueNumber::ZERO);
+        self.changes.clear();
         self.found.clear();
+        self.found_symbols.clear();
         self.pending.clear();
         self.pending.push(Pending {
             depth: 0,
-            node: TreeNode::empty(),
+            state: TransitionTableIndex(0),
+            input: 0,
+            weight: Weight::ZERO,
             output: SymbolNumber::ZERO,
+            flag: None,
         });
 
         let identity = alphabet.identity();
-        let operations = alphabet.operations();
         let written = |symbol: SymbolNumber| {
             if alphabet.is_flag(symbol) {
                 SymbolNumber::ZERO
@@ -124,32 +157,42 @@ impl Lookup {
             }
         };
 
-        while let Some(Pending {
-            depth,
-            node,
-            output,
-        }) = self.pending.pop()
-        {
-            while self.path.len() > depth {
+        while let Some(node) = self.pending.pop() {
+            while self.path.len() > node.depth {
                 if let Some(frame) = self.path.pop() {
-                    self.on_path.remove(&place(&frame.node));
+                    self.on_path[bucket(frame.state)] -= 1;
                 }
             }
-            self.output
-                .truncate(self.path.last().map_or(0, |frame| frame.output_len));
-            if !self.on_path.insert(place(&node)) {
+            let (output_len, changes_len) = self
+                .path
+                .last()
+                .map_or((0, 0), |frame| (frame.output_len, frame.changes_len));
+            self.output.truncate(output_len);
+            while self.changes.len() > changes_len {
+                if let Some((feature, value)) = self.changes.pop() {
+                    self.flags[feature.0 as usize] = value;
+                }
+            }
+            if let Some((feature, value)) = node.flag {
+                let held = std::mem::replace(&mut self.flags[feature.0 as usize], value);
+                self.changes.push((feature, held));
+            }
+            if self.revisits(&node) {
                 continue;
             }
-            if output != SymbolNumber::ZERO {
-                self.output.push(output);
+            if node.output != SymbolNumber::ZERO {
+                self.output.push(node.output);
             }
             self.path.push(Frame {
-                node,
+                state: node.state,
+                input: node.input,
                 output_len: self.output.len(),
+                changes_len: self.changes.len(),
             });
+            self.on_path[bucket(node.state)] += 1;
             let depth = self.path.len();
-            let state = node.lexicon_state;
-            let at = node.input_state.0 as usize;
+            let state = node.state;
+            let at = node.input as usize;
 
             if at == self.input.len()
                 && transducer.is_final(state)
@@ -160,40 +203,44 @@ impl Lookup {
                     weight if weight.0 == 0.0 => Weight::ZERO,
                     weight => weight,
                 };
-                self.found.insert((self.output.clone(), weight.0.to_bits()));
+                let start = self.found_symbols.len();
+                self.found_symbols.extend_from_slice(&self.output);
+                self.found.push(Found {
+                    start,
+                    end: self.found_symbols.len(),
+                    weight,
+                });
             }
 
             let pending = &mut self.pending;
-            transducer.for_each_arc(state, SymbolNumber::ZERO, |symbol, target, weight| {
+            let flags = &self.flags;
+            transducer.for_each_free_arc(state, |input, output, target, weight| {
+                let (output, flag) = if input == SymbolNumber::ZERO {
+                    (written(output), None)
+                } else {
+                    let Some(operation) = alphabet.flag_operation(input) else {
+                        return;
+                    };
+                    match flag_step(operation, flags) {
+                        FlagStep::Blocks => return,
+                        FlagStep::Passes => (SymbolNumber::ZERO, None),
+                        FlagStep::Sets(feature, value) => {
+                            (SymbolNumber::ZERO, Some((feature, value)))
+                        }
+                    }
+                };
                 pending.push(Pending {
                     depth,
-                    node: TreeNode {
-                        lexicon_state: target,
-                        weight: node.weight + weight,
-                        ..node
-                    },
-                    output: written(symbol),
+                    state: target,
+                    input: node.input,
+                    weight: node.weight + weight,
+                    output,
+                    flag,
                 });
             });
 
-            for (symbol, transition) in transducer.free_arcs(state) {
-                if symbol == SymbolNumber::ZERO || !well_formed(&transition) {
-                    continue;
-                }
-                let Some(operation) = operations.get(&symbol) else {
-                    continue;
-                };
-                if let Some(next) = node.apply_operation(&tables, operation, &transition) {
-                    pending.push(Pending {
-                        depth,
-                        node: next,
-                        output: SymbolNumber::ZERO,
-                    });
-                }
-            }
-
             if let Some(&input) = self.input.get(at) {
-                let next_input = InputIndex(node.input_state.0 + 1);
+                let next_input = node.input + 1;
                 transducer.for_each_arc(state, input, |symbol, target, weight| {
                     let symbol = if Some(symbol) == identity {
                         input
@@ -202,32 +249,75 @@ impl Lookup {
                     };
                     pending.push(Pending {
                         depth,
-                        node: TreeNode {
-                            lexicon_state: target,
-                            input_state: next_input,
-                            weight: node.weight + weight,
-                            ..node
-                        },
+                        state: target,
+                        input: next_input,
+                        weight: node.weight + weight,
                         output: written(symbol),
+                        flag: None,
                     });
                 });
             }
         }
-        self.tables = Some(tables);
 
-        let keys = alphabet.key_table();
+        for frame in self.path.drain(..) {
+            self.on_path[bucket(frame.state)] -= 1;
+        }
+        self.results(transducer)
+    }
+
+    /// Whether `node`, its flag change made, stands where a node of the path
+    /// does: in the same state at the same input position with the same flag
+    /// values. Input positions only grow along a path, so those nodes are the
+    /// last ones.
+    fn revisits(&self, node: &Pending) -> bool {
+        self.on_path[bucket(node.state)] != 0
+            && self
+                .path
+                .iter()
+                .rev()
+                .take_while(|frame| frame.input == node.input)
+                .any(|frame| frame.state == node.state && self.flags_as_at(frame.changes_len))
+    }
+
+    /// Whether the flag values are what they were when the path had made
+    /// `changes_len` changes: every feature changed since holds the value it
+    /// held before its first change since.
+    fn flags_as_at(&self, changes_len: usize) -> bool {
+        let since = &self.changes[changes_len..];
+        since.iter().enumerate().all(|(i, &(feature, held))| {
+            since[..i].iter().any(|&(earlier, _)| earlier == feature)
+                || self.flags[feature.0 as usize] == held
+        })
+    }
+
+    /// The outputs found, cheapest first, then by output, each output at
+    /// each weight once.
+    fn results<T: Transducer>(&mut self, transducer: &T) -> Vec<LookupResult> {
+        let symbols = &self.found_symbols;
+        let run = |found: &Found| &symbols[found.start..found.end];
+        self.found.sort_unstable_by(|a, b| {
+            a.weight
+                .0
+                .total_cmp(&b.weight.0)
+                .then_with(|| run(a).cmp(run(b)))
+        });
+        self.found.dedup_by(|later, earlier| {
+            later.weight.0.total_cmp(&earlier.weight.0).is_eq() && run(later) == run(earlier)
+        });
+
+        let keys = transducer.alphabet().key_table();
         let mut results: Vec<LookupResult> = self
             .found
-            .drain()
-            .map(|(symbols, weight)| {
-                let symbols: Vec<SmolStr> = symbols
+            .iter()
+            .map(|found| {
+                let symbols: Vec<SmolStr> = run(found)
                     .iter()
                     .map(|symbol| keys.get(symbol.0 as usize).cloned().unwrap_or_default())
                     .collect();
                 LookupResult {
                     output: symbols.iter().map(|symbol| symbol.as_str()).collect(),
                     symbols,
-                    weight: Weight(f32::from_bits(weight)),
+                    weight: found.weight,
                 }
             })
             .collect();
@@ -280,17 +370,46 @@ impl Lookup {
     }
 }
 
-/// Where a node is: its transducer state, its input position and its flag
-/// state. A path that comes back to a place it has been is in a cycle that
-/// reads nothing.
-fn place(node: &TreeNode) -> (u32, u32, u32) {
-    (node.lexicon_state.0, node.input_state.0, node.flags)
+/// How many buckets [`Lookup`] counts the states of its path in.
+const BUCKETS: usize = 1 << 12;
+
+/// The bucket of `state`, one of [`BUCKETS`].
+#[inline(always)]
+fn bucket(state: TransitionTableIndex) -> usize {
+    (state.0.wrapping_mul(0x9E37_79B9) >> 20) as usize
 }
 
-/// Whether a transition leads somewhere at some weight, as every arc a
-/// transducer hands out does.
-fn well_formed(transition: &SymbolTransition) -> bool {
-    transition.target().is_some() && transition.weight().is_some()
+/// What the flag diacritic `operation` does to a path with flag values
+/// `flags`, by the speller's rules (`TreeNode::apply_operation`).
+fn flag_step(operation: &FlagDiacriticOperation, flags: &[ValueNumber]) -> FlagStep {
+    let FlagDiacriticOperation {
+        operation,
+        feature,
+        value,
+    } = *operation;
+    let held = flags[feature.0 as usize];
+    let check = |holds: bool| {
+        if holds {
+            FlagStep::Passes
+        } else {
+            FlagStep::Blocks
+        }
+    };
+    match operation {
+        FlagDiacriticOperator::PositiveSet => FlagStep::Sets(feature, value),
+        FlagDiacriticOperator::NegativeSet => FlagStep::Sets(feature, value.invert()),
+        FlagDiacriticOperator::Require if value.0 == 0 => check(held != ValueNumber::ZERO),
+        FlagDiacriticOperator::Require => check(held == value),
+        FlagDiacriticOperator::Disallow if value.0 == 0 => check(held == ValueNumber::ZERO),
+        FlagDiacriticOperator::Disallow => check(held != value),
+        FlagDiacriticOperator::Clear => FlagStep::Sets(feature, ValueNumber::ZERO),
+        FlagDiacriticOperator::Unification
+            if held.0 == 0 || held == value || (held.0 < 0 && held.invert() != value) =>
+        {
+            FlagStep::Sets(feature, value)
+        }
+        FlagDiacriticOperator::Unification => FlagStep::Blocks,
+    }
 }
 
 #[cfg(test)]

@@ -542,6 +542,32 @@ pub trait Transducer: Sized {
         }
     }
 
+    /// Hand `visit` every arc leaving `state` that reads no input, as
+    /// `(input, output, target, weight)`: the arcs
+    /// [`for_each_arc`](Self::for_each_arc) visits on epsilon, with epsilon as
+    /// their input, then the flag diacritic arcs of
+    /// [`free_arcs`](Self::free_arcs), each with its flag as input and output.
+    ///
+    /// The default implementation asks those two in turn. A format that keeps
+    /// both kinds of arc in one run overrides it to read the run once.
+    #[inline(always)]
+    fn for_each_free_arc<V>(&self, state: TransitionTableIndex, mut visit: V)
+    where
+        V: FnMut(SymbolNumber, SymbolNumber, TransitionTableIndex, Weight),
+    {
+        self.for_each_arc(state, SymbolNumber::ZERO, |output, target, weight| {
+            visit(SymbolNumber::ZERO, output, target, weight)
+        });
+        for (input, transition) in self.free_arcs(state) {
+            if input == SymbolNumber::ZERO {
+                continue;
+            }
+            if let (Some(target), Some(weight)) = (transition.target(), transition.weight()) {
+                visit(input, input, target, weight);
+            }
+        }
+    }
+
     /// The epsilon and flag diacritic arcs leaving `state`, in the order the
     /// transducer stores them, each as its input symbol and the transition
     /// the search takes.

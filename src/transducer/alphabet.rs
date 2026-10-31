@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use smol_str::SmolStr;
 
 use crate::transducer::Transducer;
-use crate::types::{OperationsMap, SymbolNumber};
+use crate::types::{FlagDiacriticOperation, OperationsMap, SymbolNumber};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TransducerAlphabet {
@@ -21,6 +21,9 @@ pub struct TransducerAlphabet {
     /// walk asks whether a symbol is a flag at every state it leaves.
     #[serde(skip)]
     pub(crate) flag_bits: Vec<u64>,
+    /// `operations` by symbol number, built with `flag_bits`.
+    #[serde(skip)]
+    pub(crate) flag_operations: Vec<Option<FlagDiacriticOperation>>,
     /// How many of the symbols, numbered first, occur on the input side,
     /// where the file says so: an optimized-lookup header does, a THFST
     /// alphabet does not.
@@ -73,7 +76,8 @@ impl TransducerAlphabet {
         }
     }
 
-    /// Build the flag bitset [`is_flag`](Self::is_flag) reads from the flag
+    /// Build the flag bitset [`is_flag`](Self::is_flag) reads, and the table
+    /// [`flag_operation`](Self::flag_operation) reads, from the flag
     /// operations; the loaders call this once the alphabet is complete.
     pub(crate) fn index_flags(&mut self) {
         let len = self
@@ -83,10 +87,24 @@ impl TransducerAlphabet {
             .max()
             .unwrap_or(0);
         let mut bits = vec![0u64; len.div_ceil(64)];
-        for s in self.operations.keys() {
+        let mut operations = vec![None; len];
+        for (s, operation) in &self.operations {
             bits[s.0 as usize / 64] |= 1 << (s.0 % 64);
+            operations[s.0 as usize] = Some(*operation);
         }
         self.flag_bits = bits;
+        self.flag_operations = operations;
+    }
+
+    /// The flag diacritic operation of `symbol`, if it is a flag.
+    #[inline(always)]
+    pub fn flag_operation(&self, symbol: SymbolNumber) -> Option<&FlagDiacriticOperation> {
+        match self.flag_operations.get(symbol.0 as usize) {
+            Some(operation) => operation.as_ref(),
+            // An alphabet no loader indexed answers from the map.
+            None if self.flag_bits.is_empty() => self.operations.get(&symbol),
+            None => None,
+        }
     }
 
     /// Whether input text may be read as `symbol`: a regular symbol of the
