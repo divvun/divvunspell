@@ -1,15 +1,8 @@
-// We manually ensure alignment of reads in this file. Without the `fs` feature
-// the tables are bytes on the heap, which promise no alignment, so their reads
-// take the byte cursor, as on 32-bit ARM.
-#![allow(clippy::cast_ptr_alignment)]
-
-use byteorder::{LittleEndian, ReadBytesExt};
 use std::fmt;
-use std::io::Cursor;
 use std::mem;
-use std::ptr;
 
 use crate::constants::INDEX_TABLE_SIZE;
+use crate::transducer::dhfst::{u16_at, u32_at};
 use crate::types::{SymbolNumber, TransitionTableIndex, Weight};
 use crate::vfs::Map;
 use std::sync::Arc;
@@ -50,11 +43,6 @@ impl MappedIndexTable {
     }
 
     #[inline(always)]
-    fn make_cursor<'a>(&'a self) -> Cursor<&'a [u8]> {
-        Cursor::new(&self.mmap)
-    }
-
-    #[inline(always)]
     pub fn input_symbol(&self, i: TransitionTableIndex) -> Option<SymbolNumber> {
         if i >= self.size {
             return None;
@@ -62,16 +50,7 @@ impl MappedIndexTable {
 
         let index = self.offset + INDEX_TABLE_SIZE * i.0 as usize;
 
-        let input_symbol = if cfg!(any(
-            all(target_arch = "arm", target_pointer_width = "32"),
-            not(feature = "fs")
-        )) {
-            let mut cursor = self.make_cursor();
-            cursor.set_position(index as u64);
-            SymbolNumber(cursor.read_u16::<LittleEndian>().unwrap())
-        } else {
-            SymbolNumber(unsafe { ptr::read(self.mmap.as_ptr().add(index) as *const _) })
-        };
+        let input_symbol = SymbolNumber(u16_at(&self.mmap, index));
 
         if input_symbol == SymbolNumber::MAX {
             None
@@ -87,18 +66,10 @@ impl MappedIndexTable {
         }
 
         let index = self.offset + INDEX_TABLE_SIZE * i.0 as usize;
-        let target = if cfg!(any(
-            all(target_arch = "arm", target_pointer_width = "32"),
-            not(feature = "fs")
-        )) {
-            let mut cursor = self.make_cursor();
-            cursor.set_position((index + mem::size_of::<SymbolNumber>()) as u64);
-            TransitionTableIndex(cursor.read_u32::<LittleEndian>().unwrap())
-        } else {
-            TransitionTableIndex(unsafe {
-                ptr::read(self.mmap.as_ptr().add(index + 2) as *const _)
-            })
-        };
+        let target = TransitionTableIndex(u32_at(
+            &self.mmap,
+            index + mem::size_of::<SymbolNumber>(),
+        ));
 
         if target == TransitionTableIndex::MAX {
             None
@@ -116,11 +87,10 @@ impl MappedIndexTable {
         }
 
         let index = self.offset + INDEX_TABLE_SIZE * i.0 as usize;
-        let weight: Weight = {
-            let mut cursor = self.make_cursor();
-            cursor.set_position((index + mem::size_of::<SymbolNumber>()) as u64);
-            Weight(cursor.read_f32::<LittleEndian>().unwrap())
-        };
+        let weight = Weight(f32::from_bits(u32_at(
+            &self.mmap,
+            index + mem::size_of::<SymbolNumber>(),
+        )));
 
         Some(weight)
     }
