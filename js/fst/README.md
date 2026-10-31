@@ -23,7 +23,8 @@ const speller = readSpeller(bytes);
 
 speller.isCorrect("sámi"); // true
 speller.suggest("sami");
-// [{ value: "sámi", weight: 14.58... }, { value: "sama", weight: 40.35... }, ...]
+// [{ value: "sámi", weight: 19.12... }, { value: "Sámi", weight: 48.42... }, ...]
+// The weights depend on the speller's build.
 
 speller.locale; // "se"
 speller.metadata?.info.title; // [{ lang: null, value: "..." }]
