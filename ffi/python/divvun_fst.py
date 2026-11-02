@@ -134,6 +134,9 @@ class _DivvunFstLib:
         self.lib.cffi_vec_free.argtypes = [RustSlice]
         self.lib.cffi_vec_free.restype = None
 
+        self.lib.DFST_VecSuggestion_free.argtypes = [RustSlice]
+        self.lib.DFST_VecSuggestion_free.restype = None
+
         # Word indices (tokenization)
         self.lib.DFST_WordIndices_new.argtypes = [ctypes.c_char_p]
         self.lib.DFST_WordIndices_new.restype = ctypes.c_void_p
@@ -208,7 +211,7 @@ class Speller:
 
             results.append(Suggestion(value, weight, completed))
 
-        _lib.lib.cffi_vec_free(suggestions_slice)
+        _lib.lib.DFST_VecSuggestion_free(suggestions_slice)
         return results
 
 

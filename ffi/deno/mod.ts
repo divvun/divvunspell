@@ -95,6 +95,10 @@ const symbols = {
     parameters: [{ struct: ["pointer", "usize"] }],
     result: "void",
   },
+  DFST_VecSuggestion_free: {
+    parameters: [{ struct: ["pointer", "usize"] }],
+    result: "void",
+  },
   DFST_WordIndices_new: {
     parameters: ["buffer"],
     result: "pointer",
@@ -284,7 +288,7 @@ export class Speller {
       results.push({ value, weight, completed });
     }
 
-    lib.symbols.cffi_vec_free(suggestionsSlice);
+    lib.symbols.DFST_VecSuggestion_free(suggestionsSlice);
     return results;
   }
 }

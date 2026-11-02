@@ -146,6 +146,18 @@ pub unsafe extern "C" fn DFST_WordContext_freeCurrent(current: CCow) {
 pub type SuggestionVecMarshaler = cffi::VecMarshaler<Suggestion>;
 pub type SuggestionVecRefMarshaler = cffi::VecRefMarshaler<Suggestion>;
 
+/// Frees a list from `DFST_Speller_suggest` or `DFST_Speller_suggestWithConfig`,
+/// and every suggestion in it. A list with NULL data or a length of 0 is
+/// ignored. `cffi_vec_free` must not be used instead: it frees only bytes.
+///
+/// # Safety
+/// `suggestions` must have NULL data, a length of 0, or have come from one of
+/// those functions, and must not already have been freed.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn DFST_VecSuggestion_free(suggestions: cffi::Slice<Suggestion>) {
+    unsafe { SuggestionVecMarshaler::free(suggestions) }
+}
+
 #[derive(Clone, Copy, Default, PartialEq)]
 #[repr(C)]
 pub struct FfiReweightingConfig {

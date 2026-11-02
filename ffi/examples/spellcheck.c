@@ -105,6 +105,8 @@ int main(int argc, char *argv[]) {
                     free(suggestion_cstr);
                 }
             }
+
+            DFST_VecSuggestion_free(suggestions);
         }
     }
 

@@ -146,6 +146,10 @@ float DFST_VecSuggestion_getReweightEnd(
 
 // Memory management
 void DFST_cstr_free(const char *_Nonnull str);
+// Frees a list from DFST_Speller_suggest or DFST_Speller_suggestWithConfig,
+// and every suggestion in it. Never free one with cffi_vec_free, which frees
+// only bytes.
+void DFST_VecSuggestion_free(DFST_VecSuggestion suggestions);
 void cffi_string_free(rust_slice_t str);
 void cffi_vec_free(rust_slice_t vec);
 

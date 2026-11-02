@@ -42,7 +42,7 @@ public class SuggestionList {
     }
 
     deinit {
-        cffi_vec_free(handle)
+        DFST_VecSuggestion_free(handle)
     }
 }
 
