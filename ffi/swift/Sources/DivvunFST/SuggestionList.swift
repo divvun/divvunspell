@@ -9,10 +9,10 @@ public class SuggestionList {
     init(handle: rust_slice_t) {
         self.handle = handle
 
-        let exceptionCallback: cffi_exception_callback = { msg, msgLen in
+        let exceptionCallback: cffi_exception_callback = { msg, msgLen, context in
         }
 
-        self.count = Int(DFST_VecSuggestion_len(handle, exceptionCallback))
+        self.count = Int(DFST_VecSuggestion_len(handle, exceptionCallback, nil))
     }
 
     public subscript(index: Int) -> Suggestion {
@@ -24,16 +24,16 @@ public class SuggestionList {
             return cached
         }
 
-        let exceptionCallback: cffi_exception_callback = { msg, msgLen in
+        let exceptionCallback: cffi_exception_callback = { msg, msgLen, context in
         }
 
-        let valueSlice = DFST_VecSuggestion_getValue(handle, index, exceptionCallback)
+        let valueSlice = DFST_VecSuggestion_getValue(handle, index, exceptionCallback, nil)
         let value = RustStr(ptr: valueSlice.data?.assumingMemoryBound(to: UInt8.self), len: Int(valueSlice.len)).toString()
         cffi_string_free(valueSlice)
 
-        let weight = DFST_VecSuggestion_getWeight(handle, index, exceptionCallback)
+        let weight = DFST_VecSuggestion_getWeight(handle, index, exceptionCallback, nil)
 
-        let completedByte = DFST_VecSuggestion_getCompleted(handle, index, exceptionCallback)
+        let completedByte = DFST_VecSuggestion_getCompleted(handle, index, exceptionCallback, nil)
         let completed: Bool? = completedByte == 0 ? nil : (completedByte == 2)
 
         let suggestion = Suggestion(value: value, weight: weight, completed: completed)

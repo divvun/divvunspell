@@ -5,13 +5,13 @@ public class SpellerArchive {
     private var archive: DFST_SpellerArchive
 
     public static func open(path: String) throws -> SpellerArchive {
-        let exceptionCallback: cffi_exception_callback = { msg, msgLen in
+        let exceptionCallback: cffi_exception_callback = { msg, msgLen, context in
         }
 
         let pathBytes = Array(path.utf8)
         let archive = pathBytes.withUnsafeBytes { pathPtr in
             let pathSlice = rust_slice_t(data: UnsafeMutableRawPointer(mutating: pathPtr.baseAddress), len: UInt(pathBytes.count))
-            return DFST_SpellerArchive_open(pathSlice, exceptionCallback)
+            return DFST_SpellerArchive_open(pathSlice, exceptionCallback, nil)
         }
 
         if archive.data == nil {
@@ -26,10 +26,10 @@ public class SpellerArchive {
     }
 
     public func speller() throws -> Speller {
-        let exceptionCallback: cffi_exception_callback = { msg, msgLen in
+        let exceptionCallback: cffi_exception_callback = { msg, msgLen, context in
         }
 
-        let speller = DFST_SpellerArchive_speller(archive, exceptionCallback)
+        let speller = DFST_SpellerArchive_speller(archive, exceptionCallback, nil)
 
         if speller.data == nil {
             throw NSError(domain: "DivvunFST", code: 2, userInfo: [NSLocalizedDescriptionKey: "Failed to get speller"])
@@ -39,10 +39,10 @@ public class SpellerArchive {
     }
 
     public func locale() throws -> String {
-        let exceptionCallback: cffi_exception_callback = { msg, msgLen in
+        let exceptionCallback: cffi_exception_callback = { msg, msgLen, context in
         }
 
-        let localeSlice = DFST_SpellerArchive_locale(archive, exceptionCallback)
+        let localeSlice = DFST_SpellerArchive_locale(archive, exceptionCallback, nil)
 
         if localeSlice.data == nil {
             throw NSError(domain: "DivvunFST", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to get locale"])

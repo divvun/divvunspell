@@ -6,7 +6,7 @@
 // Error handling
 static char* last_error = NULL;
 
-static void error_callback(const uint8_t* msg, size_t msg_len) {
+static void error_callback(const uint8_t* msg, size_t msg_len, void* context) {
     if (last_error != NULL) {
         free(last_error);
     }
@@ -48,7 +48,7 @@ int main(int argc, char *argv[]) {
 
     printf("Opening speller archive: %s\n", archive_path);
 
-    DFST_SpellerArchive archive = DFST_SpellerArchive_open(rust_cstr(archive_path), error_callback);
+    DFST_SpellerArchive archive = DFST_SpellerArchive_open(rust_cstr(archive_path), error_callback, NULL);
     if (archive.data == NULL) {
         fprintf(stderr, "Failed to open archive: %s\n", last_error ? last_error : "unknown error");
         clear_error();
@@ -57,7 +57,7 @@ int main(int argc, char *argv[]) {
 
     printf("Archive opened successfully (data=%p, vtable=%p)\n", archive.data, archive.vtable);
 
-    DFST_Speller speller = DFST_SpellerArchive_speller(archive, error_callback);
+    DFST_Speller speller = DFST_SpellerArchive_speller(archive, error_callback, NULL);
     if (speller.data == NULL) {
         fprintf(stderr, "Failed to get speller from archive: %s\n", last_error ? last_error : "unknown error");
         clear_error();
@@ -76,22 +76,22 @@ int main(int argc, char *argv[]) {
 
     for (int i = 0; test_words[i] != NULL; i++) {
         const char *word = test_words[i];
-        bool is_correct = DFST_Speller_isCorrect(speller, rust_cstr(word), error_callback);
+        bool is_correct = DFST_Speller_isCorrect(speller, rust_cstr(word), error_callback, NULL);
 
         printf("\nWord: '%s' - %s\n", word, is_correct ? "CORRECT" : "INCORRECT");
 
         if (!is_correct) {
             printf("  Getting suggestions...\n");
-            DFST_VecSuggestion suggestions = DFST_Speller_suggest(speller, rust_cstr(word), error_callback);
+            DFST_VecSuggestion suggestions = DFST_Speller_suggest(speller, rust_cstr(word), error_callback, NULL);
 
             if (suggestions.data != NULL) {
-                rust_usize_t len = DFST_VecSuggestion_len(suggestions, error_callback);
+                rust_usize_t len = DFST_VecSuggestion_len(suggestions, error_callback, NULL);
                 printf("  Found %zu suggestions:\n", len);
 
                 for (rust_usize_t j = 0; j < len && j < 5; j++) {
-                    rust_slice_t suggestion = DFST_VecSuggestion_getValue(suggestions, j, error_callback);
-                    float weight = DFST_VecSuggestion_getWeight(suggestions, j, error_callback);
-                    uint8_t completed = DFST_VecSuggestion_getCompleted(suggestions, j, error_callback);
+                    rust_slice_t suggestion = DFST_VecSuggestion_getValue(suggestions, j, error_callback, NULL);
+                    float weight = DFST_VecSuggestion_getWeight(suggestions, j, error_callback, NULL);
+                    uint8_t completed = DFST_VecSuggestion_getCompleted(suggestions, j, error_callback, NULL);
 
                     char* suggestion_cstr = NULL;
                     if (!rust_slice_to_cstr(suggestion, &suggestion_cstr)) {

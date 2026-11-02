@@ -9,26 +9,26 @@ public class Speller {
     }
 
     public func isCorrect(_ word: String) throws -> Bool {
-        let exceptionCallback: cffi_exception_callback = { msg, msgLen in
+        let exceptionCallback: cffi_exception_callback = { msg, msgLen, context in
         }
 
         let wordBytes = Array(word.utf8)
         let result = wordBytes.withUnsafeBytes { wordPtr in
             let wordSlice = rust_slice_t(data: UnsafeMutableRawPointer(mutating: wordPtr.baseAddress), len: UInt(wordBytes.count))
-            return DFST_Speller_isCorrect(speller, wordSlice, exceptionCallback)
+            return DFST_Speller_isCorrect(speller, wordSlice, exceptionCallback, nil)
         }
 
         return result != 0
     }
 
     public func suggest(_ word: String) throws -> SuggestionList {
-        let exceptionCallback: cffi_exception_callback = { msg, msgLen in
+        let exceptionCallback: cffi_exception_callback = { msg, msgLen, context in
         }
 
         let wordBytes = Array(word.utf8)
         let suggestions = wordBytes.withUnsafeBytes { wordPtr in
             let wordSlice = rust_slice_t(data: UnsafeMutableRawPointer(mutating: wordPtr.baseAddress), len: UInt(wordBytes.count))
-            return DFST_Speller_suggest(speller, wordSlice, exceptionCallback)
+            return DFST_Speller_suggest(speller, wordSlice, exceptionCallback, nil)
         }
 
         if suggestions.data == nil {

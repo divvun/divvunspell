@@ -36,21 +36,25 @@ typedef cffi_trait_object DFST_Speller;
 typedef rust_slice_t DFST_VecSuggestion;
 typedef void* DFST_WordIndices;
 
-// CFFI exception callback type
-typedef void (*_Nonnull cffi_exception_callback)(const uint8_t*_Nonnull msg, size_t msg_len);
+// CFFI exception callback type. A function that takes one takes, last of all,
+// an exception_context, which it hands back to the callback untouched.
+typedef void (*_Nonnull cffi_exception_callback)(const uint8_t *_Nonnull msg, size_t msg_len, void *_Nullable context);
 
 // Archive functions - trait objects passed/returned by value
 DFST_SpellerArchive DFST_SpellerArchive_open(
     const rust_slice_t path,
-    cffi_exception_callback exception
+    cffi_exception_callback exception,
+    void *_Nullable exception_context
 );
 DFST_Speller DFST_SpellerArchive_speller(
     DFST_SpellerArchive archive,
-    cffi_exception_callback exception
+    cffi_exception_callback exception,
+    void *_Nullable exception_context
 );
 rust_slice_t DFST_SpellerArchive_locale(
     DFST_SpellerArchive archive,
-    cffi_exception_callback exception
+    cffi_exception_callback exception,
+    void *_Nullable exception_context
 );
 
 // Speller configuration (matches the Rust #[repr(C)] FfiSpellerConfig layout).
@@ -74,39 +78,46 @@ typedef struct DFST_SpellerConfig_s {
 rust_bool_t DFST_Speller_isCorrect(
     DFST_Speller speller,
     const rust_slice_t word,
-    cffi_exception_callback exception
+    cffi_exception_callback exception,
+    void *_Nullable exception_context
 );
 DFST_VecSuggestion DFST_Speller_suggest(
     DFST_Speller speller,
     const rust_slice_t word,
-    cffi_exception_callback exception
+    cffi_exception_callback exception,
+    void *_Nullable exception_context
 );
 DFST_VecSuggestion DFST_Speller_suggestWithConfig(
     DFST_Speller speller,
     const rust_slice_t word,
     const DFST_SpellerConfig *_Nullable config,
-    cffi_exception_callback exception
+    cffi_exception_callback exception,
+    void *_Nullable exception_context
 );
 
 // Suggestion vector functions - slices passed by value
 rust_usize_t DFST_VecSuggestion_len(
     DFST_VecSuggestion suggestions,
-    cffi_exception_callback exception
+    cffi_exception_callback exception,
+    void *_Nullable exception_context
 );
 rust_slice_t DFST_VecSuggestion_getValue(
     DFST_VecSuggestion suggestions,
     size_t index,
-    cffi_exception_callback exception
+    cffi_exception_callback exception,
+    void *_Nullable exception_context
 );
 float DFST_VecSuggestion_getWeight(
     DFST_VecSuggestion suggestions,
     size_t index,
-    cffi_exception_callback exception
+    cffi_exception_callback exception,
+    void *_Nullable exception_context
 );
 uint8_t DFST_VecSuggestion_getCompleted(
     DFST_VecSuggestion suggestions,
     size_t index,
-    cffi_exception_callback exception
+    cffi_exception_callback exception,
+    void *_Nullable exception_context
 );
 
 // Per-suggestion weight breakdown. Only populated when the speller was run with
@@ -116,32 +127,38 @@ uint8_t DFST_VecSuggestion_getCompleted(
 uint8_t DFST_VecSuggestion_hasWeightDetails(
     DFST_VecSuggestion suggestions,
     size_t index,
-    cffi_exception_callback exception
+    cffi_exception_callback exception,
+    void *_Nullable exception_context
 );
 float DFST_VecSuggestion_getLexiconWeight(
     DFST_VecSuggestion suggestions,
     size_t index,
-    cffi_exception_callback exception
+    cffi_exception_callback exception,
+    void *_Nullable exception_context
 );
 float DFST_VecSuggestion_getMutatorWeight(
     DFST_VecSuggestion suggestions,
     size_t index,
-    cffi_exception_callback exception
+    cffi_exception_callback exception,
+    void *_Nullable exception_context
 );
 float DFST_VecSuggestion_getReweightStart(
     DFST_VecSuggestion suggestions,
     size_t index,
-    cffi_exception_callback exception
+    cffi_exception_callback exception,
+    void *_Nullable exception_context
 );
 float DFST_VecSuggestion_getReweightMid(
     DFST_VecSuggestion suggestions,
     size_t index,
-    cffi_exception_callback exception
+    cffi_exception_callback exception,
+    void *_Nullable exception_context
 );
 float DFST_VecSuggestion_getReweightEnd(
     DFST_VecSuggestion suggestions,
     size_t index,
-    cffi_exception_callback exception
+    cffi_exception_callback exception,
+    void *_Nullable exception_context
 );
 
 // Memory management

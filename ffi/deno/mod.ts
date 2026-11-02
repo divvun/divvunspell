@@ -44,43 +44,43 @@ interface RustSlice {
 
 const symbols = {
   DFST_SpellerArchive_open: {
-    parameters: [{ struct: ["pointer", "usize"] }, "function"],
+    parameters: [{ struct: ["pointer", "usize"] }, "function", "pointer"],
     result: { struct: ["pointer", "pointer"] },
   },
   DFST_SpellerArchive_speller: {
-    parameters: [{ struct: ["pointer", "pointer"] }, "function"],
+    parameters: [{ struct: ["pointer", "pointer"] }, "function", "pointer"],
     result: { struct: ["pointer", "pointer"] },
   },
   DFST_SpellerArchive_locale: {
-    parameters: [{ struct: ["pointer", "pointer"] }, "function"],
+    parameters: [{ struct: ["pointer", "pointer"] }, "function", "pointer"],
     result: { struct: ["pointer", "usize"] },
   },
   DFST_Speller_isCorrect: {
     parameters: [{ struct: ["pointer", "pointer"] }, {
       struct: ["pointer", "usize"],
-    }, "function"],
+    }, "function", "pointer"],
     result: "u8",
   },
   DFST_Speller_suggest: {
     parameters: [{ struct: ["pointer", "pointer"] }, {
       struct: ["pointer", "usize"],
-    }, "function"],
+    }, "function", "pointer"],
     result: { struct: ["pointer", "usize"] },
   },
   DFST_VecSuggestion_len: {
-    parameters: [{ struct: ["pointer", "usize"] }, "function"],
+    parameters: [{ struct: ["pointer", "usize"] }, "function", "pointer"],
     result: "usize",
   },
   DFST_VecSuggestion_getValue: {
-    parameters: [{ struct: ["pointer", "usize"] }, "usize", "function"],
+    parameters: [{ struct: ["pointer", "usize"] }, "usize", "function", "pointer"],
     result: { struct: ["pointer", "usize"] },
   },
   DFST_VecSuggestion_getWeight: {
-    parameters: [{ struct: ["pointer", "usize"] }, "usize", "function"],
+    parameters: [{ struct: ["pointer", "usize"] }, "usize", "function", "pointer"],
     result: "f32",
   },
   DFST_VecSuggestion_getCompleted: {
-    parameters: [{ struct: ["pointer", "usize"] }, "usize", "function"],
+    parameters: [{ struct: ["pointer", "usize"] }, "usize", "function", "pointer"],
     result: "u8",
   },
   DFST_cstr_free: {
@@ -119,10 +119,10 @@ let lastError: string | null = null;
 
 const errorCallback = new Deno.UnsafeCallback(
   {
-    parameters: ["pointer", "usize"],
+    parameters: ["pointer", "usize", "pointer"],
     result: "void",
   },
-  (msgPtr: Deno.PointerValue, msgLen: number) => {
+  (msgPtr: Deno.PointerValue, msgLen: number, _context: Deno.PointerValue) => {
     const view = new Deno.UnsafePointerView(msgPtr);
     const errorBytes = new Uint8Array(msgLen);
     for (let i = 0; i < msgLen; i++) {
@@ -216,6 +216,7 @@ export class Speller {
       this.#handle,
       wordSlice,
       errorCallback.pointer,
+      null,
     ) as number;
     checkError();
     return result !== 0;
@@ -230,6 +231,7 @@ export class Speller {
       this.#handle,
       wordSlice,
       errorCallback.pointer,
+      null,
     ) as Uint8Array;
     checkError();
 
@@ -246,6 +248,7 @@ export class Speller {
     const length = lib.symbols.DFST_VecSuggestion_len(
       suggestionsSlice,
       errorCallback.pointer,
+      null,
     ) as number;
     checkError();
 
@@ -255,6 +258,7 @@ export class Speller {
         suggestionsSlice,
         i,
         errorCallback.pointer,
+        null,
       ) as Uint8Array;
       checkError();
 
@@ -273,6 +277,7 @@ export class Speller {
         suggestionsSlice,
         i,
         errorCallback.pointer,
+        null,
       ) as number;
       checkError();
 
@@ -280,6 +285,7 @@ export class Speller {
         suggestionsSlice,
         i,
         errorCallback.pointer,
+        null,
       ) as number;
       checkError();
 
@@ -316,6 +322,7 @@ export class SpellerArchive {
     const handle = lib.symbols.DFST_SpellerArchive_open(
       pathSlice,
       errorCallback.pointer,
+      null,
     ) as Uint8Array;
     checkError();
 
@@ -333,6 +340,7 @@ export class SpellerArchive {
     const spellerHandle = lib.symbols.DFST_SpellerArchive_speller(
       this.#handle,
       errorCallback.pointer,
+      null,
     ) as Uint8Array;
     checkError();
 
@@ -350,6 +358,7 @@ export class SpellerArchive {
     const localeSlice = lib.symbols.DFST_SpellerArchive_locale(
       this.#handle,
       errorCallback.pointer,
+      null,
     ) as Uint8Array;
     checkError();
 

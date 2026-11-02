@@ -300,7 +300,7 @@ checksum = "6d43a04d8753f35258c91f8ec639f792891f748a1edbd759cf1dcea3382ad83c"
 [[package]]
 name = "cffi"
 version = "0.2.0-dev"
-source = "git+https://github.com/cffi-rs/cffi?branch=next#c8a7f8eb74bad52bf75bc25364bead3b3ba86192"
+source = "git+https://github.com/cffi-rs/cffi?branch=next#970554d4eb1c661b53a00910d341a70aa189c27a"
 dependencies = [
  "cffi-impl",
  "libc",
@@ -311,7 +311,7 @@ dependencies = [
 [[package]]
 name = "cffi-impl"
 version = "0.2.0-dev"
-source = "git+https://github.com/cffi-rs/cffi?branch=next#c8a7f8eb74bad52bf75bc25364bead3b3ba86192"
+source = "git+https://github.com/cffi-rs/cffi?branch=next#970554d4eb1c661b53a00910d341a70aa189c27a"
 dependencies = [
  "darling",
  "heck",

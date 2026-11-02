@@ -75,13 +75,13 @@ class _DivvunFstLib:
 
         self._last_error = None
         self._error_callback_type = ctypes.CFUNCTYPE(
-            None, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t
+            None, ctypes.POINTER(ctypes.c_uint8), ctypes.c_size_t, ctypes.c_void_p
         )
         self._error_callback = self._error_callback_type(self._handle_error)
 
         self._setup_functions()
 
-    def _handle_error(self, msg_ptr, msg_len):
+    def _handle_error(self, msg_ptr, msg_len, context):
         """Callback for Rust error handling."""
         error_bytes = ctypes.string_at(msg_ptr, msg_len)
         self._last_error = error_bytes.decode('utf-8')
@@ -95,33 +95,33 @@ class _DivvunFstLib:
 
     def _setup_functions(self):
         # Archive functions
-        self.lib.DFST_SpellerArchive_open.argtypes = [RustSlice, self._error_callback_type]
+        self.lib.DFST_SpellerArchive_open.argtypes = [RustSlice, self._error_callback_type, ctypes.c_void_p]
         self.lib.DFST_SpellerArchive_open.restype = CffiTraitObject
 
-        self.lib.DFST_SpellerArchive_speller.argtypes = [CffiTraitObject, self._error_callback_type]
+        self.lib.DFST_SpellerArchive_speller.argtypes = [CffiTraitObject, self._error_callback_type, ctypes.c_void_p]
         self.lib.DFST_SpellerArchive_speller.restype = CffiTraitObject
 
-        self.lib.DFST_SpellerArchive_locale.argtypes = [CffiTraitObject, self._error_callback_type]
+        self.lib.DFST_SpellerArchive_locale.argtypes = [CffiTraitObject, self._error_callback_type, ctypes.c_void_p]
         self.lib.DFST_SpellerArchive_locale.restype = RustSlice
 
         # Speller functions
-        self.lib.DFST_Speller_isCorrect.argtypes = [CffiTraitObject, RustSlice, self._error_callback_type]
+        self.lib.DFST_Speller_isCorrect.argtypes = [CffiTraitObject, RustSlice, self._error_callback_type, ctypes.c_void_p]
         self.lib.DFST_Speller_isCorrect.restype = ctypes.c_uint8
 
-        self.lib.DFST_Speller_suggest.argtypes = [CffiTraitObject, RustSlice, self._error_callback_type]
+        self.lib.DFST_Speller_suggest.argtypes = [CffiTraitObject, RustSlice, self._error_callback_type, ctypes.c_void_p]
         self.lib.DFST_Speller_suggest.restype = RustSlice
 
         # Suggestion vector functions
-        self.lib.DFST_VecSuggestion_len.argtypes = [RustSlice, self._error_callback_type]
+        self.lib.DFST_VecSuggestion_len.argtypes = [RustSlice, self._error_callback_type, ctypes.c_void_p]
         self.lib.DFST_VecSuggestion_len.restype = ctypes.c_size_t
 
-        self.lib.DFST_VecSuggestion_getValue.argtypes = [RustSlice, ctypes.c_size_t, self._error_callback_type]
+        self.lib.DFST_VecSuggestion_getValue.argtypes = [RustSlice, ctypes.c_size_t, self._error_callback_type, ctypes.c_void_p]
         self.lib.DFST_VecSuggestion_getValue.restype = RustSlice
 
-        self.lib.DFST_VecSuggestion_getWeight.argtypes = [RustSlice, ctypes.c_size_t, self._error_callback_type]
+        self.lib.DFST_VecSuggestion_getWeight.argtypes = [RustSlice, ctypes.c_size_t, self._error_callback_type, ctypes.c_void_p]
         self.lib.DFST_VecSuggestion_getWeight.restype = ctypes.c_float
 
-        self.lib.DFST_VecSuggestion_getCompleted.argtypes = [RustSlice, ctypes.c_size_t, self._error_callback_type]
+        self.lib.DFST_VecSuggestion_getCompleted.argtypes = [RustSlice, ctypes.c_size_t, self._error_callback_type, ctypes.c_void_p]
         self.lib.DFST_VecSuggestion_getCompleted.restype = ctypes.c_uint8
 
         # Memory management
@@ -178,7 +178,7 @@ class Speller:
         """Check if a word is spelled correctly."""
         word_bytes = word.encode('utf-8')
         word_slice = RustSlice(ctypes.cast(word_bytes, ctypes.c_void_p), len(word_bytes))
-        result = _lib.lib.DFST_Speller_isCorrect(self._handle, word_slice, _lib._error_callback)
+        result = _lib.lib.DFST_Speller_isCorrect(self._handle, word_slice, _lib._error_callback, None)
         _lib._check_error()
         return bool(result)
 
@@ -186,26 +186,26 @@ class Speller:
         """Get spelling suggestions for a word."""
         word_bytes = word.encode('utf-8')
         word_slice = RustSlice(ctypes.cast(word_bytes, ctypes.c_void_p), len(word_bytes))
-        suggestions_slice = _lib.lib.DFST_Speller_suggest(self._handle, word_slice, _lib._error_callback)
+        suggestions_slice = _lib.lib.DFST_Speller_suggest(self._handle, word_slice, _lib._error_callback, None)
         _lib._check_error()
 
         if suggestions_slice.data is None:
             return []
 
-        length = _lib.lib.DFST_VecSuggestion_len(suggestions_slice, _lib._error_callback)
+        length = _lib.lib.DFST_VecSuggestion_len(suggestions_slice, _lib._error_callback, None)
         _lib._check_error()
 
         results = []
         for i in range(length):
-            value_slice = _lib.lib.DFST_VecSuggestion_getValue(suggestions_slice, i, _lib._error_callback)
+            value_slice = _lib.lib.DFST_VecSuggestion_getValue(suggestions_slice, i, _lib._error_callback, None)
             _lib._check_error()
             value = value_slice.to_string()
             _lib.lib.cffi_string_free(value_slice)
 
-            weight = _lib.lib.DFST_VecSuggestion_getWeight(suggestions_slice, i, _lib._error_callback)
+            weight = _lib.lib.DFST_VecSuggestion_getWeight(suggestions_slice, i, _lib._error_callback, None)
             _lib._check_error()
 
-            completed_byte = _lib.lib.DFST_VecSuggestion_getCompleted(suggestions_slice, i, _lib._error_callback)
+            completed_byte = _lib.lib.DFST_VecSuggestion_getCompleted(suggestions_slice, i, _lib._error_callback, None)
             _lib._check_error()
             completed = None if completed_byte == 0 else (completed_byte == 2)
 
@@ -222,7 +222,7 @@ class SpellerArchive:
         """Open a speller archive from a file path."""
         path_bytes = path.encode('utf-8')
         path_slice = RustSlice(ctypes.cast(path_bytes, ctypes.c_void_p), len(path_bytes))
-        self._handle = _lib.lib.DFST_SpellerArchive_open(path_slice, _lib._error_callback)
+        self._handle = _lib.lib.DFST_SpellerArchive_open(path_slice, _lib._error_callback, None)
         _lib._check_error()
 
         if self._handle.is_null():
@@ -230,7 +230,7 @@ class SpellerArchive:
 
     def speller(self) -> Speller:
         """Get the speller from this archive."""
-        speller_handle = _lib.lib.DFST_SpellerArchive_speller(self._handle, _lib._error_callback)
+        speller_handle = _lib.lib.DFST_SpellerArchive_speller(self._handle, _lib._error_callback, None)
         _lib._check_error()
 
         if speller_handle.is_null():
@@ -240,7 +240,7 @@ class SpellerArchive:
 
     def locale(self) -> str:
         """Get the locale of this speller archive."""
-        locale_slice = _lib.lib.DFST_SpellerArchive_locale(self._handle, _lib._error_callback)
+        locale_slice = _lib.lib.DFST_SpellerArchive_locale(self._handle, _lib._error_callback, None)
         _lib._check_error()
 
         locale = locale_slice.to_string()
