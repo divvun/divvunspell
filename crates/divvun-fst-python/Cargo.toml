@@ -1,0 +1,46 @@
+[package]
+name = "divvun-fst-python"
+# The version of divvun-fst on PyPI, which is versioned on its own and
+# released from a `python/v<version>` tag; the library it binds keeps the
+# workspace version.
+version = "0.1.0"
+description = "pyo3 glue behind divvun-fst, divvunspell for Python"
+authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/divvun/divvunspell"
+# The glue reaches users only through the divvun-fst package under python/,
+# which maturin builds from this crate.
+publish = false
+
+[lints.rust]
+unsafe_code = "forbid"
+
+# An extension module leaves the Python symbols for the interpreter, so no
+# Rust test binary can link against it: python/tests tests it through Python.
+# The library's own C-ABI crate, ffi/, already builds a cdylib called
+# divvun_fst, so this one is named apart; maturin names the module.
+[lib]
+name = "divvun_fst_python"
+crate-type = ["cdylib"]
+test = false
+doctest = false
+
+[dependencies]
+# `fs` opens archives and transducers by path and maps them, as the native
+# tools do; `compression` reads ZHFST archives whose members are deflated.
+divvun-fst = { path = "../..", features = ["fs", "compression"] }
+# Opens a box archive by path, to list the transducers in it.
+box-format = { workspace = true, features = ["reader"] }
+libc.workspace = true
+# The stable ABI from CPython 3.11, so one wheel per platform serves every
+# release from 3.11 on.
+pyo3 = { version = "0.30", features = ["abi3-py311"] }
+tracing.workspace = true
+# Named only to tell an unsupported zip compression from a broken archive.
+zip.workspace = true
+# box-format reads xz-compressed box members through xz2, whose lzma-sys
+# links the build host's liblzma when pkg-config finds one. A wheel cannot
+# carry that library, so `static` makes lzma-sys compile its own copy into
+# the module on every target. Nothing here calls it.
+lzma-sys = { version = "0.1.20", features = ["static"] }
