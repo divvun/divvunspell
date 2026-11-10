@@ -1,0 +1,62 @@
+[build-system]
+requires = ["maturin>=1.9.4,<2"]
+build-backend = "maturin"
+
+[project]
+name = "divvun-fst"
+# maturin takes the version from crates/divvun-fst-python, which carries the
+# package's own; a python/v<version> tag releases it.
+dynamic = ["version"]
+description = "divvunspell for Python: loads BHFST and ZHFST spellers and checks and corrects words with them, and looks words up in optimized-lookup, THFST and DHFST transducers, giving the results native divvunspell gives."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT OR Apache-2.0"
+# Links to the repository's licence files: a licence file may not lie outside
+# the project directory.
+license-files = ["LICENSE-MIT", "LICENSE-APACHE"]
+authors = [{ name = "Brendan Molloy", email = "brendan@bbqsrc.net" }]
+maintainers = [{ name = "UiT The Arctic University of Norway" }]
+keywords = ["divvunspell", "divvun", "spellchecker", "spelling", "finite-state", "transducer", "hfst"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Natural Language :: English",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Rust",
+    "Topic :: Text Processing :: Linguistic",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/divvun/divvunspell/tree/main/python#readme"
+Repository = "https://github.com/divvun/divvunspell"
+Issues = "https://github.com/divvun/divvunspell/issues"
+
+[tool.maturin]
+manifest-path = "../crates/divvun-fst-python/Cargo.toml"
+module-name = "divvun_fst._divvun_fst"
+python-source = "."
+# The crate's features are fixed in its manifest, `fs` and `compression` for
+# the library and lzma-sys's `static` for a module that needs no liblzma, so
+# every build of it, maturin's or cargo's, gets the same ones.
+# The workspace's release profile keeps debug info for profiling the tools,
+# which would make the module several times larger.
+strip = true
+# Bytecode the tests leave beside the sources is no part of the package.
+exclude = ["divvun_fst/**/__pycache__/**"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+strict = true
+files = ["divvun_fst", "tests"]
+mypy_path = "tests"
+
+[dependency-groups]
+dev = ["maturin>=1.9.4,<2", "pytest>=8", "mypy>=1.13"]

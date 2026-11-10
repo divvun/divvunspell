@@ -128,6 +128,24 @@ speller.suggest("sami", { nBest: 3 }); // [{ value: "sámi", weight: 14.58... },
 `node js/build.mjs` builds it from `crates/divvun-fst-wasm`; see
 [js/fst/README.md](js/fst/README.md).
 
+### From Python
+
+The PyPI package [`divvun-fst`](python) is this library as a native
+extension module for CPython 3.11 and later, with the same spelling and
+lookup, archives and transducers opened by path or read from bytes, and the
+tokenizer, with the results the native library gives.
+
+```python
+import divvun_fst
+
+speller = divvun_fst.load_speller("se.bhfst")
+speller.suggest("sami", divvun_fst.SpellerConfig(n_best=3))
+# [Suggestion(value='sámi', weight=14.58..., ...), ...]
+```
+
+maturin builds it from `crates/divvun-fst-python`; see
+[python/README.md](python/README.md).
+
 ## Command-Line Tools
 
 ### divvunspell

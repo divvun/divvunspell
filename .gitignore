@@ -7,3 +7,14 @@ tmp
 /js/fst/pkg/
 /js/fst/dist/
 /js/**/node_modules/
+
+# Bytecode, wherever Python runs.
+__pycache__/
+
+# What python/ builds and the environment uv makes for it.
+/python/.venv/
+/python/**/*.so
+/python/**/*.pyd
+/python/.pytest_cache/
+/python/.mypy_cache/
+/python/uv.lock

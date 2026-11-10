@@ -1,7 +1,10 @@
 // The fixtures of the parity suite (js/test/parity.ts) and what native
 // divvun-fst gives for them, written at test-build time to
-// target/js-test/fixtures with parity.json beside them. Only js/build.mjs
-// --test calls this.
+// target/js-test/fixtures with parity.json beside them. js/build.mjs --test
+// calls this, and the Python package's tests (python/tests) run it on its
+// own to write the same files elsewhere:
+//
+//   node js/test/fixtures.mjs <out>
 //
 // Small spellers and transducers are made from the repository's own
 // tests/fixtures. Real spellers, analysers and generators are read from the
@@ -13,9 +16,11 @@
 // derived fixtures and the native expectations; dhfst-tools writes the DHFST
 // copy of the ZHFST speller, as a speller's build does.
 
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** Real fixtures by name: the environment variable that can name each, and where to look otherwise. */
 const SOURCES = {
@@ -145,14 +150,16 @@ function sources(env = process.env) {
  */
 export function buildFixtures(root, out, run) {
   rmSync(out, { recursive: true, force: true });
+  mkdirSync(out, { recursive: true });
   const { found, missing } = sources();
   for (const name of missing) console.log(`# fixtures: leaving out ${name}`);
   const have = (name) => name in found;
 
-  const sourcesFile = join(root, "target", "js-test", "fixture-sources.json");
+  const sourcesFile = join(out, "fixture-sources.json");
   writeFileSync(sourcesFile, JSON.stringify(found));
   const example = ["run", "--quiet", "--release", "-p", "divvun-fst-wasm", "--example", "js_fixtures", "--"];
   run("cargo", [...example, "derive", sourcesFile, out]);
+  rmSync(sourcesFile);
 
   if (have("ga.zhfst")) {
     const dhfst = ["run", "--quiet", "--release", "-p", "dhfst-tools", "--"];
@@ -185,4 +192,14 @@ export function buildFixtures(root, out, run) {
 
   const configs = Object.fromEntries(Object.entries(CONFIGS).map(([name, { js }]) => [name, js]));
   writeFileSync(join(out, "parity.json"), JSON.stringify({ ...native, configs, missing }));
+}
+
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const [out] = process.argv.slice(2);
+  if (out === undefined) throw new Error("usage: node js/test/fixtures.mjs <out>");
+  const root = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+  buildFixtures(root, resolve(out), (command, args) => {
+    console.log(`$ ${command} ${args.join(" ")}`);
+    execFileSync(command, args, { cwd: root, stdio: "inherit" });
+  });
 }
