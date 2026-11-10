@@ -36,6 +36,14 @@ The `tokenize` example demonstrates the working tokenization API.
 C header files are located in `include/`:
 - `include/divvun_fst.h` - CFFI-based API
 
+## Other Languages
+
+The Deno (`deno/`) and Swift (`swift/`) bindings beside this crate are built
+on this C API; `java-jni/` binds the library through JNI. Python has a
+package of its own, [`divvun-fst`](../python), which binds the library
+directly with pyo3, tokenizer functions included, rather than through this C
+API.
+
 ## Current Status
 
 The FFI layer is currently in transition:
