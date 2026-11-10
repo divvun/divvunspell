@@ -119,6 +119,8 @@ read whole. `transducer.format` says what was loaded: `optimized-lookup`,
 it before anything else; calling it again returns the same promise. It also
 takes a URL, a `Response`, the module's bytes or a compiled
 `WebAssembly.Module`, for bundlers and for workers that are handed one.
+`version()` gives the package's version. The package is versioned on its
+own, apart from the divvun-fst library inside it.
 
 ## Memory
 
@@ -170,6 +172,10 @@ divvun-fst's. It reads real spellers and analysers from the paths
 `js/test/fixtures.mjs` lists, each of which an environment variable can
 override; one that is missing is skipped, or fails the run under
 `--require-all`.
+
+The package's version is the one `crates/divvun-fst-wasm/Cargo.toml` and
+`js/fst/package.json` both carry, apart from the library's. A
+`wasm/v<version>` tag naming it releases the package to npm.
 
 ## Licence
 

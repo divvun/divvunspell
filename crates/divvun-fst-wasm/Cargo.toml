@@ -1,7 +1,9 @@
 [package]
 name = "divvun-fst-wasm"
 description = "wasm-bindgen glue behind @divvun/fst, divvun-fst for JavaScript"
-version.workspace = true
+# The version of @divvun/fst, which is versioned on its own and released from
+# a `wasm/v<version>` tag; the library it binds keeps the workspace version.
+version = "0.1.0"
 authors = ["Brendan Molloy <brendan@bbqsrc.net>"]
 edition = "2024"
 license = "MIT OR Apache-2.0"

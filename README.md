@@ -382,6 +382,14 @@ cargo install --path ./crates/thfst-tools
 cargo test
 ```
 
+### Versions
+
+The library and the tools share the workspace's version and are released
+from a `v<version>` tag. The two packages are versioned on their own, each in
+its binding crate: `@divvun/fst` in `crates/divvun-fst-wasm`, released from a
+`wasm/v<version>` tag, and `divvun-fst` on PyPI in
+`crates/divvun-fst-python`, released from a `python/v<version>` tag.
+
 ### Git hooks
 
 This repo ships a pre-commit hook in `.githooks/` that refuses to commit any

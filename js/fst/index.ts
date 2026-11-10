@@ -24,7 +24,7 @@ export function init(source?: InitSource): Promise<void> {
   return core.init(source);
 }
 
-/** The divvun-fst version the package was built from. */
+/** The package's version. The package is versioned on its own, apart from the divvun-fst library it carries. */
 export function version(): string {
   return core.call((glue) => glue.version());
 }

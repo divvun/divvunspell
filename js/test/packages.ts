@@ -40,7 +40,7 @@ export function packageTests(dir: URL, name: string): void {
   test("package.json names the package, its version, licence and repository", async () => {
     const manifest = await readManifest(dir);
     assertEqual(manifest.name, name, "name");
-    assertEqual(manifest.version, "0.1.0", "version");
+    assert(/^\d+\.\d+\.\d+$/.test(manifest.version), `a release version: ${manifest.version}`);
     assertEqual(manifest.license, "MIT OR Apache-2.0", "license");
     assertEqual(manifest.type, "module", "type");
     assertEqual(manifest.repository.url, "git+https://github.com/divvun/divvunspell.git", "repository");

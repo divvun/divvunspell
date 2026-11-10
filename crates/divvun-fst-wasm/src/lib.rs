@@ -22,7 +22,7 @@ pub use speller::{Speller, read_speller};
 pub use test_hooks::{TestObject, test_default_config, test_log, test_panic, test_resolve_config};
 pub use transducer::{Transducer, read_transducer};
 
-/// The divvun-fst version this module was built from.
+/// The version of the npm package, which this crate carries as its own.
 #[wasm_bindgen]
 pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_owned()
@@ -31,7 +31,17 @@ pub fn version() -> String {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn version_is_the_workspace_version() {
+    fn the_package_has_the_crates_version() {
         assert_eq!(super::version(), env!("CARGO_PKG_VERSION"));
+        let manifest = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../js/fst/package.json"
+        ))
+        .expect("js/fst/package.json is in the repository");
+        let manifest: serde_json::Value =
+            serde_json::from_str(&manifest).expect("package.json is JSON");
+        assert_eq!(manifest["name"], "@divvun/fst");
+        assert_eq!(manifest["version"], env!("CARGO_PKG_VERSION"));
+        assert_eq!(manifest["license"], "MIT OR Apache-2.0");
     }
 }

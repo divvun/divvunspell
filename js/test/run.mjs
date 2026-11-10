@@ -67,21 +67,15 @@ function chosenRuntimes(argv) {
   return chosen.length > 0 ? chosen : ["node", "bun", ...PARITY_ONLY];
 }
 
-/** The divvun-fst version, which the package's version() reports: the workspace's. */
-function crateVersion() {
-  const manifest = readFileSync(join(dirname(js), "Cargo.toml"), "utf8");
-  const found = /\[workspace\.package\][^[]*?version\s*=\s*"([^"]+)"/.exec(manifest);
-  if (found === null) throw new Error("Cargo.toml has no [workspace.package] version");
-  return found[1];
-}
-
 function locate() {
   const release = join(js, "fst", "dist");
   const test = join(testBuild, "dist");
   const manifest = JSON.parse(readFileSync(join(js, "fst", "package.json"), "utf8"));
+  // version() reports crates/divvun-fst-wasm's version, which a test there
+  // holds equal to package.json's.
   return {
     name: manifest.name,
-    version: crateVersion(),
+    version: manifest.version,
     release: { module: join(release, "index.js"), wasm: join(release, "pkg", wasmFile) },
     test: { module: join(test, "testing.js"), wasm: join(test, "pkg", wasmFile) },
   };
