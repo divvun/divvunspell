@@ -37,9 +37,7 @@ trait OutputWriter {
     fn finish(&mut self) -> anyhow::Result<()>;
 }
 
-struct StdoutWriter {
-    has_continuation_marker: Option<String>,
-}
+struct StdoutWriter;
 
 impl OutputWriter for StdoutWriter {
     fn write_correction(&mut self, word: &str, is_correct: bool) {
@@ -51,54 +49,27 @@ impl OutputWriter for StdoutWriter {
     }
 
     fn write_suggestions(&mut self, _word: &str, suggestions: &[Suggestion], verbose: bool) {
-        if let Some(s) = &self.has_continuation_marker {
-            for sugg in suggestions {
-                print!("{}", sugg.value);
-                if sugg.completed == Some(true) {
-                    print!("{s}");
+        // An incomplete suggestion already ends in the continuation marker.
+        for sugg in suggestions {
+            print!("{}\t\t{:.5}", sugg.value, sugg.weight.0);
+            if verbose {
+                if let Some(details) = &sugg.weight_details {
+                    let mid_str = if details.reweight_mid < 0.0 {
+                        "-".to_string()
+                    } else {
+                        format!("{:.0}", details.reweight_mid)
+                    };
+                    print!(
+                        " (lex: {:.5}, mut: {:.5}, rew: {:.0}/{}/{:.0})",
+                        details.lexicon_weight.0,
+                        details.mutator_weight.0,
+                        details.reweight_start,
+                        mid_str,
+                        details.reweight_end
+                    );
                 }
-                print!("\t\t{:.5}", sugg.weight.0);
-                if verbose {
-                    if let Some(details) = &sugg.weight_details {
-                        let mid_str = if details.reweight_mid < 0.0 {
-                            "-".to_string()
-                        } else {
-                            format!("{:.0}", details.reweight_mid)
-                        };
-                        print!(
-                            " (lex: {:.5}, mut: {:.5}, rew: {:.0}/{}/{:.0})",
-                            details.lexicon_weight.0,
-                            details.mutator_weight.0,
-                            details.reweight_start,
-                            mid_str,
-                            details.reweight_end
-                        );
-                    }
-                }
-                println!();
             }
-        } else {
-            for sugg in suggestions {
-                print!("{}\t\t{:.5}", sugg.value, sugg.weight.0);
-                if verbose {
-                    if let Some(details) = &sugg.weight_details {
-                        let mid_str = if details.reweight_mid < 0.0 {
-                            "-".to_string()
-                        } else {
-                            format!("{:.0}", details.reweight_mid)
-                        };
-                        print!(
-                            " (lex: {:.5}, mut: {:.5}, rew: {:.0}/{}/{:.0})",
-                            details.lexicon_weight.0,
-                            details.mutator_weight.0,
-                            details.reweight_start,
-                            mid_str,
-                            details.reweight_end
-                        );
-                    }
-                }
-                println!();
-            }
+            println!();
         }
         println!();
     }
@@ -360,7 +331,7 @@ struct SuggestArgs {
     #[arg(short = 'n', long)]
     nbest: Option<usize>,
 
-    /// Character for incomplete suggestions
+    /// Marker that ends incomplete suggestions, in place of the archive's own
     #[arg(long)]
     continuation_marker: Option<String>,
 
@@ -491,7 +462,9 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
     if args.disable_recase {
         suggest_cfg.recase = false;
     }
-    suggest_cfg.completion_marker = args.continuation_marker.clone();
+    if let Some(marker) = args.continuation_marker {
+        suggest_cfg.completion_marker = Some(marker);
+    }
     suggest_cfg.verbose = args.verbose;
     if let Some(v) = args.nbest {
         if v == 0 {
@@ -512,9 +485,7 @@ fn suggest(args: SuggestArgs) -> anyhow::Result<()> {
     let mut writer: Box<dyn OutputWriter> = if args.json {
         Box::new(JsonWriter::new())
     } else {
-        Box::new(StdoutWriter {
-            has_continuation_marker: args.continuation_marker,
-        })
+        Box::new(StdoutWriter)
     };
 
     let words = if args.inputs.is_empty() {
