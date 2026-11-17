@@ -73,7 +73,7 @@ pathos = { workspace = true, optional = true }
 language-tags = { workspace = true, optional = true }
 globwalk = { workspace = true, optional = true }
 tracing.workspace = true
-mmap-io = { version = "0.9.4", optional = true }
+mmap-io = { git = "https://github.com/necessary-nu/mmap-io", optional = true }
 
 [dev-dependencies]
 # Tests build a BHFST from the THFST fixtures to exercise archive loading.

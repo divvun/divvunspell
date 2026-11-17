@@ -206,7 +206,7 @@ pub mod boxf {
 
         fn contents(&self) -> Result<super::Bytes> {
             let slice = self.segment.as_slice().map_err(std::io::Error::other)?;
-            Ok(super::Bytes::from(slice))
+            Ok(super::Bytes::from(&*slice))
         }
 
         unsafe fn memory_map(&self) -> Result<memmap2::Mmap> {
