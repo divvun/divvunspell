@@ -11,7 +11,6 @@
 
 use std::path::Path;
 use std::sync::OnceLock;
-use std::{u16, u32};
 
 use crate::constants::TARGET_TABLE;
 use crate::transducer::heuristic::BackwardDistance;
